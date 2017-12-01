@@ -74,7 +74,7 @@ public struct Character :
   @_versioned
   internal enum Representation {
     case smallUTF16(Builtin.Int63)
-    case large(_StringBuffer._Storage)
+    case large(_UTF16StringStorage)
   }
 
   /// Creates a character containing the given Unicode scalar value.
@@ -159,8 +159,8 @@ public struct Character :
     _builtinExtendedGraphemeClusterLiteral start: Builtin.RawPointer,
     utf16CodeUnitCount: Builtin.Word
   ) {
-    let utf16 = UnsafeBufferPointer(
-      start: UnsafePointer<Unicode.UTF16.CodeUnit>(start),
+    let utf16 = _UnmanagedString<UTF16.CodeUnit>(
+      start: UnsafePointer(start),
       count: Int(utf16CodeUnitCount))
 
     switch utf16.count {
@@ -182,11 +182,7 @@ public struct Character :
       _representation = .smallUTF16(Builtin.trunc_Int64_Int63(bits._value))
     default:
       _representation = Character(
-        _largeRepresentationString: String(_StringGuts(UnsafeString(
-          baseAddress: UnsafeMutableRawPointer(start),
-          count: utf16.count,
-          isSingleByte: false
-        ))))._representation
+        _largeRepresentationString: String(_StringGuts(utf16)))._representation
     }
   }
   
@@ -245,7 +241,8 @@ public struct Character :
   @_inlineable // FIXME(sil-serialize-all)
   @_versioned
   internal init(_largeRepresentationString s: String) {
-    _representation = .large(s._guts._extractStringBuffer()._storage)
+    _representation = .large(
+      s._guts._extractNativeStorage(of: UTF16.CodeUnit.self))
   }
 
   // FIXME(sil-serialize-all): Should be @_inlineable  @_versioned
@@ -312,9 +309,18 @@ extension Character {
 
   @_inlineable // FIXME(sil-serialize-all)
   @_versioned
-  internal var _largeUTF16 : _StringGuts? {
+  internal var _largeUTF16 : _UTF16StringStorage? {
     guard case .large(let storage) = _representation else { return nil }
-    return _StringGuts(_StringBuffer(storage))
+    return storage
+  }
+}
+
+extension Character {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned
+  internal var _count : Int {
+    if let small = _smallUTF16 { return small.count }
+    return _largeUTF16!.count
   }
 }
 
@@ -328,7 +334,7 @@ extension String {
       self = String(decoding: utf16, as: Unicode.UTF16.self)
     }
     else {
-      self = String(c._largeUTF16!)
+      self = String(_StringGuts(c._largeUTF16!))
     }
   }
 }
