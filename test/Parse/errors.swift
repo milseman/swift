@@ -4,8 +4,8 @@ enum MSV : Error {
   case Foo, Bar, Baz
   case CarriesInt(Int)
 
-  var domain: String { return "" }
-  var code: Int { return 0 }
+  var _domain: String { return "" }
+  var _code: Int { return 0 }
 }
 
 func opaque_error() -> Error { return MSV.Foo }
@@ -104,8 +104,7 @@ func illformed() throws {
     do {
       _ = try genError()
 
-    // TODO: this recovery is terrible
-    } catch MSV.CarriesInt(let i) where i == genError()) { // expected-error {{call can throw, but errors cannot be thrown out of a catch guard expression}} expected-error {{expected '{'}} expected-error {{closure expression is unused}} expected-note {{did you mean to use a 'do' statement?}} {{58-58=do }}
+    } catch MSV.CarriesInt(let i) where i == genError()) { // expected-error {{call can throw, but errors cannot be thrown out of a catch guard expression}} expected-error {{expected '{'}}
     }
 }
 

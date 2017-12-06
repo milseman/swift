@@ -449,7 +449,7 @@ ide::replacePlaceholders(std::unique_ptr<llvm::MemoryBuffer> InputBuf,
     assert(Id.size() == Occur.FullPlaceholder.size());
 
     unsigned Offset = Occur.FullPlaceholder.data() - InputBuf->getBufferStart();
-    char *Ptr = (char*)NewBuf->getBufferStart() + Offset;
+    char *Ptr = const_cast<char *>(NewBuf->getBufferStart()) + Offset;
     std::copy(Id.begin(), Id.end(), Ptr);
 
     Occur.IdentifierReplacement = Id.str();
@@ -839,6 +839,11 @@ insertAfter(SourceManager &SM, SourceLoc Loc, StringRef Text,
   accept(SM, Lexer::getLocForEndOfToken(SM, Loc), Text, SubRegions);
 }
 
+void swift::ide::SourceEditConsumer::
+remove(SourceManager &SM, CharSourceRange Range) {
+  accept(SM, Range, "");
+}
+
 struct swift::ide::SourceEditJsonConsumer::Implementation {
   llvm::raw_ostream &OS;
   std::vector<SingleEdit> AllEdits;
@@ -903,9 +908,11 @@ public:
       getBufferIdentifierForLoc(Range.getStart())).getValue();
     if (BufferId == InterestedId) {
       HasChange = true;
-      RewriteBuf.ReplaceText(
-                             SM.getLocOffsetInBuffer(Range.getStart(), BufferId),
-                             Range.str().size(), Text);
+      auto StartLoc = SM.getLocOffsetInBuffer(Range.getStart(), BufferId);
+      if (!Range.getByteLength())
+          RewriteBuf.InsertText(StartLoc, Text);
+      else
+          RewriteBuf.ReplaceText(StartLoc, Range.str().size(), Text);
     }
   }
 

@@ -39,6 +39,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -49,6 +50,7 @@
 #include "GenType.h"
 #include "IRGenModule.h"
 #include "IRGenDebugInfo.h"
+#include "StructLayout.h"
 
 #include <initializer_list>
 
@@ -86,7 +88,7 @@ static clang::CodeGenerator *createClangCodeGenerator(ASTContext &Context,
   auto &ClangContext = Importer->getClangASTContext();
 
   auto &CGO = Importer->getClangCodeGenOpts();
-  CGO.OptimizationLevel = Opts.Optimize ? 3 : 0;
+  CGO.OptimizationLevel = Opts.shouldOptimize() ? 3 : 0;
   CGO.DisableFPElim = Opts.DisableFPElim;
   CGO.DiscardValueNames = !Opts.shouldProvideValueNames();
   switch (Opts.DebugInfoKind) {
@@ -127,9 +129,9 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
       ClangCodeGen(createClangCodeGenerator(Context, LLVMContext, irgen.Opts,
                                             ModuleName)),
       Module(*ClangCodeGen->GetModule()), LLVMContext(Module.getContext()),
-      DataLayout(target->createDataLayout()),
-      Triple(irgen.getEffectiveClangTriple()), TargetMachine(std::move(target)),
-      silConv(irgen.SIL), OutputFilename(OutputFilename),
+      DataLayout(target->createDataLayout()), Triple(Context.LangOpts.Target),
+      TargetMachine(std::move(target)), silConv(irgen.SIL),
+      OutputFilename(OutputFilename),
       TargetInfo(SwiftTargetInfo::get(*this)), DebugInfo(nullptr),
       ModuleHash(nullptr), ObjCInterop(Context.LangOpts.EnableObjCInterop),
       Types(*new TypeConverter(*this)) {
@@ -193,12 +195,18 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
     Int8PtrTy,              // objc properties
     Int32Ty,                // size
     Int32Ty,                // flags
-    Int16Ty,                // minimum witness count
-    Int16Ty,                // default witness count
-    Int32Ty                 // padding
+    Int16Ty,                // mandatory requirement count
+    Int16Ty,                // total requirement count
+    Int32Ty                 // requirements array
   });
   
   ProtocolDescriptorPtrTy = ProtocolDescriptorStructTy->getPointerTo();
+
+  ProtocolRequirementStructTy =
+      createStructType(*this, "swift.protocol_requirement", {
+    Int32Ty,                // flags
+    Int32Ty                 // default implementation
+  });
   
   // A tuple type metadata record has a couple extra fields.
   auto tupleElementTy = createStructType(*this, "swift.tuple_element_type", {
@@ -256,8 +264,11 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
   });
   FullBoxMetadataPtrTy = FullBoxMetadataStructTy->getPointerTo(DefaultAS);
 
-  llvm::Type *refCountedElts[] = {TypeMetadataPtrTy, Int32Ty, Int32Ty};
+  // This must match struct HeapObject in the runtime.
+  llvm::Type *refCountedElts[] = {TypeMetadataPtrTy, IntPtrTy};
   RefCountedStructTy->setBody(refCountedElts);
+  RefCountedStructSize =
+    Size(DataLayout.getStructLayout(RefCountedStructTy)->getSizeInBytes());
 
   PtrSize = Size(DataLayout.getPointerSize(DefaultAS));
 
@@ -283,6 +294,12 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
     = llvm::StructType::create(LLVMContext, "swift.type_descriptor");
   NominalTypeDescriptorPtrTy
     = NominalTypeDescriptorTy->getPointerTo(DefaultAS);
+
+  MethodDescriptorStructTy
+    = createStructType(*this, "swift.method_descriptor", {
+      RelativeAddressTy,
+      Int32Ty
+    });
 
   TypeMetadataRecordTy
     = createStructType(*this, "swift.type_metadata_record", {
@@ -351,6 +368,10 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
                                               /*packed*/ false);
   OpenedErrorTriplePtrTy = OpenedErrorTripleTy->getPointerTo(DefaultAS);
 
+  WitnessTablePtrPtrTy = WitnessTablePtrTy->getPointerTo(DefaultAS);
+  WitnessTableSliceTy = createStructType(*this, "swift.witness_table_slice",
+                                         {WitnessTablePtrPtrTy, SizeTy});
+
   InvariantMetadataID = LLVMContext.getMDKindID("invariant.load");
   InvariantNode = llvm::MDNode::get(LLVMContext, {});
   DereferenceableID = LLVMContext.getMDKindID("dereferenceable");
@@ -398,6 +419,7 @@ IRGenModule::IRGenModule(IRGenerator &irgen,
 
 IRGenModule::~IRGenModule() {
   destroyClangTypeConverter();
+  destroyMetadataLayoutMap();
   delete &Types;
   delete DebugInfo;
 }
@@ -415,6 +437,7 @@ namespace RuntimeConstants {
   const auto NoReturn = llvm::Attribute::NoReturn;
   const auto NoUnwind = llvm::Attribute::NoUnwind;
   const auto ZExt = llvm::Attribute::ZExt;
+  const auto FirstParamReturned = llvm::Attribute::Returned;
 } // namespace RuntimeConstants
 
 // We don't use enough attributes to justify generalizing the
@@ -422,6 +445,11 @@ namespace RuntimeConstants {
 // associated with the return type not the function type.
 static bool isReturnAttribute(llvm::Attribute::AttrKind Attr) {
   return Attr == llvm::Attribute::ZExt;
+}
+// Similar to the 'return' attribute we assume that the 'returned' attributed is
+// associated with the first function parameter.
+static bool isReturnedAttribute(llvm::Attribute::AttrKind Attr) {
+  return Attr == llvm::Attribute::Returned;
 }
 
 llvm::Constant *swift::getRuntimeFn(llvm::Module &Module,
@@ -452,21 +480,26 @@ llvm::Constant *swift::getRuntimeFn(llvm::Module &Module,
     fn->setCallingConv(cc);
 
     if (::useDllStorage(llvm::Triple(Module.getTargetTriple())) &&
-        (fn->getLinkage() == llvm::GlobalValue::ExternalLinkage ||
+        ((fn->getLinkage() == llvm::GlobalValue::ExternalLinkage &&
+          fn->isDeclaration()) ||
          fn->getLinkage() == llvm::GlobalValue::AvailableExternallyLinkage))
       fn->setDLLStorageClass(llvm::GlobalValue::DLLImportStorageClass);
 
     llvm::AttrBuilder buildFnAttr;
     llvm::AttrBuilder buildRetAttr;
+    llvm::AttrBuilder buildFirstParamAttr;
 
     for (auto Attr : attrs) {
       if (isReturnAttribute(Attr))
         buildRetAttr.addAttribute(Attr);
+      else if (isReturnedAttribute(Attr))
+        buildFirstParamAttr.addAttribute(Attr);
       else
         buildFnAttr.addAttribute(Attr);
     }
     fn->addAttributes(llvm::AttributeList::FunctionIndex, buildFnAttr);
     fn->addAttributes(llvm::AttributeList::ReturnIndex, buildRetAttr);
+    fn->addParamAttrs(0, buildFirstParamAttr);
   }
 
   return cache;
@@ -530,10 +563,14 @@ llvm::Constant *swift::getWrapperFn(llvm::Module &Module,
 
 
     auto fnPtr = Builder.CreateLoad(globalFnPtr, "load");
+
     auto call = Builder.CreateCall(fnPtr, args);
     call->setCallingConv(cc);
     call->setTailCall(true);
-
+    for (auto Attr : attrs)
+      if (isReturnedAttribute(Attr)) {
+        call->addParamAttr(0, llvm::Attribute::Returned);
+      }
     auto VoidTy = llvm::Type::getVoidTy(Module.getContext());
     if (retTypes.size() == 1 && *retTypes.begin() == VoidTy)
       Builder.CreateRetVoid();
@@ -723,11 +760,11 @@ bool IRGenerator::canEmitWitnessTableLazily(SILWitnessTable *wt) {
     wt->getConformance()->getType()->getNominalOrBoundGenericNominal();
 
   switch (ConformingTy->getEffectiveAccess()) {
-    case Accessibility::Private:
-    case Accessibility::FilePrivate:
+    case AccessLevel::Private:
+    case AccessLevel::FilePrivate:
       return true;
 
-    case Accessibility::Internal:
+    case AccessLevel::Internal:
       return PrimaryIGM->getSILModule().isWholeModule();
 
     default:
@@ -775,8 +812,14 @@ llvm::AttributeList IRGenModule::getAllocAttrs() {
   return AllocAttrs;
 }
 
+/// Disable thumb-mode until debugger support is there.
+bool swift::irgen::shouldRemoveTargetFeature(StringRef feature) {
+  return feature == "+thumb-mode";
+}
+
 /// Construct initial function attributes from options.
-void IRGenModule::constructInitialFnAttributes(llvm::AttrBuilder &Attrs) {
+void IRGenModule::constructInitialFnAttributes(llvm::AttrBuilder &Attrs,
+                                               OptimizationMode FuncOptMode) {
   // Add DisableFPElim. 
   if (!IRGen.Opts.DisableFPElim) {
     Attrs.addAttribute("no-frame-pointer-elim", "false");
@@ -793,7 +836,11 @@ void IRGenModule::constructInitialFnAttributes(llvm::AttrBuilder &Attrs) {
   if (CPU != "")
     Attrs.addAttribute("target-cpu", CPU);
 
-  std::vector<std::string> Features = ClangOpts.Features;
+  std::vector<std::string> Features;
+  for (auto &F : ClangOpts.Features)
+    if (!shouldRemoveTargetFeature(F))
+        Features.push_back(F);
+
   if (!Features.empty()) {
     SmallString<64> allFeatures;
     // Sort so that the target features string is canonical.
@@ -805,6 +852,10 @@ void IRGenModule::constructInitialFnAttributes(llvm::AttrBuilder &Attrs) {
     });
     Attrs.addAttribute("target-features", allFeatures);
   }
+  if (FuncOptMode == OptimizationMode::NotSet)
+    FuncOptMode = IRGen.Opts.OptMode;
+  if (FuncOptMode == OptimizationMode::ForSize)
+    Attrs.addAttribute(llvm::Attribute::MinSize);
 }
 
 llvm::AttributeList IRGenModule::constructInitialAttributes() {
@@ -1097,6 +1148,16 @@ void IRGenModule::emitLazyPrivateDefinitions() {
   emitLazyObjCProtocolDefinitions();
 }
 
+llvm::MDNode *IRGenModule::createProfileWeights(uint64_t TrueCount,
+                                                uint64_t FalseCount) const {
+  uint64_t MaxWeight = std::max(TrueCount, FalseCount);
+  uint64_t Scale = (MaxWeight > UINT32_MAX) ? UINT32_MAX : 1;
+  uint32_t ScaledTrueCount = (TrueCount / Scale) + 1;
+  uint32_t ScaledFalseCount = (FalseCount / Scale) + 1;
+  llvm::MDBuilder MDHelper(getLLVMContext());
+  return MDHelper.createBranchWeights(ScaledTrueCount, ScaledFalseCount);
+}
+
 void IRGenModule::unimplemented(SourceLoc loc, StringRef message) {
   Context.Diags.diagnose(loc, diag::irgen_unimplemented, message);
 }
@@ -1155,11 +1216,4 @@ IRGenModule *IRGenerator::getGenModule(SILFunction *f) {
     return IGM;
 
   return getPrimaryIGM();
-}
-
-llvm::Triple IRGenerator::getEffectiveClangTriple() {
-  auto CI = static_cast<ClangImporter *>(
-      &*SIL.getASTContext().getClangModuleLoader());
-  assert(CI && "no clang module loader");
-  return llvm::Triple(CI->getTargetInfo().getTargetOpts().Triple);
 }

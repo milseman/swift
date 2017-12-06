@@ -22,7 +22,6 @@
 #include "swift/AST/ASTMangler.h"
 #include "swift/AST/PrintOptions.h"
 #include "swift/AST/RawComment.h"
-#include "swift/AST/SourceEntityWalker.h"
 #include "swift/AST/USRGeneration.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/Basic/LangOptions.h"
@@ -35,6 +34,7 @@
 #include "swift/IDE/CommentConversion.h"
 #include "swift/IDE/ModuleInterfacePrinting.h"
 #include "swift/IDE/REPLCodeCompletion.h"
+#include "swift/IDE/SourceEntityWalker.h"
 #include "swift/IDE/SyntaxModel.h"
 #include "swift/IDE/Utils.h"
 #include "swift/Index/Index.h"
@@ -528,10 +528,10 @@ PrintImplicitAttrs("print-implicit-attrs",
                    llvm::cl::init(false));
 
 static llvm::cl::opt<bool>
-PrintAccessibility("print-accessibility",
-                   llvm::cl::desc("Print accessibility for all values"),
-                   llvm::cl::cat(Category),
-                   llvm::cl::init(false));
+PrintAccess("print-access",
+            llvm::cl::desc("Print access keywords for all values"),
+            llvm::cl::cat(Category),
+            llvm::cl::init(false));
 
 static llvm::cl::opt<bool>
 SkipUnavailable("skip-unavailable",
@@ -539,17 +539,17 @@ SkipUnavailable("skip-unavailable",
                 llvm::cl::cat(Category),
                 llvm::cl::init(false));
 
-static llvm::cl::opt<Accessibility>
-AccessibilityFilter(
-    llvm::cl::desc("Accessibility filter:"),
+static llvm::cl::opt<AccessLevel>
+AccessFilter(
+    llvm::cl::desc("Access filter:"),
     llvm::cl::cat(Category),
-    llvm::cl::init(Accessibility::Private),
+    llvm::cl::init(AccessLevel::Private),
     llvm::cl::values(
-        clEnumValN(Accessibility::Private, "accessibility-filter-private",
+        clEnumValN(AccessLevel::Private, "access-filter-private",
             "Print all declarations"),
-        clEnumValN(Accessibility::Internal, "accessibility-filter-internal",
+        clEnumValN(AccessLevel::Internal, "access-filter-internal",
             "Print internal and public declarations"),
-        clEnumValN(Accessibility::Public, "accessibility-filter-public",
+        clEnumValN(AccessLevel::Public, "access-filter-public",
             "Print public declarations")));
 
 static llvm::cl::opt<bool>
@@ -636,6 +636,16 @@ static llvm::cl::opt<bool> DebugConstraintSolver("debug-constraints",
 static llvm::cl::opt<bool>
 IncludeLocals("include-locals", llvm::cl::desc("Index local symbols too."),
               llvm::cl::cat(Category), llvm::cl::init(false));
+
+static llvm::cl::opt<bool>
+    EnableObjCInterop("enable-objc-interop",
+                      llvm::cl::desc("Enable ObjC interop."),
+                      llvm::cl::cat(Category), llvm::cl::init(false));
+
+static llvm::cl::opt<bool>
+    DisableObjCInterop("disable-objc-interop",
+                       llvm::cl::desc("Disable ObjC interop."),
+                       llvm::cl::cat(Category), llvm::cl::init(false));
 } // namespace options
 
 static std::unique_ptr<llvm::MemoryBuffer>
@@ -942,6 +952,7 @@ static int doSyntaxColoring(const CompilerInvocation &InitInvok,
   PrintingDiagnosticConsumer PrintDiags;
   CI.addDiagnosticConsumer(&PrintDiags);
   Invocation.getLangOptions().Playground = Playground;
+  Invocation.getLangOptions().KeepSyntaxInfoInSourceFile = true;
   if (CI.setup(Invocation))
     return 1;
   if (!RunTypeChecker)
@@ -1034,6 +1045,8 @@ private:
     for (auto &Elem : Node.Elements) {
       tagRange(Elem.Range, getTagName(Elem.Kind), Node);
     }
+    if (Node.TypeRange.isValid() && Node.Range.contains(Node.TypeRange))
+      tagRange(Node.TypeRange, "type", Node);
 
     return true;
   }
@@ -1072,6 +1085,7 @@ private:
       case SyntaxStructureKind::EnumElement: return "enum-elem";
       case SyntaxStructureKind::TypeAlias: return "typealias";
       case SyntaxStructureKind::Subscript: return "subscript";
+      case SyntaxStructureKind::AssociatedType: return "associatedtype";
       case SyntaxStructureKind::Parameter: return "param";
       case SyntaxStructureKind::ForEachStatement: return "foreach";
       case SyntaxStructureKind::WhileStatement: return "while";
@@ -1086,6 +1100,7 @@ private:
       case SyntaxStructureKind::DictionaryExpression: return "dictionary";
       case SyntaxStructureKind::ObjectLiteralExpression:
         return "object-literal-expression";
+      case SyntaxStructureKind::TupleExpression: return "tuple";
     }
     llvm_unreachable("unhandled tag?");
   }
@@ -1148,6 +1163,7 @@ private:
 static int doStructureAnnotation(const CompilerInvocation &InitInvok,
                                  StringRef SourceFilename) {
   CompilerInvocation Invocation(InitInvok);
+  Invocation.getLangOptions().KeepSyntaxInfoInSourceFile = true;
   Invocation.addInputFilename(SourceFilename);
 
   CompilerInstance CI;
@@ -1248,9 +1264,10 @@ private:
   }
 
   bool visitSubscriptReference(ValueDecl *D, CharSourceRange Range,
+                               Optional<AccessKind> AccKind,
                                bool IsOpenBracket) override {
     return visitDeclReference(D, Range, nullptr, nullptr, Type(),
-                      ReferenceMetaData(SemaReferenceKind::SubscriptRef, None));
+                      ReferenceMetaData(SemaReferenceKind::SubscriptRef, AccKind));
   }
 
   bool visitCallArgName(Identifier Name, CharSourceRange Range,
@@ -1612,7 +1629,7 @@ static int doPrintLocalTypes(const CompilerInvocation &InitInvok,
       llvm::outs() << remangled << "\n";
 
       auto Options = PrintOptions::printEverything();
-      Options.PrintAccessibility = false;
+      Options.PrintAccess = false;
       LTD->print(llvm::outs(), Options);
       llvm::outs() << "\n";
     }
@@ -1900,7 +1917,7 @@ static int doPrintSwiftFileInterface(const CompilerInvocation &InitInvok,
                                      bool AnnotatePrint) {
   CompilerInvocation Invocation(InitInvok);
   Invocation.addInputFilename(SourceFilename);
-  Invocation.getFrontendOptions().PrimaryInput = 0;
+  Invocation.getFrontendOptions().Inputs.setPrimaryInputToFirstFile();
   Invocation.getLangOptions().AttachCommentsToDecls = true;
   CompilerInstance CI;
   // Display diagnostics to stderr.
@@ -1931,7 +1948,7 @@ static int doPrintDecls(const CompilerInvocation &InitInvok,
                         bool AnnotatePrint) {
   CompilerInvocation Invocation(InitInvok);
   Invocation.addInputFilename(SourceFilename);
-  Invocation.getFrontendOptions().PrimaryInput = 0;
+  Invocation.getFrontendOptions().Inputs.setPrimaryInputToFirstFile();
   Invocation.getLangOptions().AttachCommentsToDecls = true;
   CompilerInstance CI;
   // Display diagnostics to stderr.
@@ -2436,7 +2453,7 @@ static int doPrintTypeInterface(const CompilerInvocation &InitInvok,
       break;
   }
   assert(SF && "no source file?");
-  SemaLocResolver Resolver(*SF);
+  CursorInfoResolver Resolver(*SF);
   SourceManager &SM = SF->getASTContext().SourceMgr;
   auto Offset = SM.resolveFromLineCol(BufID, Pair.getValue().first,
                                       Pair.getValue().second);
@@ -2664,6 +2681,7 @@ static int doPrintRangeInfo(const CompilerInvocation &InitInvok,
   CompilerInvocation Invocation(InitInvok);
   Invocation.addInputFilename(SourceFileName);
   Invocation.getLangOptions().DisableAvailabilityChecking = false;
+  Invocation.getLangOptions().KeepSyntaxInfoInSourceFile = true;
 
   CompilerInstance CI;
 
@@ -2984,6 +3002,7 @@ int main(int argc, char *argv[]) {
   InitInvok.setModuleName(options::ModuleName);
 
   InitInvok.setSDKPath(options::SDK);
+  InitInvok.getLangOptions().KeepSyntaxInfoInSourceFile = true;
   if (!options::Triple.empty())
     InitInvok.setTargetTriple(options::Triple);
   if (!options::SwiftVersion.empty()) {
@@ -2996,6 +3015,14 @@ int main(int argc, char *argv[]) {
       if (auto actual = swiftVersion.getValue().getEffectiveLanguageVersion())
         InitInvok.getLangOptions().EffectiveLanguageVersion = actual.getValue();
     }
+  }
+  if (options::DisableObjCInterop) {
+    InitInvok.getLangOptions().EnableObjCInterop = false;
+  } else if (options::EnableObjCInterop) {
+    InitInvok.getLangOptions().EnableObjCInterop = true;
+  } else {
+    InitInvok.getLangOptions().EnableObjCInterop =
+        llvm::Triple(InitInvok.getTargetTriple()).isOSDarwin();
   }
   InitInvok.getClangImporterOptions().ModuleCachePath =
     options::ModuleCachePath;
@@ -3072,8 +3099,8 @@ int main(int argc, char *argv[]) {
     PrintOpts.PreferTypeRepr = options::PreferTypeRepr;
     PrintOpts.ExplodePatternBindingDecls = options::ExplodePatternBindingDecls;
     PrintOpts.PrintImplicitAttrs = options::PrintImplicitAttrs;
-    PrintOpts.PrintAccessibility = options::PrintAccessibility;
-    PrintOpts.AccessibilityFilter = options::AccessibilityFilter;
+    PrintOpts.PrintAccess = options::PrintAccess;
+    PrintOpts.AccessFilter = options::AccessFilter;
     PrintOpts.PrintDocumentationComments = !options::SkipDocumentationComments;
     PrintOpts.PrintRegularClangComments = options::PrintRegularComments;
     PrintOpts.SkipPrivateStdlibDecls = options::SkipPrivateStdlibDecls;

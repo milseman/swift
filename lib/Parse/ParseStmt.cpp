@@ -22,12 +22,15 @@
 #include "swift/Parse/Lexer.h"
 #include "swift/Parse/CodeCompletionCallbacks.h"
 #include "swift/Subsystems.h"
+#include "swift/Syntax/TokenSyntax.h"
+#include "swift/Syntax/SyntaxParsingContext.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace swift;
+using namespace swift::syntax;
 
 /// isStartOfStmt - Return true if the current token starts a statement.
 ///
@@ -223,7 +226,8 @@ void Parser::consumeTopLevelDecl(ParserPosition BeginParserPosition,
 ParserStatus Parser::parseBraceItems(SmallVectorImpl<ASTNode> &Entries,
                                      BraceItemListKind Kind,
                                      BraceItemListKind ConditionalBlockKind) {
-  
+  SyntaxParsingContext StmtListContext(SyntaxContext, SyntaxKind::StmtList);
+
   bool IsTopLevel = (Kind == BraceItemListKind::TopLevelCode) ||
                     (Kind == BraceItemListKind::TopLevelLibrary);
   bool isActiveConditionalBlock =
@@ -259,6 +263,9 @@ ParserStatus Parser::parseBraceItems(SmallVectorImpl<ASTNode> &Entries,
          Tok.isNot(tok::kw_sil_default_witness_table) &&
          (isConditionalBlock ||
           !isTerminatorForBraceItemListKind(Kind, Entries))) {
+
+    SyntaxParsingContext StmtContext(SyntaxContext, SyntaxContextKind::Stmt);
+
     if (Kind == BraceItemListKind::TopLevelLibrary &&
         skipExtraTopLevelRBraces())
       continue;
@@ -439,7 +446,7 @@ void Parser::parseTopLevelCodeDeclDelayed() {
 
   // ParserPositionRAII needs a primed parser to restore to.
   if (Tok.is(tok::NUM_TOKENS))
-    consumeToken();
+    consumeTokenWithoutFeedingReceiver();
 
   // Ensure that we restore the parser state at exit.
   ParserPositionRAII PPR(*this);
@@ -489,6 +496,7 @@ static ParserResult<Stmt> recoverFromInvalidCase(Parser &P) {
 }
 
 ParserResult<Stmt> Parser::parseStmt() {
+  SyntaxParsingContext LocalContext(SyntaxContext, SyntaxContextKind::Stmt);
 
   // Note that we're parsing a statement.
   StructureMarkerRAII ParsingStmt(*this, Tok.getLoc(),
@@ -579,8 +587,14 @@ ParserResult<Stmt> Parser::parseStmt() {
 ParserResult<BraceStmt> Parser::parseBraceItemList(Diag<> ID) {
   if (Tok.isNot(tok::l_brace)) {
     diagnose(Tok, ID);
-    return nullptr;
+
+    // Attempt to recover by looking for a left brace on the same line
+    while (Tok.isNot(tok::eof, tok::l_brace) && !Tok.isAtStartOfLine())
+      skipSingle();
+    if (Tok.isNot(tok::l_brace))
+      return nullptr;
   }
+  SyntaxParsingContext LocalContext(SyntaxContext, SyntaxKind::CodeBlock);
   SourceLoc LBLoc = consumeToken(tok::l_brace);
 
   SmallVector<ASTNode, 16> Entries;
@@ -646,6 +660,7 @@ ParserResult<Stmt> Parser::parseStmtContinue() {
 ///     'return' expr?
 ///   
 ParserResult<Stmt> Parser::parseStmtReturn(SourceLoc tryLoc) {
+  SyntaxParsingContext LocalContext(SyntaxContext, SyntaxKind::ReturnStmt);
   SourceLoc ReturnLoc = consumeToken(tok::kw_return);
 
   if (Tok.is(tok::code_complete)) {
@@ -1118,7 +1133,8 @@ Parser::parseAvailabilitySpecList(SmallVectorImpl<AvailabilitySpec *> &Specs) {
       // also in the shorthand syntax and provide a more specific diagnostic if
       // that's not the case.
       if (Tok.isIdentifierOrUnderscore() &&
-          !peekToken().isAny(tok::integer_literal, tok::floating_literal)) {
+          !peekToken().isAny(tok::integer_literal, tok::floating_literal) &&
+          !Specs.empty()) {
         auto Text = Tok.getText();
         if (Text == "deprecated" || Text == "renamed" || Text == "introduced" ||
             Text == "message" || Text == "obsoleted" || Text == "unavailable") {
@@ -1765,15 +1781,17 @@ static bool isStmtForCStyle(Parser &P) {
   auto HasLParen = P.consumeIf(tok::l_paren);
 
   // Skip until we see ';', or something that ends control part.
-  while (P.Tok.isNot(tok::eof, tok::kw_in, tok::semi, tok::l_brace,
-                     tok::r_brace, tok::r_paren) && !P.isStartOfStmt()) {
+  while (true) {
+    if (P.Tok.isAny(tok::eof, tok::kw_in, tok::l_brace, tok::r_brace,
+                    tok::r_paren) || P.isStartOfStmt())
+      return false;
     // If we saw newline before ';', consider it is a foreach statement.
     if (!HasLParen && P.Tok.isAtStartOfLine())
       return false;
+    if (P.Tok.is(tok::semi))
+      return true;
     P.skipSingle();
   }
-
-  return P.Tok.is(tok::semi);
 }
 
 /// 
@@ -1857,13 +1875,12 @@ ParserResult<Stmt> Parser::parseStmtForEach(LabeledStmtInfo LabelInfo) {
     consumeToken(tok::code_complete);
   } else {
     Container = parseExprBasic(diag::expected_foreach_container);
+    Status |= Container;
     if (Container.isNull())
       Container = makeParserErrorResult(new (Context) ErrorExpr(Tok.getLoc()));
     if (Container.isParseError())
       // Recover.
       skipUntilDeclStmtRBrace(tok::l_brace, tok::kw_where);
-
-    Status |= Container;
   }
 
   // Introduce a new scope and place the variables in the pattern into that

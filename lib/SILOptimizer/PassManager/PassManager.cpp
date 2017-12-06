@@ -20,6 +20,7 @@
 #include "swift/SILOptimizer/Analysis/FunctionOrder.h"
 #include "swift/SILOptimizer/PassManager/PrettyStackTrace.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
+#include "swift/SILOptimizer/Utils/OptimizerStatsUtils.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -235,8 +236,9 @@ public:
 };
 
 
-SILPassManager::SILPassManager(SILModule *M, llvm::StringRef Stage) :
-  Mod(M), StageName(Stage) {
+SILPassManager::SILPassManager(SILModule *M, llvm::StringRef Stage,
+                               bool isMandatoryPipeline) :
+  Mod(M), StageName(Stage), isMandatoryPipeline(isMandatoryPipeline) {
   
 #define ANALYSIS(NAME) \
   Analysis.push_back(create##NAME##Analysis(Mod));
@@ -249,14 +251,15 @@ SILPassManager::SILPassManager(SILModule *M, llvm::StringRef Stage) :
 }
 
 SILPassManager::SILPassManager(SILModule *M, irgen::IRGenModule *IRMod,
-                               llvm::StringRef Stage)
-    : SILPassManager(M, Stage) {
+                               llvm::StringRef Stage, bool isMandatoryPipeline)
+    : SILPassManager(M, Stage, isMandatoryPipeline) {
   this->IRMod = IRMod;
 }
 
 bool SILPassManager::continueTransforming() {
-  return Mod->getStage() == SILStage::Raw ||
-         NumPassesRun < SILNumOptPassesToRun;
+  if (isMandatoryPipeline)
+    return true;
+  return NumPassesRun < SILNumOptPassesToRun;
 }
 
 bool SILPassManager::analysesUnlocked() {
@@ -290,11 +293,11 @@ void SILPassManager::runPassOnFunction(SILFunctionTransform *SFT,
 
   assert(analysesUnlocked() && "Expected all analyses to be unlocked!");
 
-  PrettyStackTraceSILFunctionTransform X(SFT, NumPassesRun);
-  DebugPrintEnabler DebugPrint(NumPassesRun);
-
   SFT->injectPassManager(this);
   SFT->injectFunction(F);
+
+  PrettyStackTraceSILFunctionTransform X(SFT, NumPassesRun);
+  DebugPrintEnabler DebugPrint(NumPassesRun);
 
   // If nothing changed since the last run of this pass, we can skip this
   // pass.
@@ -315,6 +318,8 @@ void SILPassManager::runPassOnFunction(SILFunctionTransform *SFT,
                    << ", Function: " << F->getName() << "\n";
     return;
   }
+
+  updateSILModuleStatsBeforeTransform(F->getModule(), SFT, *this, NumPassesRun);
 
   CurrentPassHasInvalidated = false;
 
@@ -338,8 +343,8 @@ void SILPassManager::runPassOnFunction(SILFunctionTransform *SFT,
   assert(analysesUnlocked() && "Expected all analyses to be unlocked!");
   Mod->removeDeleteNotificationHandler(SFT);
 
+  auto Delta = (std::chrono::system_clock::now() - StartTime).count();
   if (SILPrintPassTime) {
-    auto Delta = (std::chrono::system_clock::now() - StartTime).count();
     llvm::dbgs() << Delta << " (" << SFT->getName() << "," << F->getName()
                  << ")\n";
   }
@@ -351,6 +356,9 @@ void SILPassManager::runPassOnFunction(SILFunctionTransform *SFT,
                  << NumOptimizationIterations << ") ***\n";
     F->dump(getOptions().EmitVerboseSIL);
   }
+
+  updateSILModuleStatsAfterTransform(F->getModule(), SFT, *this, NumPassesRun,
+                                     Delta);
 
   // Remember if this pass didn't change anything.
   if (!CurrentPassHasInvalidated)
@@ -383,7 +391,7 @@ runFunctionPasses(ArrayRef<SILFunctionTransform *> FuncTransforms) {
 
     // Only include functions that are definitions, and which have not
     // been intentionally excluded from optimization.
-    if (F.isDefinition() && F.shouldOptimize())
+    if (F.isDefinition() && (isMandatoryPipeline || F.shouldOptimize()))
       FunctionWorklist.push_back(*I);
   }
 
@@ -434,11 +442,13 @@ void SILPassManager::runModulePass(SILModuleTransform *SMT) {
 
   const SILOptions &Options = getOptions();
 
+  SMT->injectPassManager(this);
+  SMT->injectModule(Mod);
+
   PrettyStackTraceSILModuleTransform X(SMT, NumPassesRun);
   DebugPrintEnabler DebugPrint(NumPassesRun);
 
-  SMT->injectPassManager(this);
-  SMT->injectModule(Mod);
+  updateSILModuleStatsBeforeTransform(*Mod, SMT, *this, NumPassesRun);
 
   CurrentPassHasInvalidated = false;
 
@@ -460,8 +470,8 @@ void SILPassManager::runModulePass(SILModuleTransform *SMT) {
   Mod->removeDeleteNotificationHandler(SMT);
   assert(analysesUnlocked() && "Expected all analyses to be unlocked!");
 
+  auto Delta = (std::chrono::system_clock::now() - StartTime).count();
   if (SILPrintPassTime) {
-    auto Delta = (std::chrono::system_clock::now() - StartTime).count();
     llvm::dbgs() << Delta << " (" << SMT->getName() << ",Module)\n";
   }
 
@@ -473,6 +483,8 @@ void SILPassManager::runModulePass(SILModuleTransform *SMT) {
                  << NumOptimizationIterations << ") ***\n";
     printModule(Mod, Options.EmitVerboseSIL);
   }
+
+  updateSILModuleStatsAfterTransform(*Mod, SMT, *this, NumPassesRun, Delta);
 
   if (Options.VerifyAll &&
       (CurrentPassHasInvalidated || !SILVerifyWithoutInvalidation)) {
@@ -544,8 +556,8 @@ SILPassManager::~SILPassManager() {
 
 void SILPassManager::addFunctionToWorklist(SILFunction *F,
                                            SILFunction *DerivedFrom) {
-  assert(F && F->isDefinition() && F->shouldOptimize() &&
-         "Expected optimizable function definition!");
+  assert(F && F->isDefinition() && (isMandatoryPipeline || F->shouldOptimize())
+         && "Expected optimizable function definition!");
 
   constexpr int MaxDeriveLevels = 10;
 
@@ -606,6 +618,10 @@ void SILPassManager::resetAndRemoveTransformations() {
 
 void SILPassManager::setStageName(llvm::StringRef NextStage) {
   StageName = NextStage;
+}
+
+StringRef SILPassManager::getStageName() const {
+  return StageName;
 }
 
 const SILOptions &SILPassManager::getOptions() const {
@@ -705,7 +721,7 @@ namespace {
     std::vector<Node> Nodes;
 
     /// The SILValue IDs which are printed as edge source labels.
-    llvm::DenseMap<const ValueBase *, unsigned> InstToIDMap;
+    llvm::DenseMap<const SILNode *, unsigned> InstToIDMap;
 
     typedef std::vector<Node>::iterator iterator;
   };

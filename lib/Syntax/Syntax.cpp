@@ -24,8 +24,8 @@ SyntaxKind Syntax::getKind() const {
   return getRaw()->Kind;
 }
 
-void Syntax::print(llvm::raw_ostream &OS) const {
-  getRaw()->print(OS);
+void Syntax::print(llvm::raw_ostream &OS, SyntaxPrintOptions Opts) const {
+  getRaw()->print(OS, Opts);
 }
 
 void Syntax::dump() const {
@@ -50,6 +50,10 @@ bool Syntax::isStmt() const {
 
 bool Syntax::isExpr() const {
   return Data->isExpr();
+}
+
+bool Syntax::isToken() const {
+  return getRaw()->isToken();
 }
 
 bool Syntax::isPattern() const {

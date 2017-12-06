@@ -1296,29 +1296,9 @@ static Type adjustTypeForConcreteImport(ClangImporter::Implementation &impl,
 
   // SwiftTypeConverter turns block pointers into @convention(block) types.
   // In a bridgeable context, or in the direct structure of a typedef,
-  // we would prefer to instead use the default Swift convention.  But this
-  // does means that, when we're using a typedef of a block pointer type in
-  // an unbridgable context, we need to go back and do a fully-unbridged
-  // import of the underlying type.
+  // we would prefer to instead use the default Swift convention.
   if (hint == ImportHint::Block) {
-    if (bridging == Bridgeability::None) {
-      if (auto typedefType = clangType->getAs<clang::TypedefType>()) {
-        // In non-bridged contexts, drop the typealias sugar for blocks.
-        // FIXME: This will do the wrong thing if there's any adjustment to do
-        // besides optionality.
-        Type underlyingTy = impl.importType(typedefType->desugar(),
-                                            importKind,
-                                            allowNSUIntegerAsInt,
-                                            bridging,
-                                            OTK_None);
-        if (Type unwrappedTy = underlyingTy->getAnyOptionalObjectType())
-          underlyingTy = unwrappedTy;
-        if (!underlyingTy->isEqual(importedType))
-          importedType = underlyingTy;
-      }
-    }
-
-    if (bridging == Bridgeability::Full) {
+    if (canBridgeTypes(importKind) || importKind == ImportTypeKind::Typedef) {
       auto fTy = importedType->castTo<FunctionType>();
       FunctionType::ExtInfo einfo = fTy->getExtInfo();
       if (einfo.getRepresentation() != FunctionTypeRepresentation::Swift) {
@@ -1361,7 +1341,6 @@ static Type adjustTypeForConcreteImport(ClangImporter::Implementation &impl,
   // If we have a bridged Objective-C type and we are allowed to
   // bridge, do so.
   if (hint == ImportHint::ObjCBridged &&
-      bridging == Bridgeability::Full &&
       canBridgeTypes(importKind) &&
       importKind != ImportTypeKind::PropertyWithReferenceSemantics) {
     // id and Any can be bridged without Foundation. There would be
@@ -1591,7 +1570,7 @@ Type ClangImporter::Implementation::importFunctionReturnType(
      clangDecl->hasAttr<clang::CFReturnsRetainedAttr>() ||
      clangDecl->hasAttr<clang::CFReturnsNotRetainedAttr>());
 
-  // Check if we know more about the type from our whitelists.
+  // Fix up optionality.
   OptionalTypeKind OptionalityOfReturn;
   if (clangDecl->hasAttr<clang::ReturnsNonNullAttr>()) {
     OptionalityOfReturn = OTK_None;
@@ -1691,7 +1670,7 @@ ParameterList *ClangImporter::Implementation::importFunctionParameterList(
     // It doesn't actually matter which DeclContext we use, so just use the
     // imported header unit.
     auto paramInfo = createDeclWithClangNode<ParamDecl>(
-        param, Accessibility::Private,
+        param, AccessLevel::Private,
         VarDecl::Specifier::Owned, SourceLoc(), SourceLoc(), name,
         importSourceLoc(param->getLocation()), bodyName,
         dc->mapTypeIntoContext(swiftParamTy),
@@ -1745,7 +1724,7 @@ DefaultArgumentKind ClangImporter::Implementation::inferDefaultArgument(
     // Nullable trailing closure parameters default to 'nil'.
     if (isLastParameter &&
         (type->isFunctionPointerType() || type->isBlockPointerType()))
-      return DefaultArgumentKind::Nil;
+      return DefaultArgumentKind::NilLiteral;
 
     // NSZone parameters default to 'nil'.
     if (auto ptrType = type->getAs<clang::PointerType>()) {
@@ -1753,7 +1732,7 @@ DefaultArgumentKind ClangImporter::Implementation::inferDefaultArgument(
             = ptrType->getPointeeType()->getAs<clang::RecordType>()) {
         if (recType->isStructureOrClassType() &&
             recType->getDecl()->getName() == "_NSZone")
-          return DefaultArgumentKind::Nil;
+          return DefaultArgumentKind::NilLiteral;
       }
     }
   }
@@ -1765,7 +1744,7 @@ DefaultArgumentKind ClangImporter::Implementation::inferDefaultArgument(
   // Option sets default to "[]" if they have "Options" in their name.
   if (const clang::EnumType *enumTy = type->getAs<clang::EnumType>()) {
     const clang::EnumDecl *enumDef = enumTy->getDecl()->getDefinition();
-    if (nameImporter.getEnumKind(enumDef) == EnumKind::Options) {
+    if (enumDef && nameImporter.getEnumKind(enumDef) == EnumKind::Options) {
       auto enumName = enumDef->getName();
       for (auto word : reversed(camel_case::getWords(enumName))) {
         if (camel_case::sameWordIgnoreFirstCase(word, "options"))
@@ -1786,7 +1765,7 @@ DefaultArgumentKind ClangImporter::Implementation::inferDefaultArgument(
 
         auto emptyDictionaryKind = DefaultArgumentKind::EmptyDictionary;
         if (clangOptionality == OTK_Optional)
-          emptyDictionaryKind = DefaultArgumentKind::Nil;
+          emptyDictionaryKind = DefaultArgumentKind::NilLiteral;
 
         bool sawInfo = false;
         for (auto word : reversed(camel_case::getWords(searchStr))) {
@@ -2128,14 +2107,14 @@ Type ClangImporter::Implementation::importMethodType(
 
     // Set up the parameter info.
     auto paramInfo
-      = createDeclWithClangNode<ParamDecl>(param, Accessibility::Private,
+      = createDeclWithClangNode<ParamDecl>(param, AccessLevel::Private,
                                            VarDecl::Specifier::Owned,
                                            SourceLoc(), SourceLoc(), name,
                                            importSourceLoc(param->getLocation()),
                                            bodyName,
                                            swiftParamTy,
                                            ImportedHeaderUnit);
-    paramInfo->setInterfaceType(dc->mapTypeOutOfContext(swiftParamTy));
+    paramInfo->setInterfaceType(swiftParamTy->mapTypeOutOfContext());
 
     // Determine whether we have a default argument.
     if (kind == SpecialMethodKind::Regular ||
@@ -2199,7 +2178,7 @@ Type ClangImporter::Implementation::importMethodType(
 
   // Form the function type.
   return FunctionType::get((*bodyParams)->getInterfaceType(SwiftContext),
-                           dc->mapTypeOutOfContext(swiftResultTy), extInfo);
+                           swiftResultTy->mapTypeOutOfContext(), extInfo);
 }
 
 Type ClangImporter::Implementation::importAccessorMethodType(
@@ -2239,7 +2218,7 @@ Type ClangImporter::Implementation::importAccessorMethodType(
   Type resultTy;
   if (isGetter) {
     *params = ParameterList::createEmpty(SwiftContext);
-    resultTy = dc->mapTypeOutOfContext(propertyTy);
+    resultTy = propertyTy->mapTypeOutOfContext();
   } else {
     const clang::ParmVarDecl *param = clangDecl->parameters().front();
     ImportedName fullBodyName = importFullName(param, CurrentVersion);
@@ -2247,14 +2226,14 @@ Type ClangImporter::Implementation::importAccessorMethodType(
     SourceLoc nameLoc = importSourceLoc(param->getLocation());
     Identifier argLabel = functionName.getDeclName().getArgumentNames().front();
     auto paramInfo
-      = createDeclWithClangNode<ParamDecl>(param, Accessibility::Private,
+      = createDeclWithClangNode<ParamDecl>(param, AccessLevel::Private,
                                            VarDecl::Specifier::Owned,
                                            /*let loc*/SourceLoc(),
                                            /*label loc*/SourceLoc(),
                                            argLabel, nameLoc, bodyName,
                                            propertyTy,
                                            /*dummy DC*/ImportedHeaderUnit);
-    paramInfo->setInterfaceType(dc->mapTypeOutOfContext(propertyTy));
+    paramInfo->setInterfaceType(propertyTy->mapTypeOutOfContext());
 
     *params = ParameterList::create(SwiftContext, paramInfo);
     resultTy = SwiftContext.getVoidDecl()->getDeclaredInterfaceType();

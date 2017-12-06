@@ -89,38 +89,34 @@ extension BNNSImageStackDescriptor {
               channels: Int,
               row_stride: Int,
               image_stride: Int,
-              data_type: BNNSDataType,
-              data_scale: Float = 1,
-              data_bias: Float = 0) {
+              data_type: BNNSDataType) {
 
     _precondition(data_type != .indexed8,
                   "Image stacks cannot use the indexed8 data type.")
 
-    self.width = width
-    self.height = height
-    self.channels = channels
-    self.row_stride = row_stride
-    self.image_stride = image_stride
-    self.data_type = data_type
-    self.data_scale = data_scale
-    self.data_bias = data_bias
+    self.init(width: width,
+              height: height,
+              channels: channels,
+              row_stride: row_stride,
+              image_stride: image_stride,
+              data_type: data_type,
+              data_scale: 1,
+              data_bias: 0)
   }
 }
 
 extension BNNSVectorDescriptor {
   ${available(bnns2016)}
   public init(size: Int,
-              data_type: BNNSDataType,
-              data_scale: Float = 1,
-              data_bias: Float = 0) {
+              data_type: BNNSDataType) {
 
     _precondition(data_type != .indexed8,
                   "Vectors cannot use the indexed8 data type.")
 
-    self.size = size
-    self.data_type = data_type
-    self.data_scale = data_scale
-    self.data_bias = data_bias
+    self.init(size: size,
+              data_type: data_type,
+              data_scale: 1,
+              data_bias: 0)
   }
 }
 
@@ -129,24 +125,33 @@ extension BNNSLayerData {
   public init(data: UnsafeRawPointer?,
               data_type: BNNSDataType,
               data_scale: Float = 1,
-              data_bias: Float = 0,
-              data_table: UnsafePointer<Float>? = nil) {
+              data_bias: Float = 0) {
 
-    if data_type == .indexed8 {
-      _precondition(data_table != nil,
-                    "data_table cannot be nil if data_type is .indexed8.")
-    }
+    _precondition(data_type != .indexed8,
+                  "This initializer cannot be used with the indexed8 data type; use BNNSLayerData.indexed8 instead.")
 
-    self.data = data
-    self.data_type = data_type
-    self.data_scale = data_scale
-    self.data_bias = data_bias
-    self.data_table = data_table
+    self.init(data: data,
+              data_type: data_type,
+              data_scale: data_scale,
+              data_bias: data_bias,
+              data_table: nil)
   }
 
   ${available(bnns2016)}
   public static var zero: BNNSLayerData {
     return BNNSLayerData()
+  }
+
+  /// A BNNSLayerData object with the indexed8 data type.
+  ${available(bnns2016)}
+  public static func indexed8(data: UnsafePointer<Int8>?,
+                              data_table: UnsafePointer<Float>)
+                              -> BNNSLayerData {
+    return BNNSLayerData(data: data,
+                         data_type: .indexed8,
+                         data_scale: 1, // unused
+                         data_bias: 0, // unused
+                         data_table: data_table)
   }
 }
 
@@ -162,15 +167,15 @@ extension BNNSActivation {
       _precondition(function != .integerLinearSaturatePerChannel,
                     "This initializer cannot be used with the integerLinearSaturatePerChannel activation function; use BNNSActivation.integerLinearSaturatePerChannel(scale:UnsafePointer<Int32>, offset:UnsafePointer<Int32>, shift:UnsafePointer<Int32>) instead.")
     }
-    self.function = function
-    self.alpha = alpha
-    self.beta = beta
-    iscale = 1                // unused
-    ioffset = 0               // unused
-    ishift = 0                // unused
-    iscale_per_channel = nil  // unused
-    ioffset_per_channel = nil // unused
-    ishift_per_channel = nil  // unused
+    self.init(function: function,
+              alpha: alpha,
+              beta: beta,
+              iscale: 1,                // unused
+              ioffset: 0,               // unused
+              ishift: 0,                // unused
+              iscale_per_channel: nil,  // unused
+              ioffset_per_channel: nil, // unused
+              ishift_per_channel: nil)  // unused
   }
 
   /// A BNNSActivation object that uses the identity activation function.
@@ -231,20 +236,18 @@ extension BNNSConvolutionLayerParameters {
               k_height: Int,
               in_channels: Int,
               out_channels: Int,
-              weights: BNNSLayerData,
-              bias: BNNSLayerData = .zero,
-              activation: BNNSActivation = .identity) {
-    self.x_stride = x_stride
-    self.y_stride = y_stride
-    self.x_padding = x_padding
-    self.y_padding = y_padding
-    self.k_width = k_width
-    self.k_height = k_height
-    self.in_channels = in_channels
-    self.out_channels = out_channels
-    self.weights = weights
-    self.bias = bias
-    self.activation = activation
+              weights: BNNSLayerData) {
+    self.init(x_stride: x_stride,
+              y_stride: y_stride,
+              x_padding: x_padding,
+              y_padding: y_padding,
+              k_width: k_width,
+              k_height: k_height,
+              in_channels: in_channels,
+              out_channels: out_channels,
+              weights: weights,
+              bias: .zero,
+              activation: .identity)
   }
 }
 
@@ -258,20 +261,18 @@ extension BNNSPoolingLayerParameters {
               k_height: Int,
               in_channels: Int,
               out_channels: Int,
-              pooling_function: BNNSPoolingFunction,
-              bias: BNNSLayerData = .zero,
-              activation: BNNSActivation = .identity) {
-    self.x_stride = x_stride
-    self.y_stride = y_stride
-    self.x_padding = x_padding
-    self.y_padding = y_padding
-    self.k_width = k_width
-    self.k_height = k_height
-    self.in_channels = in_channels
-    self.out_channels = out_channels
-    self.pooling_function = pooling_function
-    self.bias = bias
-    self.activation = activation
+              pooling_function: BNNSPoolingFunction) {
+    self.init(x_stride: x_stride,
+              y_stride: y_stride,
+              x_padding: x_padding,
+              y_padding: y_padding,
+              k_width: k_width,
+              k_height: k_height,
+              in_channels: in_channels,
+              out_channels: out_channels,
+              pooling_function: pooling_function,
+              bias: .zero,
+              activation: .identity)
   }
 }
 
@@ -279,13 +280,11 @@ extension BNNSFullyConnectedLayerParameters {
   ${available(bnns2016)}
   public init(in_size: Int,
               out_size: Int,
-              weights: BNNSLayerData,
-              bias: BNNSLayerData = .zero,
-              activation: BNNSActivation = .identity) {
-    self.in_size = in_size
-    self.out_size = out_size
-    self.weights = weights
-    self.bias = bias
-    self.activation = activation
+              weights: BNNSLayerData) {
+    self.init(in_size: in_size,
+              out_size: out_size,
+              weights: weights,
+              bias: .zero,
+              activation: .identity)
   }
 }

@@ -14,15 +14,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "swift/SIL/SILInstruction.h"
 #include "swift/AST/Expr.h"
 #include "swift/AST/ProtocolConformance.h"
-#include "swift/Basic/type_traits.h"
-#include "swift/Basic/Unicode.h"
 #include "swift/Basic/AssertImplements.h"
+#include "swift/Basic/Unicode.h"
+#include "swift/Basic/type_traits.h"
 #include "swift/SIL/FormalLinkage.h"
+#include "swift/SIL/Projection.h"
 #include "swift/SIL/SILBuilder.h"
 #include "swift/SIL/SILCloner.h"
+#include "swift/SIL/SILInstruction.h"
 #include "swift/SIL/SILModule.h"
 #include "swift/SIL/SILVisitor.h"
 #include "llvm/ADT/APInt.h"
@@ -31,6 +32,14 @@
 
 using namespace swift;
 using namespace Lowering;
+
+/// Allocate an instruction that inherits from llvm::TrailingObjects<>.
+template <class Inst, class... TrailingTypes, class... CountTypes>
+static void *allocateTrailingInst(SILFunction &F, CountTypes... counts) {
+  return F.getModule().allocateInst(
+             Inst::template totalSizeToAlloc<TrailingTypes...>(counts...),
+             alignof(Inst));
+}
 
 // Collect used open archetypes from a given type into the \p openedArchetypes.
 // \p openedArchetypes is being used as a set. We don't use a real set type here
@@ -131,8 +140,7 @@ AllocStackInst::AllocStackInst(SILDebugLocation Loc, SILType elementType,
                                ArrayRef<SILValue> TypeDependentOperands,
                                SILFunction &F,
                                SILDebugVariable Var)
-    : AllocationInst(ValueKind::AllocStackInst, Loc,
-                     elementType.getAddressType()),
+    : InstructionBase(Loc, elementType.getAddressType()),
       NumOperands(TypeDependentOperands.size()),
       VarInfo(Var, getTrailingObjects<char>()) {
   TrailingOperandsList::InitOperandsList(getAllOperands().begin(), this,
@@ -159,7 +167,7 @@ VarDecl *AllocStackInst::getDecl() const {
   return getLoc().getAsASTNode<VarDecl>();
 }
 
-AllocRefInstBase::AllocRefInstBase(ValueKind Kind,
+AllocRefInstBase::AllocRefInstBase(SILInstructionKind Kind,
                                    SILDebugLocation Loc,
                                    SILType ObjectType,
                                    bool objc, bool canBeOnStack,
@@ -231,8 +239,7 @@ AllocRefDynamicInst::create(SILDebugLocation DebugLoc, SILFunction &F,
 AllocBoxInst::AllocBoxInst(SILDebugLocation Loc, CanSILBoxType BoxType,
                            ArrayRef<SILValue> TypeDependentOperands,
                            SILFunction &F, SILDebugVariable Var)
-    : AllocationInst(ValueKind::AllocBoxInst, Loc,
-                     SILType::getPrimitiveObjectType(BoxType)),
+    : InstructionBase(Loc, SILType::getPrimitiveObjectType(BoxType)),
       NumOperands(TypeDependentOperands.size()),
       VarInfo(Var, getTrailingObjects<char>()) {
   TrailingOperandsList::InitOperandsList(getAllOperands().begin(), this,
@@ -294,8 +301,7 @@ AllocExistentialBoxInst::AllocExistentialBoxInst(
     SILDebugLocation Loc, SILType ExistentialType, CanType ConcreteType,
     ArrayRef<ProtocolConformanceRef> Conformances,
     ArrayRef<SILValue> TypeDependentOperands, SILFunction *Parent)
-    : AllocationInst(ValueKind::AllocExistentialBoxInst, Loc,
-                     ExistentialType.getObjectType()),
+    : InstructionBase(Loc, ExistentialType.getObjectType()),
       NumOperands(TypeDependentOperands.size()),
       ConcreteType(ConcreteType), Conformances(Conformances) {
   TrailingOperandsList::InitOperandsList(getAllOperands().begin(), this,
@@ -361,8 +367,8 @@ BuiltinInst *BuiltinInst::create(SILDebugLocation Loc, Identifier Name,
                                  SILType ReturnType,
                                  SubstitutionList Substitutions,
                                  ArrayRef<SILValue> Args,
-                                 SILFunction &F) {
-  void *Buffer = F.getModule().allocateInst(
+                                 SILModule &M) {
+  void *Buffer = M.allocateInst(
                               sizeof(BuiltinInst)
                                 + decltype(Operands)::getExtraSize(Args.size())
                                 + sizeof(Substitution) * Substitutions.size(),
@@ -374,7 +380,7 @@ BuiltinInst *BuiltinInst::create(SILDebugLocation Loc, Identifier Name,
 BuiltinInst::BuiltinInst(SILDebugLocation Loc, Identifier Name,
                          SILType ReturnType, SubstitutionList Subs,
                          ArrayRef<SILValue> Args)
-    : SILInstruction(ValueKind::BuiltinInst, Loc, ReturnType), Name(Name),
+    : InstructionBase(Loc, ReturnType), Name(Name),
       NumSubstitutions(Subs.size()), Operands(this, Args) {
   static_assert(IsTriviallyCopyable<Substitution>::value,
                 "assuming Substitution is trivially copyable");
@@ -402,9 +408,10 @@ ApplyInst::ApplyInst(SILDebugLocation Loc, SILValue Callee,
                      ArrayRef<SILValue> Args, ArrayRef<SILValue> TypeDependentOperands,
                      bool isNonThrowing,
                      const GenericSpecializationInformation *SpecializationInfo)
-    : ApplyInstBase(ValueKind::ApplyInst, Loc, Callee, SubstCalleeTy, Subs,
-                    Args, TypeDependentOperands, SpecializationInfo, Result) {
+    : InstructionBase(Loc, Callee, SubstCalleeTy, Subs, Args,
+                      TypeDependentOperands, SpecializationInfo, Result) {
   setNonThrowing(isNonThrowing);
+  assert(!SubstCalleeTy.castTo<SILFunctionType>()->isCoroutine());
 }
 
 ApplyInst *
@@ -425,11 +432,75 @@ ApplyInst::create(SILDebugLocation Loc, SILValue Callee, SubstitutionList Subs,
   SmallVector<SILValue, 32> TypeDependentOperands;
   collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, F,
                                SubstCalleeSILTy.getSwiftRValueType(), Subs);
-  void *Buffer = allocate(F, Subs, TypeDependentOperands, Args);
+  void *Buffer =
+    allocateTrailingInst<ApplyInst, Operand, Substitution>(
+      F, getNumAllOperands(Args, TypeDependentOperands), Subs.size());
   return ::new(Buffer) ApplyInst(Loc, Callee, SubstCalleeSILTy,
                                  Result, Subs, Args,
                                  TypeDependentOperands, isNonThrowing,
                                  SpecializationInfo);
+}
+
+BeginApplyInst::BeginApplyInst(SILDebugLocation loc, SILValue callee,
+                               SILType substCalleeTy,
+                               ArrayRef<SILType> allResultTypes,
+                               ArrayRef<ValueOwnershipKind> allResultOwnerships,
+                               SubstitutionList subs,
+                               ArrayRef<SILValue> args,
+                               ArrayRef<SILValue> typeDependentOperands,
+                               bool isNonThrowing,
+                     const GenericSpecializationInformation *specializationInfo)
+    : InstructionBase(loc, callee, substCalleeTy, subs, args,
+                      typeDependentOperands, specializationInfo),
+      MultipleValueInstructionTrailingObjects(this, allResultTypes,
+                                              allResultOwnerships) {
+  setNonThrowing(isNonThrowing);
+  assert(substCalleeTy.castTo<SILFunctionType>()->isCoroutine());
+}
+
+BeginApplyInst *
+BeginApplyInst::create(SILDebugLocation loc, SILValue callee,
+                       SubstitutionList subs, ArrayRef<SILValue> args,
+                       bool isNonThrowing,
+                       Optional<SILModuleConventions> moduleConventions,
+                       SILFunction &F,
+                       SILOpenedArchetypesState &openedArchetypes,
+                  const GenericSpecializationInformation *specializationInfo) {
+  SILType substCalleeSILType =
+      callee->getType().substGenericArgs(F.getModule(), subs);
+  auto substCalleeType = substCalleeSILType.castTo<SILFunctionType>();
+
+  SILFunctionConventions conv(substCalleeType,
+                              moduleConventions.hasValue()
+                                  ? moduleConventions.getValue()
+                                  : SILModuleConventions(F.getModule()));
+
+  SmallVector<SILType, 8> resultTypes;
+  SmallVector<ValueOwnershipKind, 8> resultOwnerships;
+
+  for (auto &yield : substCalleeType->getYields()) {
+    auto yieldType = conv.getSILType(yield);
+    auto convention = SILArgumentConvention(yield.getConvention());
+    resultTypes.push_back(yieldType);
+    resultOwnerships.push_back(
+      ValueOwnershipKind(F.getModule(), yieldType, convention));
+  }
+
+  resultTypes.push_back(SILType::getSILTokenType(F.getASTContext()));
+  resultOwnerships.push_back(ValueOwnershipKind::Trivial);
+
+  SmallVector<SILValue, 32> typeDependentOperands;
+  collectTypeDependentOperands(typeDependentOperands, openedArchetypes, F,
+                               substCalleeType, subs);
+  void *buffer =
+    allocateTrailingInst<BeginApplyInst, Operand, Substitution,
+                         MultipleValueInstruction*, BeginApplyResult>(
+      F, getNumAllOperands(args, typeDependentOperands), subs.size(),
+      1, resultTypes.size());
+  return ::new(buffer) BeginApplyInst(loc, callee, substCalleeSILType,
+                                      resultTypes, resultOwnerships, subs,
+                                      args, typeDependentOperands,
+                                      isNonThrowing, specializationInfo);
 }
 
 bool swift::doesApplyCalleeHaveSemantics(SILValue callee, StringRef semantics) {
@@ -437,10 +508,6 @@ bool swift::doesApplyCalleeHaveSemantics(SILValue callee, StringRef semantics) {
     if (auto *F = FRI->getReferencedFunction())
       return F->hasSemanticsAttr(semantics);
   return false;
-}
-
-void *swift::allocateApplyInst(SILFunction &F, size_t size, size_t alignment) {
-  return F.getModule().allocateInst(size, alignment);
 }
 
 PartialApplyInst::PartialApplyInst(
@@ -452,9 +519,9 @@ PartialApplyInst::PartialApplyInst(
     // PartialApplyInst
     // should derive the type of its result by partially applying the callee's
     // type.
-    : ApplyInstBase(ValueKind::PartialApplyInst, Loc, Callee, SubstCalleeTy,
-                    Subs, Args, TypeDependentOperands, SpecializationInfo,
-                    ClosureType) {}
+    : InstructionBase(Loc, Callee, SubstCalleeTy, Subs,
+                      Args, TypeDependentOperands, SpecializationInfo,
+                      ClosureType) {}
 
 PartialApplyInst *PartialApplyInst::create(
     SILDebugLocation Loc, SILValue Callee, ArrayRef<SILValue> Args,
@@ -469,17 +536,20 @@ PartialApplyInst *PartialApplyInst::create(
   SmallVector<SILValue, 32> TypeDependentOperands;
   collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, F,
                                SubstCalleeTy.getSwiftRValueType(), Subs);
-  void *Buffer = allocate(F, Subs, TypeDependentOperands, Args);
+  void *Buffer =
+    allocateTrailingInst<PartialApplyInst, Operand, Substitution>(
+      F, getNumAllOperands(Args, TypeDependentOperands), Subs.size());
   return ::new(Buffer) PartialApplyInst(Loc, Callee, SubstCalleeTy,
                                         Subs, Args,
                                         TypeDependentOperands, ClosureType,
                                         SpecializationInfo);
 }
 
-TryApplyInstBase::TryApplyInstBase(ValueKind valueKind, SILDebugLocation Loc,
+TryApplyInstBase::TryApplyInstBase(SILInstructionKind kind,
+                                   SILDebugLocation loc,
                                    SILBasicBlock *normalBB,
                                    SILBasicBlock *errorBB)
-    : TermInst(valueKind, Loc), DestBBs{{this, normalBB}, {this, errorBB}} {}
+    : TermInst(kind, loc), DestBBs{{this, normalBB}, {this, errorBB}} {}
 
 TryApplyInst::TryApplyInst(
     SILDebugLocation Loc, SILValue callee, SILType substCalleeTy,
@@ -487,29 +557,31 @@ TryApplyInst::TryApplyInst(
     ArrayRef<SILValue> TypeDependentOperands, SILBasicBlock *normalBB,
     SILBasicBlock *errorBB,
     const GenericSpecializationInformation *SpecializationInfo)
-    : ApplyInstBase(ValueKind::TryApplyInst, Loc, callee, substCalleeTy, subs,
-                    args, TypeDependentOperands, SpecializationInfo, normalBB,
-                    errorBB) {}
+    : InstructionBase(Loc, callee, substCalleeTy, subs, args,
+                      TypeDependentOperands, SpecializationInfo, normalBB,
+                      errorBB) {}
 
 TryApplyInst *TryApplyInst::create(
-    SILDebugLocation Loc, SILValue callee, SubstitutionList subs,
+    SILDebugLocation loc, SILValue callee, SubstitutionList subs,
     ArrayRef<SILValue> args, SILBasicBlock *normalBB, SILBasicBlock *errorBB,
-    SILFunction &F, SILOpenedArchetypesState &OpenedArchetypes,
-    const GenericSpecializationInformation *SpecializationInfo) {
+    SILFunction &F, SILOpenedArchetypesState &openedArchetypes,
+    const GenericSpecializationInformation *specializationInfo) {
   SILType substCalleeTy =
       callee->getType().substGenericArgs(F.getModule(), subs);
 
-  SmallVector<SILValue, 32> TypeDependentOperands;
-  collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, F,
+  SmallVector<SILValue, 32> typeDependentOperands;
+  collectTypeDependentOperands(typeDependentOperands, openedArchetypes, F,
                                substCalleeTy.getSwiftRValueType(), subs);
-  void *buffer = allocate(F, subs, TypeDependentOperands, args);
-  return ::new (buffer) TryApplyInst(Loc, callee, substCalleeTy, subs, args,
-                                     TypeDependentOperands,
-                                     normalBB, errorBB, SpecializationInfo);
+  void *buffer =
+    allocateTrailingInst<TryApplyInst, Operand, Substitution>(
+      F, getNumAllOperands(args, typeDependentOperands), subs.size());
+  return ::new (buffer) TryApplyInst(loc, callee, substCalleeTy, subs, args,
+                                     typeDependentOperands,
+                                     normalBB, errorBB, specializationInfo);
 }
 
 FunctionRefInst::FunctionRefInst(SILDebugLocation Loc, SILFunction *F)
-    : LiteralInst(ValueKind::FunctionRefInst, Loc, F->getLoweredType()),
+    : InstructionBase(Loc, F->getLoweredType()),
       Function(F) {
   F->incrementRefCount();
 }
@@ -527,20 +599,19 @@ void FunctionRefInst::dropReferencedFunction() {
 
 AllocGlobalInst::AllocGlobalInst(SILDebugLocation Loc,
                                  SILGlobalVariable *Global)
-    : SILInstruction(ValueKind::AllocGlobalInst, Loc),
+    : InstructionBase(Loc),
       Global(Global) {}
 
-AllocGlobalInst::AllocGlobalInst(SILDebugLocation Loc)
-    : SILInstruction(ValueKind::AllocGlobalInst, Loc) {}
-
-GlobalAddrInst::GlobalAddrInst(SILDebugLocation Loc,
+GlobalAddrInst::GlobalAddrInst(SILDebugLocation DebugLoc,
                                SILGlobalVariable *Global)
-    : LiteralInst(ValueKind::GlobalAddrInst, Loc,
-              Global->getLoweredType().getAddressType()),
-      Global(Global) {}
+    : InstructionBase(DebugLoc, Global->getLoweredType().getAddressType(),
+                      Global) {}
 
-GlobalAddrInst::GlobalAddrInst(SILDebugLocation Loc, SILType Ty)
-    : LiteralInst(ValueKind::GlobalAddrInst, Loc, Ty), Global(nullptr) {}
+GlobalValueInst::GlobalValueInst(SILDebugLocation DebugLoc,
+                                 SILGlobalVariable *Global)
+    : InstructionBase(DebugLoc, Global->getLoweredType().getObjectType(),
+                      Global) {}
+
 
 const IntrinsicInfo &BuiltinInst::getIntrinsicInfo() const {
   return getModule().getIntrinsicInfo(getName());
@@ -556,20 +627,20 @@ static unsigned getWordsForBitWidth(unsigned bits) {
 }
 
 template<typename INST>
-static void *allocateLiteralInstWithTextSize(SILFunction &F, unsigned length) {
-  return F.getModule().allocateInst(sizeof(INST) + length, alignof(INST));
+static void *allocateLiteralInstWithTextSize(SILModule &M, unsigned length) {
+  return M.allocateInst(sizeof(INST) + length, alignof(INST));
 }
 
 template<typename INST>
-static void *allocateLiteralInstWithBitSize(SILFunction &F, unsigned bits) {
+static void *allocateLiteralInstWithBitSize(SILModule &M, unsigned bits) {
   unsigned words = getWordsForBitWidth(bits);
-  return F.getModule().allocateInst(
+  return M.allocateInst(
       sizeof(INST) + sizeof(llvm::APInt::WordType)*words, alignof(INST));
 }
 
 IntegerLiteralInst::IntegerLiteralInst(SILDebugLocation Loc, SILType Ty,
                                        const llvm::APInt &Value)
-    : LiteralInst(ValueKind::IntegerLiteralInst, Loc, Ty),
+    : InstructionBase(Loc, Ty),
       numBits(Value.getBitWidth()) {
   std::uninitialized_copy_n(Value.getRawData(), Value.getNumWords(),
                             getTrailingObjects<llvm::APInt::WordType>());
@@ -577,33 +648,33 @@ IntegerLiteralInst::IntegerLiteralInst(SILDebugLocation Loc, SILType Ty,
 
 IntegerLiteralInst *IntegerLiteralInst::create(SILDebugLocation Loc,
                                                SILType Ty, const APInt &Value,
-                                               SILFunction &B) {
+                                               SILModule &M) {
   auto intTy = Ty.castTo<BuiltinIntegerType>();
   assert(intTy->getGreatestWidth() == Value.getBitWidth() &&
          "IntegerLiteralInst APInt value's bit width doesn't match type");
   (void)intTy;
 
-  void *buf = allocateLiteralInstWithBitSize<IntegerLiteralInst>(B,
+  void *buf = allocateLiteralInstWithBitSize<IntegerLiteralInst>(M,
                                                           Value.getBitWidth());
   return ::new (buf) IntegerLiteralInst(Loc, Ty, Value);
 }
 
 IntegerLiteralInst *IntegerLiteralInst::create(SILDebugLocation Loc,
                                                SILType Ty, intmax_t Value,
-                                               SILFunction &B) {
+                                               SILModule &M) {
   auto intTy = Ty.castTo<BuiltinIntegerType>();
   return create(Loc, Ty,
-                APInt(intTy->getGreatestWidth(), Value), B);
+                APInt(intTy->getGreatestWidth(), Value), M);
 }
 
 IntegerLiteralInst *IntegerLiteralInst::create(IntegerLiteralExpr *E,
                                                SILDebugLocation Loc,
-                                               SILFunction &F) {
+                                               SILModule &M) {
   return create(
       Loc, SILType::getBuiltinIntegerType(
                E->getType()->castTo<BuiltinIntegerType>()->getGreatestWidth(),
-               F.getASTContext()),
-      E->getValue(), F);
+               M.getASTContext()),
+      E->getValue(), M);
 }
 
 /// getValue - Return the APInt for the underlying integer literal.
@@ -614,7 +685,7 @@ APInt IntegerLiteralInst::getValue() const {
 
 FloatLiteralInst::FloatLiteralInst(SILDebugLocation Loc, SILType Ty,
                                    const APInt &Bits)
-    : LiteralInst(ValueKind::FloatLiteralInst, Loc, Ty),
+    : InstructionBase(Loc, Ty),
       numBits(Bits.getBitWidth()) {
         std::uninitialized_copy_n(Bits.getRawData(), Bits.getNumWords(),
                                   getTrailingObjects<llvm::APInt::WordType>());
@@ -622,7 +693,7 @@ FloatLiteralInst::FloatLiteralInst(SILDebugLocation Loc, SILType Ty,
 
 FloatLiteralInst *FloatLiteralInst::create(SILDebugLocation Loc, SILType Ty,
                                            const APFloat &Value,
-                                           SILFunction &B) {
+                                           SILModule &M) {
   auto floatTy = Ty.castTo<BuiltinFloatType>();
   assert(&floatTy->getAPFloatSemantics() == &Value.getSemantics() &&
          "FloatLiteralInst value's APFloat semantics do not match type");
@@ -630,20 +701,20 @@ FloatLiteralInst *FloatLiteralInst::create(SILDebugLocation Loc, SILType Ty,
 
   APInt Bits = Value.bitcastToAPInt();
 
-  void *buf = allocateLiteralInstWithBitSize<FloatLiteralInst>(B,
+  void *buf = allocateLiteralInstWithBitSize<FloatLiteralInst>(M,
                                                             Bits.getBitWidth());
   return ::new (buf) FloatLiteralInst(Loc, Ty, Bits);
 }
 
 FloatLiteralInst *FloatLiteralInst::create(FloatLiteralExpr *E,
                                            SILDebugLocation Loc,
-                                           SILFunction &F) {
+                                           SILModule &M) {
   return create(Loc,
                 // Builtin floating-point types are always valid SIL types.
                 SILType::getBuiltinFloatType(
                     E->getType()->castTo<BuiltinFloatType>()->getFPKind(),
-                    F.getASTContext()),
-                E->getValue(), F);
+                    M.getASTContext()),
+                E->getValue(), M);
 }
 
 APInt FloatLiteralInst::getBits() const {
@@ -658,18 +729,18 @@ APFloat FloatLiteralInst::getValue() const {
 
 StringLiteralInst::StringLiteralInst(SILDebugLocation Loc, StringRef Text,
                                      Encoding encoding, SILType Ty)
-    : LiteralInst(ValueKind::StringLiteralInst, Loc, Ty), Length(Text.size()),
+    : InstructionBase(Loc, Ty), Length(Text.size()),
       TheEncoding(encoding) {
   memcpy(getTrailingObjects<char>(), Text.data(), Text.size());
 }
 
 StringLiteralInst *StringLiteralInst::create(SILDebugLocation Loc,
                                              StringRef text, Encoding encoding,
-                                             SILFunction &F) {
+                                             SILModule &M) {
   void *buf
-    = allocateLiteralInstWithTextSize<StringLiteralInst>(F, text.size());
+    = allocateLiteralInstWithTextSize<StringLiteralInst>(M, text.size());
 
-  auto Ty = SILType::getRawPointerType(F.getModule().getASTContext());
+  auto Ty = SILType::getRawPointerType(M.getASTContext());
   return ::new (buf) StringLiteralInst(Loc, text, encoding, Ty);
 }
 
@@ -682,7 +753,7 @@ uint64_t StringLiteralInst::getCodeUnitCount() {
 ConstStringLiteralInst::ConstStringLiteralInst(SILDebugLocation Loc,
                                                StringRef Text,
                                                Encoding encoding, SILType Ty)
-    : LiteralInst(ValueKind::ConstStringLiteralInst, Loc, Ty),
+    : InstructionBase(Loc, Ty),
       Length(Text.size()), TheEncoding(encoding) {
   memcpy(getTrailingObjects<char>(), Text.data(), Text.size());
 }
@@ -690,11 +761,11 @@ ConstStringLiteralInst::ConstStringLiteralInst(SILDebugLocation Loc,
 ConstStringLiteralInst *ConstStringLiteralInst::create(SILDebugLocation Loc,
                                                        StringRef text,
                                                        Encoding encoding,
-                                                       SILFunction &F) {
+                                                       SILModule &M) {
   void *buf =
-      allocateLiteralInstWithTextSize<ConstStringLiteralInst>(F, text.size());
+      allocateLiteralInstWithTextSize<ConstStringLiteralInst>(M, text.size());
 
-  auto Ty = SILType::getRawPointerType(F.getModule().getASTContext());
+  auto Ty = SILType::getRawPointerType(M.getASTContext());
   return ::new (buf) ConstStringLiteralInst(Loc, text, encoding, Ty);
 }
 
@@ -707,17 +778,17 @@ uint64_t ConstStringLiteralInst::getCodeUnitCount() {
 StoreInst::StoreInst(
     SILDebugLocation Loc, SILValue Src, SILValue Dest,
     StoreOwnershipQualifier Qualifier = StoreOwnershipQualifier::Unqualified)
-    : SILInstruction(ValueKind::StoreInst, Loc), Operands(this, Src, Dest),
+    : InstructionBase(Loc), Operands(this, Src, Dest),
       OwnershipQualifier(Qualifier) {}
 
 StoreBorrowInst::StoreBorrowInst(SILDebugLocation DebugLoc, SILValue Src,
                                  SILValue Dest)
-    : SILInstruction(ValueKind::StoreBorrowInst, DebugLoc, Dest->getType()),
+    : InstructionBase(DebugLoc, Dest->getType()),
       Operands(this, Src, Dest) {}
 
 EndBorrowInst::EndBorrowInst(SILDebugLocation DebugLoc, SILValue Src,
                              SILValue Dest)
-    : SILInstruction(ValueKind::EndBorrowInst, DebugLoc),
+    : InstructionBase(DebugLoc),
       Operands(this, Src, Dest) {}
 
 EndBorrowArgumentInst::EndBorrowArgumentInst(SILDebugLocation DebugLoc,
@@ -745,7 +816,7 @@ StringRef swift::getSILAccessEnforcementName(SILAccessEnforcement enforcement) {
 }
 
 AssignInst::AssignInst(SILDebugLocation Loc, SILValue Src, SILValue Dest)
-    : SILInstruction(ValueKind::AssignInst, Loc), Operands(this, Src, Dest) {}
+    : InstructionBase(Loc), Operands(this, Src, Dest) {}
 
 MarkFunctionEscapeInst *
 MarkFunctionEscapeInst::create(SILDebugLocation Loc,
@@ -758,7 +829,7 @@ MarkFunctionEscapeInst::create(SILDebugLocation Loc,
 
 MarkFunctionEscapeInst::MarkFunctionEscapeInst(SILDebugLocation Loc,
                                                ArrayRef<SILValue> Elems)
-    : SILInstruction(ValueKind::MarkFunctionEscapeInst, Loc),
+    : InstructionBase(Loc),
       Operands(this, Elems) {}
 
 static SILType getPinResultType(SILType operandType) {
@@ -775,7 +846,7 @@ StrongPinInst::StrongPinInst(SILDebugLocation Loc, SILValue operand,
 CopyAddrInst::CopyAddrInst(SILDebugLocation Loc, SILValue SrcLValue,
                            SILValue DestLValue, IsTake_t isTakeOfSrc,
                            IsInitialization_t isInitializationOfDest)
-    : SILInstruction(ValueKind::CopyAddrInst, Loc), IsTakeOfSrc(isTakeOfSrc),
+    : InstructionBase(Loc), IsTakeOfSrc(isTakeOfSrc),
       IsInitializationOfDest(isInitializationOfDest),
       Operands(this, SrcLValue, DestLValue) {}
 
@@ -798,7 +869,7 @@ BindMemoryInst::BindMemoryInst(SILDebugLocation Loc, SILValue Base,
                                SILValue Index,
                                SILType BoundType,
                                ArrayRef<SILValue> TypeDependentOperands)
-  : SILInstruction(ValueKind::BindMemoryInst, Loc),
+  : InstructionBase(Loc),
     BoundType(BoundType),
     NumOperands(NumFixedOpers + TypeDependentOperands.size()) {
   TrailingOperandsList::InitOperandsList(getAllOperands().begin(), this,
@@ -810,19 +881,18 @@ UncheckedRefCastAddrInst::UncheckedRefCastAddrInst(SILDebugLocation Loc,
                                                    CanType srcType,
                                                    SILValue dest,
                                                    CanType targetType)
-    : SILInstruction(ValueKind::UncheckedRefCastAddrInst, Loc),
+    : InstructionBase(Loc),
       Operands(this, src, dest), SourceType(srcType), TargetType(targetType) {}
 
 UnconditionalCheckedCastAddrInst::UnconditionalCheckedCastAddrInst(
-    SILDebugLocation Loc, CastConsumptionKind consumption, SILValue src,
-    CanType srcType, SILValue dest, CanType targetType)
-    : SILInstruction(ValueKind::UnconditionalCheckedCastAddrInst, Loc),
-      Operands(this, src, dest), ConsumptionKind(consumption),
-      SourceType(srcType), TargetType(targetType) {}
+    SILDebugLocation Loc, SILValue src, CanType srcType, SILValue dest,
+    CanType targetType)
+    : InstructionBase(Loc),
+      Operands(this, src, dest), SourceType(srcType), TargetType(targetType) {}
 
 StructInst *StructInst::create(SILDebugLocation Loc, SILType Ty,
-                               ArrayRef<SILValue> Elements, SILFunction &F) {
-  void *Buffer = F.getModule().allocateInst(sizeof(StructInst) +
+                               ArrayRef<SILValue> Elements, SILModule &M) {
+  void *Buffer = M.allocateInst(sizeof(StructInst) +
                             decltype(Operands)::getExtraSize(Elements.size()),
                             alignof(StructInst));
   return ::new(Buffer) StructInst(Loc, Ty, Elements);
@@ -830,13 +900,27 @@ StructInst *StructInst::create(SILDebugLocation Loc, SILType Ty,
 
 StructInst::StructInst(SILDebugLocation Loc, SILType Ty,
                        ArrayRef<SILValue> Elems)
-    : SILInstruction(ValueKind::StructInst, Loc, Ty), Operands(this, Elems) {
+    : InstructionBase(Loc, Ty), Operands(this, Elems) {
   assert(!Ty.getStructOrBoundGenericStruct()->hasUnreferenceableStorage());
 }
 
+ObjectInst *ObjectInst::create(SILDebugLocation Loc, SILType Ty,
+                               ArrayRef<SILValue> Elements,
+                               unsigned NumBaseElements, SILModule &M) {
+  void *Buffer = M.allocateInst(sizeof(ObjectInst) +
+                            decltype(Operands)::getExtraSize(Elements.size()),
+                            alignof(ObjectInst));
+  return ::new(Buffer) ObjectInst(Loc, Ty, Elements, NumBaseElements);
+}
+
+ObjectInst::ObjectInst(SILDebugLocation Loc, SILType Ty,
+                       ArrayRef<SILValue> Elems, unsigned NumBaseElements)
+    : InstructionBase(Loc, Ty),
+      NumBaseElements(NumBaseElements), Operands(this, Elems) {}
+
 TupleInst *TupleInst::create(SILDebugLocation Loc, SILType Ty,
-                             ArrayRef<SILValue> Elements, SILFunction &F) {
-  void *Buffer = F.getModule().allocateInst(sizeof(TupleInst) +
+                             ArrayRef<SILValue> Elements, SILModule &M) {
+  void *Buffer = M.allocateInst(sizeof(TupleInst) +
                             decltype(Operands)::getExtraSize(Elements.size()),
                             alignof(TupleInst));
   return ::new(Buffer) TupleInst(Loc, Ty, Elements);
@@ -844,11 +928,11 @@ TupleInst *TupleInst::create(SILDebugLocation Loc, SILType Ty,
 
 TupleInst::TupleInst(SILDebugLocation Loc, SILType Ty,
                      ArrayRef<SILValue> Elems)
-    : SILInstruction(ValueKind::TupleInst, Loc, Ty), Operands(this, Elems) {}
+    : InstructionBase(Loc, Ty), Operands(this, Elems) {}
 
 MetatypeInst::MetatypeInst(SILDebugLocation Loc, SILType Metatype,
                            ArrayRef<SILValue> TypeDependentOperands)
-    : SILInstruction(ValueKind::MetatypeInst, Loc, Metatype),
+    : InstructionBase(Loc, Metatype),
       NumOperands(TypeDependentOperands.size()) {
   TrailingOperandsList::InitOperandsList(getAllOperands().begin(), this,
                                          TypeDependentOperands);
@@ -1023,39 +1107,58 @@ bool StructExtractInst::isFieldOnlyNonTrivialField() const {
 
 
 TermInst::SuccessorListTy TermInst::getSuccessors() {
-#define TERMINATOR(TYPE, PARENT, TEXTUALNAME, EFFECT, RELEASING)               \
-  if (auto I = dyn_cast<TYPE>(this))                                           \
-    return I->getSuccessors();
+  switch (getKind()) {
+#define TERMINATOR(ID, NAME, PARENT, MEMBEHAVIOR, MAYRELEASE) \
+  case SILInstructionKind::ID: return cast<ID>(this)->getSuccessors();
 #include "swift/SIL/SILNodes.def"
-
-  llvm_unreachable("not a terminator?!");
+  default: llvm_unreachable("not a terminator");
+  }
+  llvm_unreachable("bad instruction kind");
 }
 
 bool TermInst::isFunctionExiting() const {
   switch (getTermKind()) {
-    case TermKind::BranchInst:
-    case TermKind::CondBranchInst:
-    case TermKind::SwitchValueInst:
-    case TermKind::SwitchEnumInst:
-    case TermKind::SwitchEnumAddrInst:
-    case TermKind::DynamicMethodBranchInst:
-    case TermKind::CheckedCastBranchInst:
-    case TermKind::CheckedCastValueBranchInst:
-    case TermKind::CheckedCastAddrBranchInst:
-    case TermKind::UnreachableInst:
-    case TermKind::TryApplyInst:
-      return false;
-    case TermKind::ReturnInst:
-    case TermKind::ThrowInst:
-      return true;
+  case TermKind::BranchInst:
+  case TermKind::CondBranchInst:
+  case TermKind::SwitchValueInst:
+  case TermKind::SwitchEnumInst:
+  case TermKind::SwitchEnumAddrInst:
+  case TermKind::DynamicMethodBranchInst:
+  case TermKind::CheckedCastBranchInst:
+  case TermKind::CheckedCastValueBranchInst:
+  case TermKind::CheckedCastAddrBranchInst:
+  case TermKind::UnreachableInst:
+  case TermKind::TryApplyInst:
+  case TermKind::YieldInst:
+    return false;
+  case TermKind::ReturnInst:
+  case TermKind::ThrowInst:
+  case TermKind::UnwindInst:
+    return true;
   }
 
   llvm_unreachable("Unhandled TermKind in switch.");
 }
 
+YieldInst::YieldInst(SILDebugLocation loc, ArrayRef<SILValue> yieldedValues,
+                     SILBasicBlock *normalBB, SILBasicBlock *unwindBB)
+  : InstructionBase(loc),
+    DestBBs{{this, normalBB}, {this, unwindBB}},
+    Operands(this, yieldedValues) {}
+
+YieldInst *YieldInst::create(SILDebugLocation loc,
+                             ArrayRef<SILValue> yieldedValues,
+                             SILBasicBlock *normalBB, SILBasicBlock *unwindBB,
+                             SILFunction &F) {
+  void *buffer = F.getModule().allocateInst(sizeof(YieldInst) +
+                        decltype(Operands)::getExtraSize(yieldedValues.size()),
+                                            alignof(YieldInst));
+  return ::new (buffer) YieldInst(loc, yieldedValues, normalBB, unwindBB);
+}
+
 BranchInst::BranchInst(SILDebugLocation Loc, SILBasicBlock *DestBB,
                        ArrayRef<SILValue> Args)
-    : TermInst(ValueKind::BranchInst, Loc), DestBB(this, DestBB),
+    : InstructionBase(Loc), DestBB(this, DestBB),
       Operands(this, Args) {}
 
 BranchInst *BranchInst::create(SILDebugLocation Loc, SILBasicBlock *DestBB,
@@ -1075,26 +1178,32 @@ BranchInst *BranchInst::create(SILDebugLocation Loc,
 CondBranchInst::CondBranchInst(SILDebugLocation Loc, SILValue Condition,
                                SILBasicBlock *TrueBB, SILBasicBlock *FalseBB,
                                ArrayRef<SILValue> Args, unsigned NumTrue,
-                               unsigned NumFalse)
-    : TermInst(ValueKind::CondBranchInst, Loc),
-      DestBBs{{this, TrueBB}, {this, FalseBB}}, NumTrueArgs(NumTrue),
-      NumFalseArgs(NumFalse), Operands(this, Args, Condition) {
+                               unsigned NumFalse, ProfileCounter TrueBBCount,
+                               ProfileCounter FalseBBCount)
+    : InstructionBase(Loc), DestBBs{{this, TrueBB, TrueBBCount},
+                                    {this, FalseBB, FalseBBCount}},
+      NumTrueArgs(NumTrue), NumFalseArgs(NumFalse),
+      Operands(this, Args, Condition) {
   assert(Args.size() == (NumTrueArgs + NumFalseArgs) &&
          "Invalid number of args");
   assert(TrueBB != FalseBB && "Identical destinations");
 }
 
-CondBranchInst *CondBranchInst::create(SILDebugLocation Loc,
-                                       SILValue Condition,
+CondBranchInst *CondBranchInst::create(SILDebugLocation Loc, SILValue Condition,
                                        SILBasicBlock *TrueBB,
-                                       SILBasicBlock *FalseBB, SILFunction &F) {
-  return create(Loc, Condition, TrueBB, {}, FalseBB, {}, F);
+                                       SILBasicBlock *FalseBB,
+                                       ProfileCounter TrueBBCount,
+                                       ProfileCounter FalseBBCount,
+                                       SILFunction &F) {
+  return create(Loc, Condition, TrueBB, {}, FalseBB, {}, TrueBBCount,
+                FalseBBCount, F);
 }
 
 CondBranchInst *
 CondBranchInst::create(SILDebugLocation Loc, SILValue Condition,
                        SILBasicBlock *TrueBB, ArrayRef<SILValue> TrueArgs,
                        SILBasicBlock *FalseBB, ArrayRef<SILValue> FalseArgs,
+                       ProfileCounter TrueBBCount, ProfileCounter FalseBBCount,
                        SILFunction &F) {
   SmallVector<SILValue, 4> Args;
   Args.append(TrueArgs.begin(), TrueArgs.end());
@@ -1104,7 +1213,8 @@ CondBranchInst::create(SILDebugLocation Loc, SILValue Condition,
                               decltype(Operands)::getExtraSize(Args.size()),
                             alignof(CondBranchInst));
   return ::new (Buffer) CondBranchInst(Loc, Condition, TrueBB, FalseBB, Args,
-                                       TrueArgs.size(), FalseArgs.size());
+                                       TrueArgs.size(), FalseArgs.size(),
+                                       TrueBBCount, FalseBBCount);
 }
 
 OperandValueArrayRef CondBranchInst::getTrueArgs() const {
@@ -1194,7 +1304,7 @@ SwitchValueInst::SwitchValueInst(SILDebugLocation Loc, SILValue Operand,
                                  SILBasicBlock *DefaultBB,
                                  ArrayRef<SILValue> Cases,
                                  ArrayRef<SILBasicBlock *> BBs)
-    : TermInst(ValueKind::SwitchValueInst, Loc), NumCases(Cases.size()),
+    : InstructionBase(Loc), NumCases(Cases.size()),
       HasDefault(bool(DefaultBB)), Operands(this, Cases, Operand) {
 
   // Initialize the successor array.
@@ -1266,9 +1376,9 @@ SwitchValueInst *SwitchValueInst::create(
 SelectValueInst::SelectValueInst(SILDebugLocation Loc, SILValue Operand,
                                  SILType Type, SILValue DefaultResult,
                                  ArrayRef<SILValue> CaseValuesAndResults)
-    : SelectInstBase(ValueKind::SelectValueInst, Loc, Type,
-                     CaseValuesAndResults.size() / 2, bool(DefaultResult),
-                     CaseValuesAndResults, Operand) {
+    : InstructionBase(Loc, Type,
+                      CaseValuesAndResults.size() / 2, bool(DefaultResult),
+                      CaseValuesAndResults, Operand) {
 
   unsigned OperandBitWidth = 0;
 
@@ -1318,9 +1428,10 @@ getCaseOperands(ArrayRef<std::pair<EnumElementDecl*, SILValue>> CaseValues,
 }
 
 SelectEnumInstBase::SelectEnumInstBase(
-    ValueKind Kind, SILDebugLocation Loc, SILValue Operand, SILType Ty,
+    SILInstructionKind Kind, SILDebugLocation Loc, SILType Ty, SILValue Operand,
     SILValue DefaultValue,
-    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues)
+    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues,
+    Optional<ArrayRef<ProfileCounter>> CaseCounts, ProfileCounter DefaultCount)
     : SelectInstBase(Kind, Loc, Ty, CaseValues.size(), bool(DefaultValue),
                      getCaseOperands(CaseValues, DefaultValue), Operand) {
   // Initialize the case and successor arrays.
@@ -1333,42 +1444,48 @@ SelectEnumInstBase::SelectEnumInstBase(
 template <typename SELECT_ENUM_INST>
 SELECT_ENUM_INST *SelectEnumInstBase::createSelectEnum(
     SILDebugLocation Loc, SILValue Operand, SILType Ty, SILValue DefaultValue,
-    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues,
-    SILFunction &F) {
+    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues, SILFunction &F,
+    Optional<ArrayRef<ProfileCounter>> CaseCounts,
+    ProfileCounter DefaultCount) {
   // Allocate enough room for the instruction with tail-allocated
   // EnumElementDecl and operand arrays. There are `CaseBBs.size()` decls
   // and `CaseBBs.size() + (DefaultBB ? 1 : 0)` values.
   unsigned numCases = CaseValues.size();
 
   void *buf = F.getModule().allocateInst(
-    sizeof(SELECT_ENUM_INST) + sizeof(EnumElementDecl*) * numCases
-     + TailAllocatedOperandList<1>::getExtraSize(numCases + (bool)DefaultValue),
-    alignof(SELECT_ENUM_INST));
-  return ::new (buf) SELECT_ENUM_INST(Loc,Operand,Ty,DefaultValue,CaseValues);
+      sizeof(SELECT_ENUM_INST) + sizeof(EnumElementDecl *) * numCases +
+          sizeof(ProfileCounter) + TailAllocatedOperandList<1>::getExtraSize(
+                                       numCases + (bool)DefaultValue),
+      alignof(SELECT_ENUM_INST));
+  return ::new (buf) SELECT_ENUM_INST(Loc, Operand, Ty, DefaultValue,
+                                      CaseValues, CaseCounts, DefaultCount);
 }
 
 SelectEnumInst *SelectEnumInst::create(
-    SILDebugLocation Loc, SILValue Operand, SILType Type,
-    SILValue DefaultValue,
-    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues,
-    SILFunction &F) {
+    SILDebugLocation Loc, SILValue Operand, SILType Type, SILValue DefaultValue,
+    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues, SILFunction &F,
+    Optional<ArrayRef<ProfileCounter>> CaseCounts,
+    ProfileCounter DefaultCount) {
   return createSelectEnum<SelectEnumInst>(Loc, Operand, Type, DefaultValue,
-                                          CaseValues, F);
+                                          CaseValues, F, CaseCounts,
+                                          DefaultCount);
 }
 
 SelectEnumAddrInst *SelectEnumAddrInst::create(
-    SILDebugLocation Loc, SILValue Operand, SILType Type,
-    SILValue DefaultValue,
-    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues,
-    SILFunction &F) {
+    SILDebugLocation Loc, SILValue Operand, SILType Type, SILValue DefaultValue,
+    ArrayRef<std::pair<EnumElementDecl *, SILValue>> CaseValues, SILFunction &F,
+    Optional<ArrayRef<ProfileCounter>> CaseCounts,
+    ProfileCounter DefaultCount) {
   return createSelectEnum<SelectEnumAddrInst>(Loc, Operand, Type, DefaultValue,
-                                              CaseValues, F);
+                                              CaseValues, F, CaseCounts,
+                                              DefaultCount);
 }
 
 SwitchEnumInstBase::SwitchEnumInstBase(
-    ValueKind Kind, SILDebugLocation Loc, SILValue Operand,
+    SILInstructionKind Kind, SILDebugLocation Loc, SILValue Operand,
     SILBasicBlock *DefaultBB,
-    ArrayRef<std::pair<EnumElementDecl *, SILBasicBlock *>> CaseBBs)
+    ArrayRef<std::pair<EnumElementDecl *, SILBasicBlock *>> CaseBBs,
+    Optional<ArrayRef<ProfileCounter>> CaseCounts, ProfileCounter DefaultCount)
     : TermInst(Kind, Loc), Operands(this, Operand), NumCases(CaseBBs.size()),
       HasDefault(bool(DefaultBB)) {
   // Initialize the case and successor arrays.
@@ -1376,11 +1493,17 @@ SwitchEnumInstBase::SwitchEnumInstBase(
   auto *succs = getSuccessorBuf();
   for (unsigned i = 0, size = CaseBBs.size(); i < size; ++i) {
     cases[i] = CaseBBs[i].first;
-    ::new (succs + i) SILSuccessor(this, CaseBBs[i].second);
+    if (CaseCounts) {
+      ::new (succs + i)
+          SILSuccessor(this, CaseBBs[i].second, CaseCounts.getValue()[i]);
+    } else {
+      ::new (succs + i) SILSuccessor(this, CaseBBs[i].second);
+    }
   }
 
-  if (HasDefault)
-    ::new (succs + NumCases) SILSuccessor(this, DefaultBB);
+  if (HasDefault) {
+    ::new (succs + NumCases) SILSuccessor(this, DefaultBB, DefaultCount);
+  }
 }
 
 void SwitchEnumInstBase::swapCase(unsigned i, unsigned j) {
@@ -1478,18 +1601,20 @@ template <typename SWITCH_ENUM_INST>
 SWITCH_ENUM_INST *SwitchEnumInstBase::createSwitchEnum(
     SILDebugLocation Loc, SILValue Operand, SILBasicBlock *DefaultBB,
     ArrayRef<std::pair<EnumElementDecl *, SILBasicBlock *>> CaseBBs,
-    SILFunction &F) {
+    SILFunction &F, Optional<ArrayRef<ProfileCounter>> CaseCounts,
+    ProfileCounter DefaultCount) {
   // Allocate enough room for the instruction with tail-allocated
   // EnumElementDecl and SILSuccessor arrays. There are `CaseBBs.size()` decls
   // and `CaseBBs.size() + (DefaultBB ? 1 : 0)` successors.
   unsigned numCases = CaseBBs.size();
   unsigned numSuccessors = numCases + (DefaultBB ? 1 : 0);
 
-  void *buf = F.getModule().allocateInst(sizeof(SWITCH_ENUM_INST)
-                                       + sizeof(EnumElementDecl*) * numCases
-                                       + sizeof(SILSuccessor) * numSuccessors,
-                                     alignof(SWITCH_ENUM_INST));
-  return ::new (buf) SWITCH_ENUM_INST(Loc, Operand, DefaultBB, CaseBBs);
+  void *buf = F.getModule().allocateInst(
+      sizeof(SWITCH_ENUM_INST) + sizeof(EnumElementDecl *) * numCases +
+          sizeof(SILSuccessor) * numSuccessors,
+      alignof(SWITCH_ENUM_INST));
+  return ::new (buf) SWITCH_ENUM_INST(Loc, Operand, DefaultBB, CaseBBs,
+                                      CaseCounts, DefaultCount);
 }
 
 NullablePtr<EnumElementDecl> SwitchEnumInstBase::getUniqueCaseForDefault() {
@@ -1522,17 +1647,19 @@ SwitchEnumInstBase::getUniqueCaseForDestination(SILBasicBlock *BB) {
 SwitchEnumInst *SwitchEnumInst::create(
     SILDebugLocation Loc, SILValue Operand, SILBasicBlock *DefaultBB,
     ArrayRef<std::pair<EnumElementDecl *, SILBasicBlock *>> CaseBBs,
-    SILFunction &F) {
-  return
-    createSwitchEnum<SwitchEnumInst>(Loc, Operand, DefaultBB, CaseBBs, F);
+    SILFunction &F, Optional<ArrayRef<ProfileCounter>> CaseCounts,
+    ProfileCounter DefaultCount) {
+  return createSwitchEnum<SwitchEnumInst>(Loc, Operand, DefaultBB, CaseBBs, F,
+                                          CaseCounts, DefaultCount);
 }
 
 SwitchEnumAddrInst *SwitchEnumAddrInst::create(
     SILDebugLocation Loc, SILValue Operand, SILBasicBlock *DefaultBB,
     ArrayRef<std::pair<EnumElementDecl *, SILBasicBlock *>> CaseBBs,
-    SILFunction &F) {
-  return createSwitchEnum<SwitchEnumAddrInst>
-    (Loc, Operand, DefaultBB, CaseBBs, F);
+    SILFunction &F, Optional<ArrayRef<ProfileCounter>> CaseCounts,
+    ProfileCounter DefaultCount) {
+  return createSwitchEnum<SwitchEnumAddrInst>(Loc, Operand, DefaultBB, CaseBBs,
+                                              F, CaseCounts, DefaultCount);
 }
 
 DynamicMethodBranchInst::DynamicMethodBranchInst(SILDebugLocation Loc,
@@ -1540,7 +1667,7 @@ DynamicMethodBranchInst::DynamicMethodBranchInst(SILDebugLocation Loc,
                                                  SILDeclRef Member,
                                                  SILBasicBlock *HasMethodBB,
                                                  SILBasicBlock *NoMethodBB)
-  : TermInst(ValueKind::DynamicMethodBranchInst, Loc),
+  : InstructionBase(Loc),
     Member(Member),
     DestBBs{{this, HasMethodBB}, {this, NoMethodBB}},
     Operands(this, Operand)
@@ -1557,19 +1684,14 @@ DynamicMethodBranchInst::create(SILDebugLocation Loc, SILValue Operand,
       DynamicMethodBranchInst(Loc, Operand, Member, HasMethodBB, NoMethodBB);
 }
 
-/// Create a witness method, creating a witness table declaration if we don't
-/// have a witness table for it. Later on if someone wants the real definition,
-/// lookUpWitnessTable will deserialize it for us if we can.
-///
-/// This is following the same model of how we deal with SILFunctions in
-/// function_ref. There we always just create a declaration and then later
-/// deserialize the actual function definition if we need to.
 WitnessMethodInst *
 WitnessMethodInst::create(SILDebugLocation Loc, CanType LookupType,
                           ProtocolConformanceRef Conformance, SILDeclRef Member,
                           SILType Ty, SILFunction *F,
-                          SILOpenedArchetypesState &OpenedArchetypes,
-                          bool Volatile) {
+                          SILOpenedArchetypesState &OpenedArchetypes) {
+  assert(cast<ProtocolDecl>(Member.getDecl()->getDeclContext())
+         == Conformance.getRequirement());
+
   SILModule &Mod = F->getModule();
   SmallVector<SILValue, 8> TypeDependentOperands;
   collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, *F,
@@ -1581,14 +1703,13 @@ WitnessMethodInst::create(SILDebugLocation Loc, CanType LookupType,
 
   declareWitnessTable(Mod, Conformance);
   return ::new (Buffer) WitnessMethodInst(Loc, LookupType, Conformance, Member,
-                                          Ty, TypeDependentOperands, Volatile);
+                                          Ty, TypeDependentOperands);
 }
 
-DynamicMethodInst *
-DynamicMethodInst::create(SILDebugLocation DebugLoc, SILValue Operand,
-                          SILDeclRef Member, SILType Ty, bool Volatile,
-                          SILFunction *F,
-                          SILOpenedArchetypesState &OpenedArchetypes) {
+ObjCMethodInst *
+ObjCMethodInst::create(SILDebugLocation DebugLoc, SILValue Operand,
+                       SILDeclRef Member, SILType Ty, SILFunction *F,
+                       SILOpenedArchetypesState &OpenedArchetypes) {
   SILModule &Mod = F->getModule();
   SmallVector<SILValue, 8> TypeDependentOperands;
   collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, *F,
@@ -1596,10 +1717,10 @@ DynamicMethodInst::create(SILDebugLocation DebugLoc, SILValue Operand,
 
   unsigned size =
       totalSizeToAlloc<swift::Operand>(1 + TypeDependentOperands.size());
-  void *Buffer = Mod.allocateInst(size, alignof(DynamicMethodInst));
-  return ::new (Buffer) DynamicMethodInst(DebugLoc, Operand,
-                                          TypeDependentOperands,
-                                          Member, Ty, Volatile);
+  void *Buffer = Mod.allocateInst(size, alignof(ObjCMethodInst));
+  return ::new (Buffer) ObjCMethodInst(DebugLoc, Operand,
+                                       TypeDependentOperands,
+                                       Member, Ty);
 }
 
 InitExistentialAddrInst *InitExistentialAddrInst::create(
@@ -1737,7 +1858,7 @@ MarkUninitializedBehaviorInst::MarkUninitializedBehaviorInst(
                                         SubstitutionList SetterSubs,
                                         SILValue Self,
                                         SILType Ty)
-  : SILInstruction(ValueKind::MarkUninitializedBehaviorInst, DebugLoc, Ty),
+  : InstructionBase(DebugLoc, Ty),
     Operands(this, InitStorage, Storage, Setter, Self),
     NumInitStorageSubstitutions(InitStorageSubs.size()),
     NumSetterSubstitutions(SetterSubs.size())
@@ -1868,8 +1989,7 @@ UnconditionalCheckedCastInst *UnconditionalCheckedCastInst::create(
 }
 
 UnconditionalCheckedCastValueInst *UnconditionalCheckedCastValueInst::create(
-    SILDebugLocation DebugLoc, CastConsumptionKind consumption,
-    SILValue Operand, SILType DestTy, SILFunction &F,
+    SILDebugLocation DebugLoc, SILValue Operand, SILType DestTy, SILFunction &F,
     SILOpenedArchetypesState &OpenedArchetypes) {
   SILModule &Mod = F.getModule();
   SmallVector<SILValue, 8> TypeDependentOperands;
@@ -1880,13 +2000,14 @@ UnconditionalCheckedCastValueInst *UnconditionalCheckedCastValueInst::create(
   void *Buffer =
       Mod.allocateInst(size, alignof(UnconditionalCheckedCastValueInst));
   return ::new (Buffer) UnconditionalCheckedCastValueInst(
-      DebugLoc, consumption, Operand, TypeDependentOperands, DestTy);
+      DebugLoc, Operand, TypeDependentOperands, DestTy);
 }
 
 CheckedCastBranchInst *CheckedCastBranchInst::create(
     SILDebugLocation DebugLoc, bool IsExact, SILValue Operand, SILType DestTy,
     SILBasicBlock *SuccessBB, SILBasicBlock *FailureBB, SILFunction &F,
-    SILOpenedArchetypesState &OpenedArchetypes) {
+    SILOpenedArchetypesState &OpenedArchetypes, ProfileCounter Target1Count,
+    ProfileCounter Target2Count) {
   SILModule &Mod = F.getModule();
   SmallVector<SILValue, 8> TypeDependentOperands;
   collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, F,
@@ -1894,9 +2015,9 @@ CheckedCastBranchInst *CheckedCastBranchInst::create(
   unsigned size =
       totalSizeToAlloc<swift::Operand>(1 + TypeDependentOperands.size());
   void *Buffer = Mod.allocateInst(size, alignof(CheckedCastBranchInst));
-  return ::new (Buffer) CheckedCastBranchInst(DebugLoc, IsExact, Operand,
-                                              TypeDependentOperands, DestTy,
-                                              SuccessBB, FailureBB);
+  return ::new (Buffer) CheckedCastBranchInst(
+      DebugLoc, IsExact, Operand, TypeDependentOperands, DestTy, SuccessBB,
+      FailureBB, Target1Count, Target2Count);
 }
 
 CheckedCastValueBranchInst *
@@ -1985,8 +2106,18 @@ ConvertFunctionInst::create(SILDebugLocation DebugLoc, SILValue Operand,
   unsigned size =
     totalSizeToAlloc<swift::Operand>(1 + TypeDependentOperands.size());
   void *Buffer = Mod.allocateInst(size, alignof(ConvertFunctionInst));
-  return ::new (Buffer) ConvertFunctionInst(DebugLoc, Operand,
-                                            TypeDependentOperands, Ty);
+  auto *CFI = ::new (Buffer)
+      ConvertFunctionInst(DebugLoc, Operand, TypeDependentOperands, Ty);
+  // Make sure we are not performing ABI-incompatible conversions.
+  CanSILFunctionType opTI =
+      CFI->getOperand()->getType().castTo<SILFunctionType>();
+  (void)opTI;
+  CanSILFunctionType resTI =
+      CFI->getOperand()->getType().castTo<SILFunctionType>();
+  (void)resTI;
+  assert(opTI->isABICompatibleWith(resTI).isCompatible() &&
+         "Can not convert in between ABI incompatible function types");
+  return CFI;
 }
 
 bool KeyPathPatternComponent::isComputedSettablePropertyMutating() const {
@@ -2023,13 +2154,19 @@ forEachRefcountableReference(const KeyPathPatternComponent &component,
     switch (component.getComputedPropertyId().getKind()) {
     case KeyPathPatternComponent::ComputedPropertyId::DeclRef:
       // Mark the vtable entry as used somehow?
-      return;
+      break;
     case KeyPathPatternComponent::ComputedPropertyId::Function:
       forFunction(component.getComputedPropertyId().getFunction());
-      return;
+      break;
     case KeyPathPatternComponent::ComputedPropertyId::Property:
-      return;
+      break;
     }
+    
+    if (auto equals = component.getComputedPropertyIndexEquals())
+      forFunction(equals);
+    if (auto hash = component.getComputedPropertyIndexHash())
+      forFunction(hash);
+    return;
   }
 }
 
@@ -2056,6 +2193,7 @@ KeyPathPattern::get(SILModule &M, CanGenericSignature signature,
     return existing;
   
   // Determine the number of operands.
+  int maxOperandNo = -1;
   for (auto component : components) {
     switch (component.getKind()) {
     case KeyPathPatternComponent::Kind::StoredProperty:
@@ -2066,14 +2204,15 @@ KeyPathPattern::get(SILModule &M, CanGenericSignature signature,
       
     case KeyPathPatternComponent::Kind::GettableProperty:
     case KeyPathPatternComponent::Kind::SettableProperty:
-      assert(component.getComputedPropertyIndices().empty()
-             && "todo");
+      for (auto &index : component.getComputedPropertyIndices()) {
+        maxOperandNo = std::max(maxOperandNo, (int)index.Operand);
+      }
     }
   }
   
   auto newPattern = KeyPathPattern::create(M, signature, rootType, valueType,
                                            components, objcString,
-                                           0 /*todo: num operands*/);
+                                           maxOperandNo + 1);
   M.KeyPathPatterns.InsertNode(newPattern, insertPos);
   return newPattern;
 }
@@ -2161,8 +2300,12 @@ void KeyPathPattern::Profile(llvm::FoldingSetNodeID &ID,
         break;
       }
       }
-      assert(component.getComputedPropertyIndices().empty()
-             && "todo");
+      for (auto &index : component.getComputedPropertyIndices()) {
+        ID.AddInteger(index.Operand);
+        ID.AddPointer(index.FormalType.getPointer());
+        ID.AddPointer(index.LoweredType.getOpaqueValue());
+        ID.AddPointer(index.Hashable.getOpaqueValue());
+      }
       break;
     }
   }
@@ -2172,22 +2315,34 @@ KeyPathInst *
 KeyPathInst::create(SILDebugLocation Loc,
                     KeyPathPattern *Pattern,
                     SubstitutionList Subs,
+                    ArrayRef<SILValue> Args,
                     SILType Ty,
                     SILFunction &F) {
-  auto totalSize = totalSizeToAlloc<Substitution>(Subs.size());
+  assert(Args.size() == Pattern->getNumOperands()
+         && "number of key path args doesn't match pattern");
+
+  auto totalSize = totalSizeToAlloc<Substitution, Operand>
+    (Subs.size(), Args.size());
   void *mem = F.getModule().allocateInst(totalSize, alignof(Substitution));
-  return ::new (mem) KeyPathInst(Loc, Pattern, Subs, Ty);
+  return ::new (mem) KeyPathInst(Loc, Pattern, Subs, Args, Ty);
 }
 
 KeyPathInst::KeyPathInst(SILDebugLocation Loc,
                          KeyPathPattern *Pattern,
                          SubstitutionList Subs,
+                         ArrayRef<SILValue> Args,
                          SILType Ty)
-  : SILInstruction(ValueKind::KeyPathInst, Loc, Ty),
-    Pattern(Pattern), NumSubstitutions(Subs.size())
+  : InstructionBase(Loc, Ty),
+    Pattern(Pattern), NumSubstitutions(Subs.size()),
+    NumOperands(Pattern->getNumOperands())
 {
   auto *subsBuf = getTrailingObjects<Substitution>();
   std::uninitialized_copy(Subs.begin(), Subs.end(), subsBuf);
+  
+  auto *operandsBuf = getTrailingObjects<Operand>();
+  for (unsigned i = 0; i < Args.size(); ++i) {
+    ::new ((void*)&operandsBuf[i]) Operand(this, Args[i]);
+  }
   
   // Increment the use of any functions referenced from the keypath pattern.
   for (auto component : Pattern->getComponents()) {
@@ -2202,8 +2357,7 @@ KeyPathInst::getSubstitutions() {
 
 MutableArrayRef<Operand>
 KeyPathInst::getAllOperands() {
-  // TODO: subscript indexes
-  return {};
+  return {getTrailingObjects<Operand>(), NumOperands};
 }
 
 KeyPathInst::~KeyPathInst() {
@@ -2214,7 +2368,9 @@ KeyPathInst::~KeyPathInst() {
   for (auto component : Pattern->getComponents()) {
     component.decrementRefCounts();
   }
-  // TODO: destroy operands
+  // Destroy operands.
+  for (auto &operand : getAllOperands())
+    operand.~Operand();
 }
 
 KeyPathPattern *KeyPathInst::getPattern() const {
@@ -2270,4 +2426,70 @@ GenericSpecializationInformation::create(SILInstruction *Inst, SILBuilder &B) {
     return F->getSpecializationInfo();
 
   return nullptr;
+}
+
+static void computeAggregateFirstLevelSubtypeInfo(
+    SILModule &M, SILValue Operand, llvm::SmallVectorImpl<SILType> &Types,
+    llvm::SmallVectorImpl<ValueOwnershipKind> &OwnershipKinds) {
+  SILType OpType = Operand->getType();
+
+  // TODO: Create an iterator for accessing first level projections to eliminate
+  // this SmallVector.
+  llvm::SmallVector<Projection, 8> Projections;
+  Projection::getFirstLevelProjections(OpType, M, Projections);
+
+  auto OpOwnershipKind = Operand.getOwnershipKind();
+  for (auto &P : Projections) {
+    SILType ProjType = P.getType(OpType, M);
+    Types.emplace_back(ProjType);
+    OwnershipKinds.emplace_back(
+        OpOwnershipKind.getProjectedOwnershipKind(M, ProjType));
+  }
+}
+
+DestructureStructInst *DestructureStructInst::create(SILModule &M,
+                                                     SILDebugLocation Loc,
+                                                     SILValue Operand) {
+  assert(Operand->getType().getStructOrBoundGenericStruct() &&
+         "Expected a struct typed operand?!");
+
+  llvm::SmallVector<SILType, 8> Types;
+  llvm::SmallVector<ValueOwnershipKind, 8> OwnershipKinds;
+  computeAggregateFirstLevelSubtypeInfo(M, Operand, Types, OwnershipKinds);
+  assert(Types.size() == OwnershipKinds.size() &&
+         "Expected same number of Types and OwnerKinds");
+
+  unsigned NumElts = Types.size();
+  unsigned Size =
+      totalSizeToAlloc<MultipleValueInstruction *, DestructureStructResult>(
+          1, NumElts);
+
+  void *Buffer = M.allocateInst(Size, alignof(DestructureStructInst));
+
+  return ::new (Buffer)
+      DestructureStructInst(M, Loc, Operand, Types, OwnershipKinds);
+}
+
+DestructureTupleInst *DestructureTupleInst::create(SILModule &M,
+                                                   SILDebugLocation Loc,
+                                                   SILValue Operand) {
+  assert(Operand->getType().getSwiftRValueType()->is<TupleType>() &&
+         "Expected a tuple typed operand?!");
+
+  llvm::SmallVector<SILType, 8> Types;
+  llvm::SmallVector<ValueOwnershipKind, 8> OwnershipKinds;
+  computeAggregateFirstLevelSubtypeInfo(M, Operand, Types, OwnershipKinds);
+  assert(Types.size() == OwnershipKinds.size() &&
+         "Expected same number of Types and OwnerKinds");
+
+  // We add 1 since we store an offset to our
+  unsigned NumElts = Types.size();
+  unsigned Size =
+      totalSizeToAlloc<MultipleValueInstruction *, DestructureTupleResult>(
+          1, NumElts);
+
+  void *Buffer = M.allocateInst(Size, alignof(DestructureTupleInst));
+
+  return ::new (Buffer)
+      DestructureTupleInst(M, Loc, Operand, Types, OwnershipKinds);
 }

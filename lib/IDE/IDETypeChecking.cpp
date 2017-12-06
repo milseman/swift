@@ -14,6 +14,7 @@
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/Identifier.h"
 #include "swift/AST/Decl.h"
+#include "swift/AST/GenericSignature.h"
 #include "swift/AST/Types.h"
 #include "swift/AST/Attr.h"
 #include "swift/AST/Expr.h"
@@ -69,16 +70,34 @@ PrintOptions PrintOptions::printTypeInterface(Type T) {
 
 PrintOptions PrintOptions::printDocInterface() {
   PrintOptions result = PrintOptions::printModuleInterface();
-  result.PrintAccessibility = false;
+  result.PrintAccess = false;
   result.SkipUnavailable = false;
   result.ExcludeAttrList.push_back(DAK_Available);
   result.ArgAndParamPrinting =
-  PrintOptions::ArgAndParamPrintingMode::BothAlways;
+      PrintOptions::ArgAndParamPrintingMode::BothAlways;
   result.PrintDocumentationComments = false;
   result.PrintRegularClangComments = false;
-  result.PrintAccessibility = false;
   result.PrintFunctionRepresentationAttrs = false;
   return result;
+}
+
+/// Erase any associated types within dependent member types, so we'll resolve
+/// them again.
+static Type eraseAssociatedTypes(Type type) {
+  if (!type->hasTypeParameter()) return type;
+
+  return type.transformRec([](TypeBase *type) -> Optional<Type> {
+    if (auto depMemType = dyn_cast<DependentMemberType>(type)) {
+      auto newBase = eraseAssociatedTypes(depMemType->getBase());
+      if (newBase.getPointer() == depMemType->getBase().getPointer() &&
+          !depMemType->getAssocType())
+        return None;
+
+      return Type(DependentMemberType::get(newBase, depMemType->getName()));
+    }
+
+    return None;
+  });
 }
 
 struct SynthesizedExtensionAnalyzer::Implementation {
@@ -136,13 +155,16 @@ struct SynthesizedExtensionAnalyzer::Implementation {
       Type First;
       Type Second;
       RequirementKind Kind;
+      CanType CanFirst;
+      CanType CanSecond;
+
       bool operator< (const Requirement& Rhs) const {
         if (Kind != Rhs.Kind)
           return Kind < Rhs.Kind;
-        else if (First.getPointer() != Rhs.First.getPointer())
-          return First.getPointer() < Rhs.First.getPointer();
+        else if (CanFirst != Rhs.CanFirst)
+          return CanFirst < Rhs.CanFirst;
         else
-          return Second.getPointer() < Rhs.Second.getPointer();
+          return CanSecond < Rhs.CanSecond;
       }
       bool operator== (const Requirement& Rhs) const {
         return (!(*this < Rhs)) && (!(Rhs < *this));
@@ -152,8 +174,15 @@ struct SynthesizedExtensionAnalyzer::Implementation {
     bool HasDocComment;
     unsigned InheritsCount;
     std::set<Requirement> Requirements;
-    void addRequirement(Type First, Type Second, RequirementKind Kind) {
-      Requirements.insert({First, Second, Kind});
+    void addRequirement(GenericSignature *GenericSig,
+                        Type First, Type Second, RequirementKind Kind) {
+      CanType CanFirst =
+        GenericSig->getCanonicalTypeInContext(eraseAssociatedTypes(First));
+      CanType CanSecond;
+      if (Second) CanSecond =
+        GenericSig->getCanonicalTypeInContext(eraseAssociatedTypes(Second));
+
+      Requirements.insert({First, Second, Kind, CanFirst, CanSecond});
     }
     bool operator== (const ExtensionMergeInfo& Another) const {
       // Trivially unmergeable.
@@ -260,7 +289,8 @@ struct SynthesizedExtensionAnalyzer::Implementation {
       subMap = BaseType->getContextSubstitutionMap(M, Ext);
 
     assert(Ext->getGenericSignature() && "No generic signature.");
-    for (auto Req : Ext->getGenericSignature()->getRequirements()) {
+    auto GenericSig = Ext->getGenericSignature();
+    for (auto Req : GenericSig->getRequirements()) {
       auto Kind = Req.getKind();
 
       // FIXME: Could do something here
@@ -289,14 +319,14 @@ struct SynthesizedExtensionAnalyzer::Implementation {
           if (!canPossiblyConvertTo(First, Second, *DC))
             return {Result, MergeInfo};
           else if (!isConvertibleTo(First, Second, *DC))
-            MergeInfo.addRequirement(First, Second, Kind);
+            MergeInfo.addRequirement(GenericSig, First, Second, Kind);
           break;
 
         case RequirementKind::SameType:
           if (!canPossiblyEqual(First, Second, *DC)) {
             return {Result, MergeInfo};
           } else if (!First->isEqual(Second)) {
-            MergeInfo.addRequirement(First, Second, Kind);
+            MergeInfo.addRequirement(GenericSig, First, Second, Kind);
           }
           break;
 
@@ -369,13 +399,6 @@ struct SynthesizedExtensionAnalyzer::Implementation {
     std::unique_ptr<ExtensionInfoMap> InfoMap(new ExtensionInfoMap());
     ExtensionMergeInfoMap MergeInfoMap;
     std::vector<NominalTypeDecl*> Unhandled;
-    auto addTypeLocNominal = [&](TypeLoc TL) {
-      if (TL.getType()) {
-        if (auto D = TL.getType()->getAnyNominal()) {
-          Unhandled.push_back(D);
-        }
-      }
-    };
 
     auto handleExtension = [&](ExtensionDecl *E, bool Synthesized) {
       if (Options.shouldPrint(E)) {
@@ -387,19 +410,25 @@ struct SynthesizedExtensionAnalyzer::Implementation {
       }
     };
 
-    for (auto TL : Target->getInherited()) {
-      if (!isEnumRawType(Target, TL))
-        addTypeLocNominal(TL);
+    for (auto *Conf : Target->getLocalConformances()) {
+      Unhandled.push_back(Conf->getProtocol());
+    }
+    if (auto *CD = dyn_cast<ClassDecl>(Target)) {
+      if (auto Super = CD->getSuperclass())
+        Unhandled.push_back(Super->getAnyNominal());
     }
     while (!Unhandled.empty()) {
       NominalTypeDecl* Back = Unhandled.back();
       Unhandled.pop_back();
       for (ExtensionDecl *E : Back->getExtensions()) {
         handleExtension(E, true);
-        for (auto TL : Back->getInherited()) {
-          if (!isEnumRawType(Target, TL))
-            addTypeLocNominal(TL);
-        }
+      }
+      for (auto *Conf : Back->getLocalConformances()) {
+        Unhandled.push_back(Conf->getProtocol());
+      }
+      if (auto *CD = dyn_cast<ClassDecl>(Back)) {
+        if (auto Super = CD->getSuperclass())
+          Unhandled.push_back(Super->getAnyNominal());
       }
     }
 

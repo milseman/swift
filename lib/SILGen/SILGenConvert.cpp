@@ -270,41 +270,33 @@ ManagedValue SILGenFunction::emitCheckedGetOptionalValueFrom(SILLocation loc,
   return emitPreconditionOptionalHasValue(loc, src);
 }
 
-ManagedValue SILGenFunction::emitUncheckedGetOptionalValueFrom(SILLocation loc,
-                                                    ManagedValue addrOrValue,
-                                                    const TypeLowering &optTL,
-                                                    SGFContext C) {
+ManagedValue SILGenFunction::emitUncheckedGetOptionalValueFrom(
+    SILLocation loc, ManagedValue addrOrValue, const TypeLowering &optTL,
+    SGFContext C) {
   SILType origPayloadTy =
     addrOrValue.getType().getAnyOptionalObjectType();
 
   auto someDecl = getASTContext().getOptionalSomeDecl();
- 
-  ManagedValue payload;
 
-  // Take the payload from the optional.  Cheat a bit in the +0
-  // case--UncheckedTakeEnumData will never actually invalidate an Optional enum
-  // value.
-  SILValue payloadVal;
+  // Take the payload from the optional.
   if (!addrOrValue.getType().isAddress()) {
-    payloadVal = B.createUncheckedEnumData(loc, addrOrValue.forward(*this),
-                                           someDecl);
-  } else {
-    payloadVal =
-      B.createUncheckedTakeEnumDataAddr(loc, addrOrValue.forward(*this),
-                                        someDecl, origPayloadTy);
-  
-    if (optTL.isLoadable())
-      payloadVal =
-          optTL.emitLoad(B, loc, payloadVal, LoadOwnershipQualifier::Take);
+    return B.createUncheckedEnumData(loc, addrOrValue, someDecl);
   }
 
-  // Produce a correctly managed value.
-  if (addrOrValue.hasCleanup())
-    payload = emitManagedRValueWithCleanup(payloadVal);
-  else
-    payload = ManagedValue::forUnmanaged(payloadVal);
-  
-  return payload;
+  // Cheat a bit in the +0 case--UncheckedTakeEnumData will never actually
+  // invalidate an Optional enum value. This is specific to optionals.
+  ManagedValue payload = B.createUncheckedTakeEnumDataAddr(
+      loc, addrOrValue, someDecl, origPayloadTy);
+  if (!optTL.isLoadable())
+    return payload;
+
+  // If we do not have a cleanup on our address, use a load_borrow.
+  if (!payload.hasCleanup()) {
+    return B.createLoadBorrow(loc, payload);
+  }
+
+  // Otherwise, perform a load take.
+  return B.createLoadTake(loc, payload);
 }
 
 ManagedValue
@@ -396,7 +388,7 @@ SILGenFunction::emitOptionalToOptional(SILLocation loc,
     finalResult = emitManagedBufferWithCleanup(
         emitTemporaryAllocation(loc, resultTy), resultTL);
   } else {
-    SavedInsertionPoint IP(*this, contBB);
+    SILGenSavedInsertionPoint IP(*this, contBB);
     finalResult = B.createOwnedPHIArgument(resultTL.getLoweredType());
   }
 
@@ -577,9 +569,9 @@ ManagedValue SILGenFunction::emitExistentialErasure(
 
       FormalEvaluationScope writebackScope(*this);
       ManagedValue nsError =
-          emitRValueForPropertyLoad(
+          emitRValueForStorageLoad(
               loc, nativeError, concreteFormalType,
-              /*super*/ false, nsErrorVar, nsErrorVarSubstitutions,
+              /*super*/ false, nsErrorVar, RValue(), nsErrorVarSubstitutions,
               AccessSemantics::Ordinary, nsErrorType, SGFContext())
               .getAsSingleValue(*this, loc);
 
@@ -695,6 +687,7 @@ ManagedValue SILGenFunction::emitExistentialErasure(
     assert(existentialTL.isLoadable());
 
     ManagedValue sub = F(SGFContext());
+    assert(concreteFormalType->isBridgeableObjectType());
     return B.createInitExistentialRef(loc, existentialTL.getLoweredType(),
                                       concreteFormalType, sub, conformances);
   }
@@ -726,6 +719,7 @@ ManagedValue SILGenFunction::emitExistentialErasure(
     auto eraseToAnyObject =
     [&, concreteFormalType, F](SGFContext C) -> ManagedValue {
       auto concreteValue = F(SGFContext());
+      assert(concreteFormalType->isBridgeableObjectType());
       return B.createInitExistentialRef(
           loc, SILType::getPrimitiveObjectType(anyObjectTy), concreteFormalType,
           concreteValue, {});
@@ -745,10 +739,9 @@ ManagedValue SILGenFunction::emitExistentialErasure(
       // opaque values mode: This is a case of an opaque value that we can
       // "treat" as a by-value one
       ManagedValue sub = F(SGFContext());
-      SILValue v = B.createInitExistentialValue(
+      return B.createInitExistentialValue(
           loc, existentialTL.getLoweredType(), concreteFormalType,
-          sub.getValue(), conformances);
-      return ManagedValue(v, sub.getCleanup());
+          sub, conformances);
     }
 
     // Allocate the existential.
@@ -846,7 +839,10 @@ SILGenFunction::emitOpenExistential(
   SILType existentialType = existentialValue.getType();
   switch (existentialType.getPreferredExistentialRepresentation(SGM.M)) {
   case ExistentialRepresentation::Opaque: {
-    SILValue archetypeValue;
+    // With CoW existentials we can't consume the boxed value inside of
+    // the existential. (We could only do so after a uniqueness check on
+    // the box holding the value).
+    canConsume = false;
     if (existentialType.isAddress()) {
       OpenedExistentialAccess allowedAccess =
           getOpenedExistentialAccessFor(accessKind);
@@ -856,24 +852,14 @@ SILGenFunction::emitOpenExistential(
                "value mode");
         loweredOpenedType = loweredOpenedType.getAddressType();
       }
-      archetypeValue =
-          B.createOpenExistentialAddr(loc, existentialValue.forward(*this),
-                                      loweredOpenedType, allowedAccess);
-    } else {
-      archetypeValue = B.createOpenExistentialValue(
-          loc, existentialValue.forward(*this), loweredOpenedType);
-    }
-
-    if (existentialValue.hasCleanup()) {
-      // With CoW existentials we can't consume the boxed value inside of
-      // the existential. (We could only do so after a uniqueness check on
-      // the box holding the value).
-      canConsume = false;
-      enterDestroyCleanup(existentialValue.getValue());
+      SILValue archetypeValue =
+        B.createOpenExistentialAddr(loc, existentialValue.getValue(),
+                                    loweredOpenedType, allowedAccess);
       archetypeMV = ManagedValue::forUnmanaged(archetypeValue);
     } else {
-      canConsume = false;
-      archetypeMV = ManagedValue::forUnmanaged(archetypeValue);
+      // borrow the existential and return an unmanaged opened value.
+      archetypeMV = getBuilder().createOpenExistentialValue(
+          loc, existentialValue, loweredOpenedType);
     }
     break;
   }
@@ -913,9 +899,8 @@ SILGenFunction::emitOpenExistential(
                                    loweredOpenedType));
     } else {
       assert(!silConv.useLoweredAddresses());
-      archetypeMV = ManagedValue::forUnmanaged(
-        B.createOpenExistentialBoxValue(loc, existentialValue.getValue(),
-                                        loweredOpenedType));
+      archetypeMV = getBuilder().createOpenExistentialBoxValue(
+        loc, existentialValue, loweredOpenedType);
     }
     // NB: Don't forward the cleanup, because consuming a boxed value won't
     // consume the box reference.
@@ -1240,8 +1225,11 @@ static bool areRelatedTypesForBridgingPeephole(CanType sourceType,
 
   // If the result type is AnyObject, then we can always apply the bridge
   // via Any.
-  if (resultType->isAnyObject())
-    return true;
+  if (resultType->isAnyObject()) {
+    // ... as long as the source type is not an Optional.
+    if (sourceType->isBridgeableObjectType())
+      return true;
+  }
 
   // TODO: maybe other class existentials? Existential conversions?
   // They probably aren't important here.
@@ -1273,7 +1261,31 @@ static bool isValueToAnyConversion(CanType from, CanType to) {
   }
 
   assert(to->isAny());
-  return !from->isAnyClassReferenceType();
+
+  // Types that we can easily transform into AnyObject:
+  //   - classes and class-bounded archetypes
+  //   - class existentials, even if not pure-@objc
+  //   - @convention(objc) metatypes
+  //   - @convention(block) functions
+  return !from->isAnyClassReferenceType() &&
+         !from->isBridgeableObjectType();
+}
+
+/// Check whether this conversion is Any??? to AnyObject???.  If the result
+/// type is less optional, it doesn't count.
+static bool isMatchedAnyToAnyObjectConversion(CanType from, CanType to) {
+  while (auto fromObject = from.getAnyOptionalObjectType()) {
+    auto toObject = to.getAnyOptionalObjectType();
+    if (!toObject) return false;
+    from = fromObject;
+    to = toObject;
+  }
+
+  if (from->isAny()) {
+    assert(to->lookThroughAllAnyOptionalTypes()->isAnyObject());
+    return true;
+  }
+  return false;
 }
 
 Optional<ConversionPeepholeHint>
@@ -1336,8 +1348,7 @@ Lowering::canPeepholeConversions(SILGenFunction &SGF,
 
       // Converting to Any doesn't do anything semantically special, so we
       // can apply the peephole unconditionally.
-      if (intermediateType->lookThroughAllAnyOptionalTypes()->isAny()) {
-        assert(resultType->lookThroughAllAnyOptionalTypes()->isAnyObject());
+      if (isMatchedAnyToAnyObjectConversion(intermediateType, resultType)) {
         if (loweredSourceTy == loweredResultTy) {
           return applyPeephole(ConversionPeepholeHint::Identity);
         } else if (isValueToAnyConversion(sourceType, intermediateType)) {
@@ -1379,7 +1390,8 @@ Lowering::canPeepholeConversions(SILGenFunction &SGF,
       if (!forced &&
           innerConversion.getKind() == Conversion::BridgeResultFromObjC) {
         if (auto sourceValueType = sourceType.getAnyOptionalObjectType()) {
-          if (areRelatedTypesForBridgingPeephole(sourceValueType, resultType)) {
+          if (!intermediateType.getAnyOptionalObjectType() &&
+              areRelatedTypesForBridgingPeephole(sourceValueType, resultType)) {
             forced = true;
             return applyPeephole(ConversionPeepholeHint::Subtype);
           }

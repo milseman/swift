@@ -31,11 +31,11 @@ public class Parent {
 }
 
 public class Child : Parent {
-  // CHECK-LABEL: sil @_T05super5ChildC8propertySSfg : $@convention(method) (@guaranteed Child) -> @owned String {
+  // CHECK-LABEL: sil @_T05super5ChildC8propertySSvg : $@convention(method) (@guaranteed Child) -> @owned String {
   // CHECK:       bb0([[SELF:%.*]] : $Child):
   // CHECK:         [[SELF_COPY:%.*]] = copy_value [[SELF]]
   // CHECK:         [[CASTED_SELF_COPY:%[0-9]+]] = upcast [[SELF_COPY]] : $Child to $Parent
-  // CHECK:         [[SUPER_METHOD:%[0-9]+]] = function_ref @_T05super6ParentC8propertySSfg : $@convention(method) (@guaranteed Parent) -> @owned String
+  // CHECK:         [[SUPER_METHOD:%[0-9]+]] = function_ref @_T05super6ParentC8propertySSvg : $@convention(method) (@guaranteed Parent) -> @owned String
   // CHECK:         [[RESULT:%.*]] = apply [[SUPER_METHOD]]([[CASTED_SELF_COPY]])
   // CHECK:         destroy_value [[CASTED_SELF_COPY]]
   // CHECK:         return [[RESULT]]
@@ -43,11 +43,11 @@ public class Child : Parent {
     return super.property
   }
 
-  // CHECK-LABEL: sil @_T05super5ChildC13otherPropertySSfg : $@convention(method) (@guaranteed Child) -> @owned String {
+  // CHECK-LABEL: sil @_T05super5ChildC13otherPropertySSvg : $@convention(method) (@guaranteed Child) -> @owned String {
   // CHECK:       bb0([[SELF:%.*]] : $Child):
   // CHECK:         [[COPIED_SELF:%.*]] = copy_value [[SELF]]
   // CHECK:         [[CASTED_SELF_COPY:%[0-9]+]] = upcast [[COPIED_SELF]] : $Child to $Parent
-  // CHECK:         [[SUPER_METHOD:%[0-9]+]] = function_ref @_T05super6ParentC13finalPropertySSfg
+  // CHECK:         [[SUPER_METHOD:%[0-9]+]] = function_ref @_T05super6ParentC13finalPropertySSvg
   // CHECK:         [[RESULT:%.*]] = apply [[SUPER_METHOD]]([[CASTED_SELF_COPY]])
   // CHECK:         destroy_value [[CASTED_SELF_COPY]]
   // CHECK:         return [[RESULT]]
@@ -172,7 +172,7 @@ public class GenericBase<T> {
 
 public class GenericDerived<T> : GenericBase<T> {
   public override func method() {
-    // CHECK-LABEL: sil private @_T05super14GenericDerivedC6methodyyFyycfU_ : $@convention(thin) <T> (@owned GenericDerived<T>) -> ()
+    // CHECK-LABEL: sil private @_T05super14GenericDerivedC6methodyyFyycfU_ : $@convention(thin) <T> (@guaranteed GenericDerived<T>) -> ()
     // CHECK: upcast {{.*}} : $GenericDerived<T> to $GenericBase<T>
     // CHECK: return
     {
@@ -180,7 +180,7 @@ public class GenericDerived<T> : GenericBase<T> {
     }()
     // CHECK: } // end sil function '_T05super14GenericDerivedC6methodyyFyycfU_'
 
-    // CHECK-LABEL: sil private @_T05super14GenericDerivedC6methodyyF13localFunctionL_yylF : $@convention(thin) <T> (@owned GenericDerived<T>) -> ()
+    // CHECK-LABEL: sil private @_T05super14GenericDerivedC6methodyyF13localFunctionL_yylF : $@convention(thin) <T> (@guaranteed GenericDerived<T>) -> ()
     // CHECK: upcast {{.*}} : $GenericDerived<T> to $GenericBase<T>
     // CHECK: return
     // CHECK: } // end sil function '_T05super14GenericDerivedC6methodyyF13localFunctionL_yylF'
@@ -189,7 +189,7 @@ public class GenericDerived<T> : GenericBase<T> {
     }
     localFunction()
 
-    // CHECK-LABEL: sil private @_T05super14GenericDerivedC6methodyyF15genericFunctionL_yqd__r__lF : $@convention(thin) <T><U> (@in U, @owned GenericDerived<T>) -> ()
+    // CHECK-LABEL: sil private @_T05super14GenericDerivedC6methodyyF15genericFunctionL_yqd__r__lF : $@convention(thin) <T><U> (@in U, @guaranteed GenericDerived<T>) -> ()
     // CHECK: upcast {{.*}} : $GenericDerived<T> to $GenericBase<T>
     // CHECK: return
     func genericFunction<U>(_: U) {

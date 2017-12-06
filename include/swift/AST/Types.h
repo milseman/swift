@@ -19,13 +19,14 @@
 
 #include "swift/AST/DeclContext.h"
 #include "swift/AST/GenericParamKey.h"
+#include "swift/AST/Identifier.h"
 #include "swift/AST/Ownership.h"
+#include "swift/AST/ProtocolConformanceRef.h"
 #include "swift/AST/Requirement.h"
 #include "swift/AST/SILLayout.h"
 #include "swift/AST/SubstitutionList.h"
 #include "swift/AST/Type.h"
 #include "swift/AST/TypeAlignments.h"
-#include "swift/AST/Identifier.h"
 #include "swift/Basic/ArrayRefView.h"
 #include "swift/Basic/UUID.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -122,7 +123,7 @@ public:
   };
 
 private:
-  unsigned Bits : BitWidth;
+  unsigned Bits;
 
 public:
   RecursiveTypeProperties() : Bits(0) {}
@@ -288,9 +289,10 @@ protected:
 
     /// Extra information which affects how the function is called, like
     /// regparm and the calling convention.
-    unsigned ExtInfo : 16;
+    enum { NumExtInfoBits = 7 };
+    unsigned ExtInfo : NumExtInfoBits;
   };
-  enum { NumAnyFunctionTypeBits = NumTypeBaseBits + 16 };
+  enum { NumAnyFunctionTypeBits = NumTypeBaseBits + 7 };
   static_assert(NumAnyFunctionTypeBits <= 32, "fits in an unsigned");
 
   struct ArchetypeTypeBitfields {
@@ -315,11 +317,13 @@ protected:
 
   struct SILFunctionTypeBitfields {
     unsigned : NumTypeBaseBits;
-    unsigned ExtInfo : 16;
+    enum { NumExtInfoBits = 6 };
+    unsigned ExtInfo : NumExtInfoBits;
     unsigned CalleeConvention : 3;
     unsigned HasErrorResult : 1;
+    unsigned CoroutineKind : 2;
   };
-  enum { NumSILFunctionTypeBits = NumTypeBaseBits + 16+5 };
+  enum { NumSILFunctionTypeBits = NumTypeBaseBits + 12 };
   static_assert(NumSILFunctionTypeBits <= 32, "fits in an unsigned");
 
   struct AnyMetatypeTypeBitfields {
@@ -374,6 +378,7 @@ protected:
 
   void setRecursiveProperties(RecursiveTypeProperties properties) {
     TypeBaseBits.Properties = properties.getBits();
+    assert(TypeBaseBits.Properties == properties.getBits() && "Bits dropped!");
   }
 
 public:
@@ -393,7 +398,7 @@ public:
 
   /// getCanonicalType - Stronger canonicalization which folds away equivalent
   /// associated types, or type parameters that have been made concrete.
-  CanType getCanonicalType(GenericSignature *sig, ModuleDecl &mod);
+  CanType getCanonicalType(GenericSignature *sig);
 
   /// Reconstitute type sugar, e.g., for array types, dictionary
   /// types, optionals, etc.
@@ -410,10 +415,10 @@ public:
   }
   
   /// isEqual - Return true if these two types are equal, ignoring sugar.
+  ///
+  /// To compare sugar, check for pointer equality of the underlying TypeBase *
+  /// values, obtained by calling getPointer().
   bool isEqual(Type Other);
-  
-  /// isSpelledLike - Return true if these two types share a sugared spelling.
-  bool isSpelledLike(Type Other);
   
   /// getDesugaredType - If this type is a sugared type, remove all levels of
   /// sugar until we get down to a non-sugar type.
@@ -521,6 +526,9 @@ public:
   /// Erase DynamicSelfType from the given type by replacing it with its
   /// underlying type.
   Type eraseDynamicSelfType();
+
+  /// Map a contextual type to an interface type.
+  Type mapTypeOutOfContext();
 
   /// \brief Compute and return the set of type variables that occur within this
   /// type.
@@ -1430,6 +1438,11 @@ public:
   bool isInOut() const { return value.contains(InOut); }
   bool isShared() const { return value.contains(Shared); }
 
+  ParameterTypeFlags withVariadic(bool variadic) const {
+    return ParameterTypeFlags(variadic ? value | ParameterTypeFlags::Variadic
+                                       : value - ParameterTypeFlags::Variadic);
+  }
+
   ParameterTypeFlags withEscaping(bool escaping) const {
     return ParameterTypeFlags(escaping ? value | ParameterTypeFlags::Escaping
                                        : value - ParameterTypeFlags::Escaping);
@@ -1710,12 +1723,10 @@ public:
   ArrayRef<Type> getGenericArgs() const { return GenericArgs; }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    RecursiveTypeProperties properties;
-    Profile(ID, TheDecl, Parent, GenericArgs, properties);
+    Profile(ID, TheDecl, Parent, GenericArgs);
   }
   static void Profile(llvm::FoldingSetNodeID &ID, NominalTypeDecl *TheDecl,
-                      Type Parent, ArrayRef<Type> GenericArgs,
-                      RecursiveTypeProperties &properties);
+                      Type Parent, ArrayRef<Type> GenericArgs);
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const TypeBase *T) {
@@ -2347,7 +2358,8 @@ public:
     /// FIXME(Remove InOutType): This is mostly for copying between param
     /// types and should go away.
     Type getPlainType() const { return Ty; }
-    
+
+    bool hasLabel() const { return !Label.empty(); }
     Identifier getLabel() const { return Label; }
     
     ParameterTypeFlags getParameterFlags() const { return Flags; }
@@ -2382,21 +2394,23 @@ public:
   /// \brief A class which abstracts out some details necessary for
   /// making a call.
   class ExtInfo {
-    // Feel free to rearrange or add bits, but if you go over 15,
-    // you'll need to adjust both the Bits field below and
-    // BaseType::AnyFunctionTypeBits.
-
+    // If bits are added or removed, then TypeBase::AnyFunctionTypeBits
+    // and NumMaskBits must be updated, and they must match.
+    //
     //   |representation|isAutoClosure|noEscape|throws|
     //   |    0 .. 3    |      4      |    5   |   6  |
     //
-    enum : uint16_t { RepresentationMask     = 0x00F };
-    enum : uint16_t { AutoClosureMask        = 0x010 };
-    enum : uint16_t { NoEscapeMask           = 0x020 };
-    enum : uint16_t { ThrowsMask             = 0x040 };
+    enum : unsigned {
+      RepresentationMask     = 0xF << 0,
+      AutoClosureMask        = 1 << 4,
+      NoEscapeMask           = 1 << 5,
+      ThrowsMask             = 1 << 6,
+      NumMaskBits            = 7
+    };
 
-    uint16_t Bits;
+    unsigned Bits; // Naturally sized for speed.
 
-    ExtInfo(unsigned Bits) : Bits(static_cast<uint16_t>(Bits)) {}
+    ExtInfo(unsigned Bits) : Bits(Bits) {}
 
     friend class AnyFunctionType;
     
@@ -2467,22 +2481,26 @@ public:
     
     // Note that we don't have setters. That is by design, use
     // the following with methods instead of mutating these objects.
+    LLVM_NODISCARD
     ExtInfo withRepresentation(Representation Rep) const {
       return ExtInfo((Bits & ~RepresentationMask)
                      | (unsigned)Rep);
     }
+    LLVM_NODISCARD
     ExtInfo withIsAutoClosure(bool IsAutoClosure = true) const {
       if (IsAutoClosure)
         return ExtInfo(Bits | AutoClosureMask);
       else
         return ExtInfo(Bits & ~AutoClosureMask);
     }
+    LLVM_NODISCARD
     ExtInfo withNoEscape(bool NoEscape = true) const {
       if (NoEscape)
         return ExtInfo(Bits | NoEscapeMask);
       else
         return ExtInfo(Bits & ~NoEscapeMask);
     }
+    LLVM_NODISCARD
     ExtInfo withThrows(bool Throws = true) const {
       if (Throws)
         return ExtInfo(Bits | ThrowsMask);
@@ -2490,7 +2508,7 @@ public:
         return ExtInfo(Bits & ~ThrowsMask);
     }
 
-    uint16_t getFuncAttrKey() const {
+    unsigned getFuncAttrKey() const {
       return Bits;
     }
     
@@ -2524,6 +2542,11 @@ protected:
   : TypeBase(Kind, CanTypeContext, properties), Input(Input), Output(Output),
     NumParams(NumParams) {
     AnyFunctionTypeBits.ExtInfo = Info.Bits;
+    // The use of both assert() and static_assert() is intentional.
+    assert(AnyFunctionTypeBits.ExtInfo == Info.Bits && "Bits were dropped!");
+    static_assert(ExtInfo::NumMaskBits ==
+                  AnyFunctionTypeBitfields::NumExtInfoBits,
+                 "ExtInfo and AnyFunctionTypeBitfields must agree on bit size");
   }
 
 public:
@@ -3166,6 +3189,42 @@ public:
     return !(*this == rhs);
   }
 };
+
+using YieldConvention = ParameterConvention;
+
+/// The type and convention of a value yielded from a yield-once or
+/// yield-many coroutine.
+class SILYieldInfo : public SILParameterInfo {
+public:
+  SILYieldInfo() {}
+  SILYieldInfo(CanType type, YieldConvention conv)
+    : SILParameterInfo(type, conv) {
+  }
+
+  SILYieldInfo getWithType(CanType type) const {
+    return SILYieldInfo(type, getConvention());
+  }
+
+  template<typename F>
+  SILYieldInfo map(const F &fn) const {
+    return getWithType(fn(getType()));
+  }
+};
+
+/// SILCoroutineKind - What kind of coroutine is this SILFunction?
+enum class SILCoroutineKind : uint8_t {
+  /// This function is not a coroutine.  It may have arbitrary normal
+  /// results and may not have yield results.
+  None,
+
+  /// This function is a yield-once coroutine (used by e.g. accessors).
+  /// It must not have normal results and may have arbitrary yield results.
+  YieldOnce,
+
+  /// This function is a yield-many coroutine (used by e.g. generators).
+  /// It must not have normal results and may have arbitrary yield results.
+  YieldMany,
+};
   
 class SILFunctionType;
 typedef CanTypeWrapper<SILFunctionType> CanSILFunctionType;
@@ -3197,19 +3256,22 @@ public:
   /// \brief A class which abstracts out some details necessary for
   /// making a call.
   class ExtInfo {
-    // Feel free to rearrange or add bits, but if you go over 15,
-    // you'll need to adjust both the Bits field below and
-    // TypeBase::AnyFunctionTypeBits.
+    // If bits are added or removed, then TypeBase::SILFunctionTypeBits
+    // and NumMaskBits must be updated, and they must match.
 
-    //   |representation|pseudogeneric|
-    //   |    0 .. 3    |      4      |
+    //   |representation|pseudogeneric| noescape |
+    //   |    0 .. 3    |      4      |     5    |
     //
-    enum : uint16_t { RepresentationMask = 0x00F };
-    enum : uint16_t { PseudogenericMask  = 0x010 };
+    enum : unsigned {
+      RepresentationMask = 0xF << 0,
+      PseudogenericMask  = 1 << 4,
+      NoEscapeMask       = 1 << 5,
+      NumMaskBits        = 6
+    };
 
-    uint16_t Bits;
+    unsigned Bits; // Naturally sized for speed.
 
-    ExtInfo(unsigned Bits) : Bits(static_cast<uint16_t>(Bits)) {}
+    ExtInfo(unsigned Bits) : Bits(Bits) {}
 
     friend class SILFunctionType;
     
@@ -3218,14 +3280,18 @@ public:
     ExtInfo() : Bits(0) { }
 
     // Constructor for polymorphic type.
-    ExtInfo(Representation rep, bool isPseudogeneric) {
+    ExtInfo(Representation rep, bool isPseudogeneric, bool isNoEscape) {
       Bits = ((unsigned) rep) |
-             (isPseudogeneric ? PseudogenericMask : 0);
+             (isPseudogeneric ? PseudogenericMask : 0) |
+             (isNoEscape ? NoEscapeMask : 0);
     }
 
     /// Is this function pseudo-generic?  A pseudo-generic function
     /// is not permitted to dynamically depend on its type arguments.
     bool isPseudogeneric() const { return Bits & PseudogenericMask; }
+
+    // Is this function guaranteed to be no-escape by the type system?
+    bool isNoEscape() const { return Bits & NoEscapeMask; }
 
     /// What is the abstract representation of this function value?
     Representation getRepresentation() const {
@@ -3299,8 +3365,14 @@ public:
       else
         return ExtInfo(Bits & ~PseudogenericMask);
     }
+    ExtInfo withNoEscape(bool NoEscape = true) const {
+      if (NoEscape)
+        return ExtInfo(Bits | NoEscapeMask);
+      else
+        return ExtInfo(Bits & ~NoEscapeMask);
+    }
 
-    uint16_t getFuncAttrKey() const {
+    unsigned getFuncAttrKey() const {
       return Bits;
     }
 
@@ -3314,18 +3386,23 @@ public:
 
 private:
   unsigned NumParameters;
-  unsigned NumResults : 16;               // Not including the ErrorResult.
-  unsigned NumIndirectFormalResults : 16; // Subset of NumResults.
+
+  // These are *normal* results if this is not a coroutine and *yield* results
+  // otherwise.
+  unsigned NumAnyResults : 16;         // Not including the ErrorResult.
+  unsigned NumAnyIndirectFormalResults : 16; // Subset of NumAnyResults.
 
   // The layout of a SILFunctionType in memory is:
   //   SILFunctionType
   //   SILParameterInfo[NumParameters]
-  //   SILResultInfo[NumResults]
-  //   SILResultInfo?                 // if hasErrorResult()
-  //   CanType?                       // if NumResults > 1, formal result cache
-  //   CanType?                       // if NumResults > 1, all result cache
+  //   SILResultInfo[isCoroutine() ? 0 : NumAnyResults]
+  //   SILYieldInfo[isCoroutine() ? NumAnyResults : 0]
+  //   SILResultInfo?    // if hasErrorResult()
+  //   CanType?          // if !isCoro && NumAnyResults > 1, formal result cache
+  //   CanType?          // if !isCoro && NumAnyResults > 1, all result cache
 
   CanGenericSignature GenericSig;
+  Optional<ProtocolConformanceRef> WitnessMethodConformance;
 
   MutableArrayRef<SILParameterInfo> getMutableParameters() {
     return {getTrailingObjects<SILParameterInfo>(), NumParameters};
@@ -3333,47 +3410,74 @@ private:
 
   MutableArrayRef<SILResultInfo> getMutableResults() {
     auto *ptr = reinterpret_cast<SILResultInfo *>(getMutableParameters().end());
-    return MutableArrayRef<SILResultInfo>(ptr, getNumResults());
+    return {ptr, getNumResults()};
   }
 
-  SILResultInfo *getEndOfNormalResults() { return getMutableResults().end(); }
+  MutableArrayRef<SILYieldInfo> getMutableYields() {
+    auto *ptr = reinterpret_cast<SILYieldInfo *>(getMutableParameters().end());
+    return {ptr, getNumYields()};
+  }
+
+  /// Return a pointer past the end of the formal results, whether they
+  /// are yield-results or normal results.
+  void *getEndOfFormalResults() {
+    return isCoroutine() ? static_cast<void*>(getMutableYields().end())
+                         : static_cast<void*>(getMutableResults().end());
+  }
 
   SILResultInfo &getMutableErrorResult() {
     assert(hasErrorResult());
-    return *getEndOfNormalResults();
+    return *reinterpret_cast<SILResultInfo*>(getEndOfFormalResults());
   }
 
-  bool hasResultCache() const { return NumResults > 1; }
+  /// Return a pointer past the end of all of the results, including the
+  /// error result if one is present.
+  void *getEndOfAllResults() {
+    void *end = getEndOfFormalResults();
+    if (hasErrorResult())
+      end = reinterpret_cast<char*>(end) + sizeof(SILResultInfo);
+    return end;
+  }
+
+  /// Do we have slots for caches of the normal-result tuple type?
+  bool hasResultCache() const {
+    return NumAnyResults > 1 && !isCoroutine();
+  }
 
   CanType &getMutableFormalResultsCache() const {
     assert(hasResultCache());
-    auto *ptr = const_cast<SILFunctionType *>(this)->getEndOfNormalResults()
-                + size_t(hasErrorResult());
+    auto *ptr = const_cast<SILFunctionType *>(this)->getEndOfAllResults();
     return *reinterpret_cast<CanType*>(ptr);
   }
 
   CanType &getMutableAllResultsCache() const {
     assert(hasResultCache());
-    auto *ptr = const_cast<SILFunctionType *>(this)->getEndOfNormalResults()
-                + size_t(hasErrorResult());
+    auto *ptr = const_cast<SILFunctionType *>(this)->getEndOfAllResults();
     return *(reinterpret_cast<CanType *>(ptr) + 1);
   }
 
   SILFunctionType(GenericSignature *genericSig, ExtInfo ext,
+                  SILCoroutineKind coroutineKind,
                   ParameterConvention calleeConvention,
                   ArrayRef<SILParameterInfo> params,
+                  ArrayRef<SILYieldInfo> yieldResults,
                   ArrayRef<SILResultInfo> normalResults,
-                  Optional<SILResultInfo> errorResult, const ASTContext &ctx,
-                  RecursiveTypeProperties properties);
+                  Optional<SILResultInfo> errorResult,
+                  const ASTContext &ctx,
+                  RecursiveTypeProperties properties,
+                  Optional<ProtocolConformanceRef> witnessMethodConformance);
 
 public:
   static CanSILFunctionType get(GenericSignature *genericSig,
                                 ExtInfo ext,
+                                SILCoroutineKind coroutineKind,
                                 ParameterConvention calleeConvention,
                                 ArrayRef<SILParameterInfo> interfaceParams,
+                                ArrayRef<SILYieldInfo> interfaceYields,
                                 ArrayRef<SILResultInfo> interfaceResults,
                                 Optional<SILResultInfo> interfaceErrorResult,
-                                const ASTContext &ctx);
+                                const ASTContext &ctx,
+              Optional<ProtocolConformanceRef> witnessMethodConformance = None);
 
   /// Given that this function type uses a C-language convention, return its
   /// formal semantic result type.
@@ -3394,13 +3498,33 @@ public:
   bool isCalleeConsumed() const {
     return getCalleeConvention() == ParameterConvention::Direct_Owned;
   }
+  bool isCalleeUnowned() const {
+    return getCalleeConvention() == ParameterConvention::Direct_Unowned;
+  }
+  bool isCalleeGuaranteed() const {
+    return getCalleeConvention() == ParameterConvention::Direct_Guaranteed;
+  }
+
+  /// Is this some kind of coroutine?
+  bool isCoroutine() const {
+    return getCoroutineKind() != SILCoroutineKind::None;
+  }
+  SILCoroutineKind getCoroutineKind() const {
+    return SILCoroutineKind(SILFunctionTypeBits.CoroutineKind);
+  }
+
+  /// Return the array of all the yields.
+  ArrayRef<SILYieldInfo> getYields() const {
+    return const_cast<SILFunctionType *>(this)->getMutableYields();
+  }
+  unsigned getNumYields() const { return isCoroutine() ? NumAnyResults : 0; }
 
   /// Return the array of all result information. This may contain inter-mingled
   /// direct and indirect results.
   ArrayRef<SILResultInfo> getResults() const {
     return const_cast<SILFunctionType *>(this)->getMutableResults();
   }
-  unsigned getNumResults() const { return NumResults; }
+  unsigned getNumResults() const { return isCoroutine() ? 0 : NumAnyResults; }
 
   /// Given that this function type has exactly one result, return it.
   /// This is a common situation when working with a function with a known
@@ -3430,14 +3554,14 @@ public:
   // indirect property, not the SIL indirect property, should be consulted to
   // determine whether function reabstraction is necessary.
   unsigned getNumIndirectFormalResults() const {
-    return NumIndirectFormalResults;
+    return isCoroutine() ? 0 : NumAnyIndirectFormalResults;
   }
   /// Does this function have any formally indirect results?
   bool hasIndirectFormalResults() const {
     return getNumIndirectFormalResults() != 0;
   }
   unsigned getNumDirectFormalResults() const {
-    return NumResults - NumIndirectFormalResults;
+    return isCoroutine() ? 0 : NumAnyResults - NumAnyIndirectFormalResults;
   }
 
   struct IndirectFormalResultFilter {
@@ -3520,9 +3644,29 @@ public:
 
   CanType getSelfInstanceType() const;
 
-  /// If this a @convention(witness_method) function with an abstract
-  /// self parameter, return the protocol constraint for the Self type.
-  ProtocolDecl *getDefaultWitnessMethodProtocol(ModuleDecl &M) const;
+  /// If this is a @convention(witness_method) function with a protocol
+  /// constrained self parameter, return the protocol constraint for
+  /// the Self type.
+  ProtocolDecl *getDefaultWitnessMethodProtocol() const;
+
+  /// If this is a @convention(witness_method) function with a class
+  /// constrained self parameter, return the class constraint for the
+  /// Self type.
+  ClassDecl *getWitnessMethodClass(ModuleDecl &M) const;
+
+  /// If this is a @convention(witness_method) function, return the conformance
+  /// for which the method is a witness.
+  ProtocolConformanceRef getWitnessMethodConformance() const {
+    assert(getRepresentation() == Representation::WitnessMethod);
+    return *WitnessMethodConformance;
+  }
+
+  /// If this is a @convention(witness_method) function, return the conformance
+  /// for which the method is a witness, if it isn't that convention, return
+  /// None.
+  Optional<ProtocolConformanceRef> getWitnessMethodConformanceOrNone() const {
+    return WitnessMethodConformance;
+  }
 
   ExtInfo getExtInfo() const { return ExtInfo(SILFunctionTypeBits.ExtInfo); }
 
@@ -3544,7 +3688,49 @@ public:
     return getExtInfo().isPseudogeneric();
   }
 
+  bool isNoEscape() const {
+    return getExtInfo().isNoEscape();
+  }
+
   bool isNoReturnFunction(); // Defined in SILType.cpp
+
+  class ABICompatibilityCheckResult {
+    friend class SILFunctionType;
+
+    enum innerty {
+      None,
+      DifferentFunctionRepresentations,
+      DifferentNumberOfResults,
+      DifferentReturnValueConventions,
+      ABIIncompatibleReturnValues,
+      DifferentErrorResultConventions,
+      ABIIncompatibleErrorResults,
+      DifferentNumberOfParameters,
+      DifferingParameterConvention,
+      ABIIncompatibleParameterType,
+    } kind;
+    Optional<uintptr_t> payload;
+
+    ABICompatibilityCheckResult(innerty kind) : kind(kind) {}
+    ABICompatibilityCheckResult(innerty kind, uintptr_t payload)
+        : kind(kind), payload(payload) {}
+
+  public:
+    ABICompatibilityCheckResult() = delete;
+
+    bool isCompatible() const { return kind == innerty::None; }
+
+    bool hasPayload() const { return payload.hasValue(); }
+    uintptr_t getPayload() const { return payload.getValue(); }
+    StringRef getMessage() const;
+  };
+
+  /// Returns no-error if this SILFunctionType is ABI compatible with \p
+  /// other. Otherwise, it returns a true error with a message in
+  /// std::error_code. This is only meant to be used in assertions. When
+  /// assertions are disabled, this just returns true.
+  ABICompatibilityCheckResult
+  isABICompatibleWith(CanSILFunctionType other) const;
 
   CanSILFunctionType substGenericArgs(SILModule &silModule,
                                       SubstitutionList subs);
@@ -3555,15 +3741,18 @@ public:
                                       LookupConformanceFn conformances);
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, getGenericSignature(), getExtInfo(), getCalleeConvention(),
-            getParameters(), getResults(), getOptionalErrorResult());
+    Profile(ID, getGenericSignature(), getExtInfo(), getCoroutineKind(),
+            getCalleeConvention(), getParameters(), getYields(),
+            getResults(), getOptionalErrorResult());
   }
   static void Profile(llvm::FoldingSetNodeID &ID,
                       GenericSignature *genericSig,
                       ExtInfo info,
+                      SILCoroutineKind coroutineKind,
                       ParameterConvention calleeConvention,
                       ArrayRef<SILParameterInfo> params,
-                      ArrayRef<SILResultInfo> result,
+                      ArrayRef<SILYieldInfo> yields,
+                      ArrayRef<SILResultInfo> results,
                       Optional<SILResultInfo> errorResult);
 
   // Implement isa/cast/dyncast/etc.
@@ -3661,7 +3850,23 @@ public:
   }
 };
 DEFINE_EMPTY_CAN_TYPE_WRAPPER(SILBlockStorageType, Type)
-  
+
+/// A singleton 'token' type, which establishes a formal dependency
+/// between two SIL nodes.  A token 'value' cannot be abstracted in
+/// SIL: it cannot be returned, yielded, or passed as a function or
+/// block argument.
+class SILTokenType final : public TypeBase {
+  friend class ASTContext;
+  SILTokenType(const ASTContext &C)
+    : TypeBase(TypeKind::SILToken, &C, RecursiveTypeProperties()) {}
+public:
+  // The singleton instance of this type is ASTContext::TheSILTokenType.
+
+  static bool classof(const TypeBase *T) {
+    return T->getKind() == TypeKind::SILToken;
+  }
+};
+DEFINE_EMPTY_CAN_TYPE_WRAPPER(SILTokenType, Type)
 
 /// A type with a special syntax that is always sugar for a library type.
 ///
@@ -4041,7 +4246,7 @@ class ArchetypeType final : public SubstitutableType,
 
   llvm::PointerUnion3<ArchetypeType *, TypeBase *,
                       GenericEnvironment *> ParentOrOpenedOrEnvironment;
-  llvm::PointerUnion<AssociatedTypeDecl *, Identifier> AssocTypeOrName;
+  Type InterfaceType;
   MutableArrayRef<std::pair<Identifier, Type>> NestedTypes;
 
   void populateNestedTypes() const;
@@ -4053,7 +4258,7 @@ public:
   /// The ConformsTo array will be copied into the ASTContext by this routine.
   static CanTypeWrapper<ArchetypeType>
                         getNew(const ASTContext &Ctx, ArchetypeType *Parent,
-                               AssociatedTypeDecl *AssocType,
+                               DependentMemberType *InterfaceType,
                                SmallVectorImpl<ProtocolDecl *> &ConformsTo,
                                Type Superclass, LayoutConstraint Layout);
 
@@ -4063,8 +4268,8 @@ public:
   /// by this routine.
   static CanTypeWrapper<ArchetypeType>
                         getNew(const ASTContext &Ctx,
-                               GenericEnvironment *genericEnvironment,
-                               Identifier Name,
+                               GenericEnvironment *GenericEnv,
+                               GenericTypeParamType *InterfaceType,
                                SmallVectorImpl<ProtocolDecl *> &ConformsTo,
                                Type Superclass, LayoutConstraint Layout);
 
@@ -4108,15 +4313,17 @@ public:
   /// Note: opened archetypes currently don't have generic environments.
   GenericEnvironment *getGenericEnvironment() const;
 
+  /// Retrieve the interface type of this associated type, which will either
+  /// be a GenericTypeParamType or a DependentMemberType.
+  Type getInterfaceType() const { return InterfaceType; }
+
   /// Retrieve the associated type to which this archetype (if it is a nested
   /// archetype) corresponds.
   ///
   /// This associated type will have the same name as the archetype and will
   /// be a member of one of the protocols to which the parent archetype
   /// conforms.
-  AssociatedTypeDecl *getAssocType() const {
-    return AssocTypeOrName.dyn_cast<AssociatedTypeDecl *>();
-  }
+  AssociatedTypeDecl *getAssocType() const;
 
   /// getConformsTo - Retrieve the set of protocols to which this substitutable
   /// type shall conform.
@@ -4224,7 +4431,7 @@ private:
           const ASTContext &Ctx,
           llvm::PointerUnion<ArchetypeType *, GenericEnvironment *>
             ParentOrGenericEnv,
-          llvm::PointerUnion<AssociatedTypeDecl *, Identifier> AssocTypeOrName,
+          Type InterfaceType,
           ArrayRef<ProtocolDecl *> ConformsTo,
           Type Superclass, LayoutConstraint Layout);
 

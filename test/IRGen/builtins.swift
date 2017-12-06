@@ -1,5 +1,4 @@
 // RUN: %target-swift-frontend -assume-parsing-unqualified-ownership-sil -parse-stdlib -primary-file %s -emit-ir -o - -disable-objc-attr-requires-foundation-module | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-%target-runtime
-// REQUIRES: executable_test
 
 // REQUIRES: CPU=x86_64
 
@@ -11,6 +10,8 @@ import Swift
 
 typealias Int = Builtin.Int32
 typealias Bool = Builtin.Int1
+
+// CHECK: call swiftcc void @swift_errorInMain(
 
 infix operator * {
   associativity left
@@ -151,7 +152,7 @@ func assign_test(_ value: Builtin.Int64, ptr: Builtin.RawPointer) {
 // CHECK: define hidden {{.*}}%swift.refcounted* @_T08builtins16load_object_test{{[_0-9a-zA-Z]*}}F
 func load_object_test(_ ptr: Builtin.RawPointer) -> Builtin.NativeObject {
   // CHECK: [[T0:%.*]] = load [[REFCOUNT]]*, [[REFCOUNT]]**
-  // CHECK: call void @swift_rt_swift_retain([[REFCOUNT]]* [[T0]])
+  // CHECK: call [[REFCOUNT]]* @swift_rt_swift_retain([[REFCOUNT]]* returned [[T0]])
   // CHECK: ret [[REFCOUNT]]* [[T0]]
   return Builtin.load(ptr)
 }
@@ -159,7 +160,7 @@ func load_object_test(_ ptr: Builtin.RawPointer) -> Builtin.NativeObject {
 // CHECK: define hidden {{.*}}%swift.refcounted* @_T08builtins20load_raw_object_test{{[_0-9a-zA-Z]*}}F
 func load_raw_object_test(_ ptr: Builtin.RawPointer) -> Builtin.NativeObject {
   // CHECK: [[T0:%.*]] = load [[REFCOUNT]]*, [[REFCOUNT]]**
-  // CHECK: call void @swift_rt_swift_retain([[REFCOUNT]]* [[T0]])
+  // CHECK: call [[REFCOUNT]]* @swift_rt_swift_retain([[REFCOUNT]]* returned [[T0]])
   // CHECK: ret [[REFCOUNT]]* [[T0]]
   return Builtin.loadRaw(ptr)
 }
@@ -222,12 +223,12 @@ func sizeof_alignof_test() {
 
 // CHECK: define hidden {{.*}}void @_T08builtins27generic_sizeof_alignof_testyxlF(
 func generic_sizeof_alignof_test<T>(_: T) {
-  // CHECK:      [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 11
+  // CHECK:      [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 9
   // CHECK-NEXT: [[T1:%.*]] = load i8*, i8** [[T0]]
   // CHECK-NEXT: [[SIZE:%.*]] = ptrtoint i8* [[T1]] to i64
   // CHECK-NEXT: store i64 [[SIZE]], i64* [[S:%.*]]
   var s = Builtin.sizeof(T.self)
-  // CHECK: [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 12
+  // CHECK: [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 10
   // CHECK-NEXT: [[T1:%.*]] = load i8*, i8** [[T0]]
   // CHECK-NEXT: [[T2:%.*]] = ptrtoint i8* [[T1]] to i64
   // CHECK-NEXT: [[T3:%.*]] = and i64 [[T2]], 65535
@@ -238,7 +239,7 @@ func generic_sizeof_alignof_test<T>(_: T) {
 
 // CHECK: define hidden {{.*}}void @_T08builtins21generic_strideof_testyxlF(
 func generic_strideof_test<T>(_: T) {
-  // CHECK:      [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 13
+  // CHECK:      [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 11
   // CHECK-NEXT: [[T1:%.*]] = load i8*, i8** [[T0]]
   // CHECK-NEXT: [[STRIDE:%.*]] = ptrtoint i8* [[T1]] to i64
   // CHECK-NEXT: store i64 [[STRIDE]], i64* [[S:%.*]]
@@ -444,80 +445,109 @@ func destroyPODArray(_ array: Builtin.RawPointer, count: Builtin.Word) {
 }
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins18destroyNonPODArray{{[_0-9a-zA-Z]*}}F(i8*, i64) {{.*}} {
-// CHECK:       iter:
-// CHECK:       loop:
-// CHECK:         call {{.*}} @swift_rt_swift_release
-// CHECK:         br label %iter
+// CHECK-NOT:       loop:
+// CHECK:       call void @swift_arrayDestroy(
 func destroyNonPODArray(_ array: Builtin.RawPointer, count: Builtin.Word) {
   Builtin.destroyArray(C.self, array, count)
 }
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins15destroyGenArrayyBp_Bw5countxtlF(i8*, i64, %swift.opaque* noalias nocapture, %swift.type* %T)
 // CHECK-NOT:   loop:
-// CHECK:         call void %destroyArray
+// CHECK:         call void @swift_arrayDestroy
 func destroyGenArray<T>(_ array: Builtin.RawPointer, count: Builtin.Word, _: T) {
   Builtin.destroyArray(T.self, array, count)
 }
 
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins12copyPODArray{{[_0-9a-zA-Z]*}}F(i8*, i8*, i64)
-// CHECK:         mul nuw i64 4, %2
-// CHECK:         call void @llvm.memcpy.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
-// CHECK:         mul nuw i64 4, %2
-// CHECK:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
-// CHECK:         mul nuw i64 4, %2
-// CHECK:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memcpy.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memcpy.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
+// check:         mul nuw i64 4, %2
+// check:         call void @llvm.memcpy.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 4, i1 false)
 func copyPODArray(_ dest: Builtin.RawPointer, src: Builtin.RawPointer, count: Builtin.Word) {
   Builtin.copyArray(Int.self, dest, src, count)
   Builtin.takeArrayFrontToBack(Int.self, dest, src, count)
   Builtin.takeArrayBackToFront(Int.self, dest, src, count)
+  Builtin.assignCopyArrayNoAlias(Int.self, dest, src, count)
+  Builtin.assignCopyArrayFrontToBack(Int.self, dest, src, count)
+  Builtin.assignCopyArrayBackToFront(Int.self, dest, src, count)
+  Builtin.assignTakeArray(Int.self, dest, src, count)
 }
 
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins11copyBTArray{{[_0-9a-zA-Z]*}}F(i8*, i8*, i64) {{.*}} {
-// CHECK:       iter:
-// CHECK:       loop:
-// CHECK:         call {{.*}} @swift_rt_swift_retain
-// CHECK:         br label %iter
+// CHECK-NOT:       loop:
+// CHECK:         call void @swift_arrayInitWithCopy
 // CHECK:         mul nuw i64 8, %2
 // CHECK:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 8, i1 false)
 // CHECK:         mul nuw i64 8, %2
 // CHECK:         call void @llvm.memmove.p0i8.p0i8.i64(i8* {{.*}}, i8* {{.*}}, i64 {{.*}}, i32 8, i1 false)
+// CHECK:         call void @swift_arrayAssignWithCopyNoAlias(
+// CHECK:         call void @swift_arrayAssignWithCopyFrontToBack(
+// CHECK:         call void @swift_arrayAssignWithCopyBackToFront(
+// CHECK:         call void @swift_arrayAssignWithTake(
 func copyBTArray(_ dest: Builtin.RawPointer, src: Builtin.RawPointer, count: Builtin.Word) {
   Builtin.copyArray(C.self, dest, src, count)
   Builtin.takeArrayFrontToBack(C.self, dest, src, count)
   Builtin.takeArrayBackToFront(C.self, dest, src, count)
+  Builtin.assignCopyArrayNoAlias(C.self, dest, src, count)
+  Builtin.assignCopyArrayFrontToBack(C.self, dest, src, count)
+  Builtin.assignCopyArrayBackToFront(C.self, dest, src, count)
+  Builtin.assignTakeArray(C.self, dest, src, count)
 }
 
 struct W { weak var c: C? }
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins15copyNonPODArray{{[_0-9a-zA-Z]*}}F(i8*, i8*, i64) {{.*}} {
-// CHECK:       iter:
-// CHECK:       loop:
-// CHECK:         swift_weakCopyInit
-// CHECK:       iter{{.*}}:
-// CHECK:       loop{{.*}}:
-// CHECK:         swift_weakTakeInit
-// CHECK:       iter{{.*}}:
-// CHECK:       loop{{.*}}:
-// CHECK:         swift_weakTakeInit
+// CHECK-NOT:       loop:
+// CHECK:         call void @swift_arrayInitWithCopy(
+// CHECK-NOT:       loop{{.*}}:
+// CHECK:         call void @swift_arrayInitWithTakeFrontToBack(
+// CHECK-NOT:       loop{{.*}}:
+// CHECK:          call void @swift_arrayInitWithTakeBackToFront(
+// CHECK:         call void @swift_arrayAssignWithCopyNoAlias(
+// CHECK:         call void @swift_arrayAssignWithCopyFrontToBack(
+// CHECK:         call void @swift_arrayAssignWithCopyBackToFront(
+// CHECK:         call void @swift_arrayAssignWithTake(
 func copyNonPODArray(_ dest: Builtin.RawPointer, src: Builtin.RawPointer, count: Builtin.Word) {
   Builtin.copyArray(W.self, dest, src, count)
   Builtin.takeArrayFrontToBack(W.self, dest, src, count)
   Builtin.takeArrayBackToFront(W.self, dest, src, count)
+  Builtin.assignCopyArrayNoAlias(W.self, dest, src, count)
+  Builtin.assignCopyArrayFrontToBack(W.self, dest, src, count)
+  Builtin.assignCopyArrayBackToFront(W.self, dest, src, count)
+  Builtin.assignTakeArray(W.self, dest, src, count)
 }
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins12copyGenArray{{[_0-9a-zA-Z]*}}F(i8*, i8*, i64, %swift.opaque* noalias nocapture, %swift.type* %T)
 // CHECK-NOT:   loop:
-// CHECK:         call %swift.opaque* %initializeArrayWithCopy
+// CHECK:        call void @swift_arrayInitWithCopy
 // CHECK-NOT:   loop:
-// CHECK:         call %swift.opaque* %initializeArrayWithTakeFrontToBack
+// CHECK:        call void @swift_arrayInitWithTakeFrontToBack(
 // CHECK-NOT:   loop:
-// CHECK:         call %swift.opaque* %initializeArrayWithTakeBackToFront
+// CHECK:        call void @swift_arrayInitWithTakeBackToFront(
+// CHECK:        call void @swift_arrayAssignWithCopyNoAlias(
+// CHECK:        call void @swift_arrayAssignWithCopyFrontToBack(
+// CHECK:        call void @swift_arrayAssignWithCopyBackToFront(
+// CHECK:        call void @swift_arrayAssignWithTake(
 func copyGenArray<T>(_ dest: Builtin.RawPointer, src: Builtin.RawPointer, count: Builtin.Word, _: T) {
   Builtin.copyArray(T.self, dest, src, count)
   Builtin.takeArrayFrontToBack(T.self, dest, src, count)
   Builtin.takeArrayBackToFront(T.self, dest, src, count)
+  Builtin.assignCopyArrayNoAlias(T.self, dest, src, count)
+  Builtin.assignCopyArrayFrontToBack(T.self, dest, src, count)
+  Builtin.assignCopyArrayBackToFront(T.self, dest, src, count)
+  Builtin.assignTakeArray(T.self, dest, src, count)
 }
 
 // CHECK-LABEL: define hidden {{.*}}void @_T08builtins24conditionallyUnreachableyyF
@@ -733,7 +763,7 @@ func isUniqueIUO(_ ref: inout Builtin.NativeObject?) -> Bool {
 
 // CHECK-LABEL: define {{.*}} @{{.*}}generic_ispod_test
 func generic_ispod_test<T>(_: T) {
-  // CHECK:      [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 12
+  // CHECK:      [[T0:%.*]] = getelementptr inbounds i8*, i8** [[T:%.*]], i32 10
   // CHECK-NEXT: [[T1:%.*]] = load i8*, i8** [[T0]]
   // CHECK-NEXT: [[FLAGS:%.*]] = ptrtoint i8* [[T1]] to i64
   // CHECK-NEXT: [[ISNOTPOD:%.*]] = and i64 [[FLAGS]], 65536
@@ -759,7 +789,7 @@ func is_same_metatype_test(_ t1: Any.Type, _ t2: Any.Type) {
 }
 
 // CHECK-LABEL: define {{.*}} @{{.*}}generic_unsafeGuaranteed_test
-// CHECK:  call void @{{.*}}swift_{{.*}}etain({{.*}}* %0)
+// CHECK:  call {{.*}}* @{{.*}}swift_{{.*}}etain({{.*}}* returned %0)
 // CHECK:  call void @{{.*}}swift_{{.*}}elease({{.*}}* %0)
 // CHECK:  ret {{.*}}* %0
 func generic_unsafeGuaranteed_test<T: AnyObject>(_ t : T) -> T {
@@ -769,7 +799,7 @@ func generic_unsafeGuaranteed_test<T: AnyObject>(_ t : T) -> T {
 
 // CHECK-LABEL: define {{.*}} @{{.*}}unsafeGuaranteed_test
 // CHECK:  [[LOCAL:%.*]] = alloca %swift.refcounted*
-// CHECK:  call void @swift_rt_swift_retain(%swift.refcounted* %0)
+// CHECK:  call %swift.refcounted* @swift_rt_swift_retain(%swift.refcounted* returned %0)
 // CHECK:  store %swift.refcounted* %0, %swift.refcounted** [[LOCAL]]
 // CHECK:  call void @swift_rt_swift_release(%swift.refcounted* %0)
 // CHECK:  ret %swift.refcounted* %0
@@ -809,6 +839,23 @@ func atomicload(_ p: Builtin.RawPointer) {
   // CHECK: store atomic volatile i32 [[D1]], i32* {{.*}} seq_cst, align 4
   Builtin.atomicstore_seqcst_volatile_FPIEEE32(p, d)
 }
+
+func createInt(_ fn: () -> ()) throws {}
+// CHECK-LABEL: define {{.*}}testForceTry
+// CHECK: call swiftcc void @swift_unexpectedError(%swift.error*
+func testForceTry(_ fn: () -> ()) {
+  try! createInt(fn)
+}
+
+// CHECK-LABEL: declare swiftcc void @swift_unexpectedError(%swift.error*
+
+enum MyError : Error {
+  case A, B
+}
+
+throw MyError.A
+
+
 
 // CHECK: ![[R]] = !{i64 0, i64 9223372036854775807}
 

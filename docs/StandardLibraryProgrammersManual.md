@@ -2,29 +2,51 @@
 
 This is meant to be a guide to people working on the standard library. It covers coding standards, code organization, best practices, internal annotations, and provides a guide to standard library internals. This document is inspired by LLVM's excellent [programmer's manual](http://llvm.org/docs/ProgrammersManual.html) and [coding standards](http://llvm.org/docs/CodingStandards.html).
 
-TBD: Should this subsume [StdlibRationales.rst](https://github.com/apple/swift/blob/master/docs/StdlibRationales.rst)?
+TODO: Should this subsume or link to [StdlibRationales.rst](https://github.com/apple/swift/blob/master/docs/StdlibRationales.rst)?
 
-## Library Organization
+TODO: Should this subsume or link to [AccessControlInStdlib.rst](https://github.com/apple/swift/blob/master/docs/AccessControlInStdlib.rst)
 
-TBD
 
-### Stubs
+## (Meta): List of wants and TODOs for this guide
 
-TBD
+1. Library Organization
+    1. What files are where
+        1. Brief about CMakeLists
+	1. Brief about GroupInfo.json
+    1. What tests are where
+        1. Furthermore, should there be a split between whitebox tests and blackbox tests?
+    1. What benchmarks are where
+        1. Furthermore, should there be benchmarks, microbenchmarks, and nanobenchmarks (aka whitebox microbenchmarks)?
+    1. What SPIs exist, where, and who uses them
+    1. Explain test/Prototypes, and how to use that for rapid (relatively speaking) prototyping
+1. Library Concepts
+    1. Protocol hierarchy
+        1. Customization hooks
+    1. Use of classes, COW implementation, buffers, etc
+    1. Compatiblity, `@available`, etc.
+    1. Resilience, ABI stability, `@_inlineable`, `@_versioned`, etc
+    1. Strings and ICU
+    1. Lifetimes
+        1. withExtendedLifetime, withUnsafe...,
+    1. Shims and stubs
+1. Coding Standards
+    1. High level concerns
+    1. Best practices
+    1. Formatting
+1. Internals
+    1. `@inline(__always)` and `@inline(never)`
+    1. `@semantics(...)`
+    1. Builtins
+        1. Builtin.addressof, _isUnique, _isUniqueOrPinned, etc
+1. Dirty hacks
+    1. Why all the underscores and extra protocols?
+    1. How does the `...` ranges work?
+1. Frequently Encountered Issues
 
-## Protocols and Classes
-
-TBD
-
-### Customization Hooks
-
-TBD
 
 ## Internals
 
-### Internal Functionality and SPI
-
-#### Optionals
+#### Unwrapping Optionals
 
 Optionals can be unwrapped with `!`, which triggers a trap on nil. Alternatively, they can be `.unsafelyUnwrapped()`, which will check and trap in debug builds of user code. Internal to the standard library is `._unsafelyUnwrappedUnchecked()` which will only check and trap in debug builds of the standard library itself. These correspond directly with `_precondition`, `_debugPrecondition`, and `_sanityCheck`. See [that section](#precondition) for details.
 
@@ -80,7 +102,7 @@ These three functions are assertions that will trigger a run time trap if violat
 
 #### `_fixLifetime`
 
-A call to `_fixLifetime` is considered a use of its argument, meaning that the argument is guaranteed live at least up until the call. It is otherwise a nop. This is useful for guaranteeing the lifetime of a value while inspecting its physical layout. Without a call to `_fixLifetime`, the last formal use may occur while the value's bits are still being munged.
+A call to `_fixLifetime` is considered a use of its argument, meaning that the argument is guaranteed to live at least up until the call. It is otherwise a nop. This is useful for guaranteeing the lifetime of a value while inspecting its physical layout. Without a call to `_fixLifetime`, the last formal use may occur while the value's bits are still being munged.
 
 *Example:*
 
@@ -91,43 +113,62 @@ let theBits = unsafeBitCast(&x, ...)
 ... // use of theBits in ways that may outlive x if it weren't for the _fixLifetime call
 ```
 
-
 ### Annotations
-
-#### `@_versioned`
-
-TBD
-
-#### `@_inlineable`
-
-TBD
-
-#### `@inline(__always)` and `@inline(never)`
-
-TBD
-
-#### `@_semantics(...)`
-
-TBD
 
 #### `@_transparent`
 
-Should only be used if necessary. This has the effect of forcing inlining to occur before any dataflow analysis take place. Unless you specifically need this behavior, use `@_inline(__always)` or some other mechanism. Its primary purpose is to force the compiler's static checks to peer into the body for diagnostic purposes.
+Should only be used if necessary. This has the effect of forcing inlining to occur before any dataflow analyses take place. Unless you specifically need this behavior, use `@_inline(__always)` or some other mechanism. Its primary purpose is to force the compiler's static checks to peer into the body for diagnostic purposes.
 
 Use of this attribute imposes limitations on what can be in the body. For more details, refer to the [documentation](https://github.com/apple/swift/blob/master/docs/TransparentAttr.rst).
 
-### Versioning and Compatibility
+#### `@unsafe_no_objc_tagged_pointer`
 
-#### `@available`
-
-TBD
+This is currently used in the standard library as an additional annotation applied to @objc protocols signifying that any objects which conform to this protocol are not tagged. This means that (on Darwin platforms) such references, unlike AnyObject, have spare bits available from things like restricted memory spaces or alignment.
 
 #### `@_silgen_name`
 
-TBD
+This attribute specifies the name that a declaration will have at link time. It is used for two purposes, the second of which is currently considered bad practice and should be replaced with shims:
 
-## Coding Standards
+1. To specify the symbol name of a Swift function so that it can be called from Swift-aware C. Such functions have bodies.
+2. To provide a Swift declaration which really represents a C declaration. Such functions do not have bodies.
 
-TBD
+##### Using `@_silgen_name` to call Swift from Swift-aware C
+
+Rather than hard-code Swift mangling into C code, `@_silgen_name` is used to provide a stable and known symbol name for linking. Note that C code still must understand and use the Swift calling convention (available in swift-clang) for such Swift functions (if they use Swift's CC). Example:
+
+```swift
+@_silgen_name("_destroyTLS")
+internal func _destroyTLS(_ ptr: UnsafeMutableRawPointer?) {
+  // ... implementation ...
+}
+```
+
+```C++
+SWIFT_CC(swift) SWIFT_RUNTIME_STDLIB_INTERNAL
+void _destroyTLS(void *);
+
+// ... C code can now call _destroyTLS on a void * ...
+```
+
+##### Using `@_silgen_name` to call C from Swift
+
+The standard library cannot import the Darwin module (much less an ICU module), yet it needs access to these C functions that it otherwise wouldn't have a decl for. For that, we use shims. But, `@_silgen_name` can also be used on a body-less Swift function declaration to denote that it's an external C function whose symbol will be available at link time, even if not available at compile time. This usage is discouraged.
+
+
+### Internal structures
+
+#### `_FixedArray`
+
+The standard library has internal fixed size arrays of some limited sizes. This provides fast random access into contiguous (usually stack-allocated) memory. These are metaprogrammed based on size, so if you need a new size not currently defined, add it to the `sizes` gyb variable. See [FixedArray.swift.gyb](https://github.com/apple/swift/blob/master/stdlib/public/core/FixedArray.swift.gyb) for implementation.
+
+#### Thread Local Storage
+
+The standard library utilizes thread local storage (TLS) to cache expensive computations or operations in a thread-safe fashion. This is currently used for tracking some ICU state for Strings. Adding new things to this struct is a little more involved, as Swift lacks some of the features required for it to be expressed elegantly (e.g. move-only structs):
+
+1. Add the new member to `_ThreadLocalStorage` and a static `getMyNewMember` method to access it. `getMyNewMember` should be implemented using `getPointer`.
+2. If the member is not trivially initializable, update `_initializeThreadLocalStorage` and `_ThreadLocalStorage.init`.
+3. If the field is not trivially destructable, update `_destroyTLS` to properly destroy the value.
+
+See [ThreadLocalStorage.swift](https://github.com/apple/swift/blob/master/stdlib/public/core/ThreadLocalStorage.swift) for more details.
 
 

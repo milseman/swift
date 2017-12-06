@@ -74,7 +74,7 @@ Globals
   global ::= protocol-conformance 'WP'   // protocol witness table
 
   global ::= protocol-conformance identifier 'Wt' // associated type metadata accessor
-  global ::= protocol-conformance identifier nominal-type 'WT' // associated type witness table accessor
+  global ::= protocol-conformance assoc_type_path nominal-type 'WT' // associated type witness table accessor
   global ::= type protocol-conformance 'Wl' // lazy protocol witness table accessor
   global ::= type 'WV'                   // value witness table
   global ::= entity 'Wv' DIRECTNESS      // field offset
@@ -83,6 +83,13 @@ Globals
   global ::= type 'We' // Outlined Consume Function Type
   global ::= type 'Wr' // Outlined Retain Function Type
   global ::= type 'Ws' // Outlined Release Function Type
+  global ::= type 'Wb' INDEX // Outlined InitializeWithTake Function Type
+  global ::= type 'Wc' INDEX // Outlined InitializeWithCopy Function Type
+  global ::= type 'Wd' INDEX // Outlined AssignWithTake Function Type
+  global ::= type 'Wf' INDEX // Outlined AssignWithCopy Function Type
+  global ::= type 'Wh' INDEX // Outlined Destroy Function Type
+
+  assoc_type_path ::= identifier '_' identifier*
 
   DIRECTNESS ::= 'd'                         // direct
   DIRECTNESS ::= 'i'                         // indirect
@@ -117,6 +124,10 @@ types where the metadata itself has unknown layout.)
   global ::= global 'Tm'                 // merged function
   global ::= entity                      // some identifiable thing
   global ::= type type generic-signature? 'T' REABSTRACT-THUNK-TYPE   // reabstraction thunk helper function
+  global ::= entity generic-signature? type type* 'TK' // key path getter
+  global ::= entity generic-signature? type type* 'Tk' // key path setter
+  global ::= type generic-signature 'TH' // key path equality
+  global ::= type generic-signature 'Th' // key path hasher
 
   REABSTRACT-THUNK-TYPE ::= 'R'          // reabstraction thunk helper function
   REABSTRACT-THUNK-TYPE ::= 'r'          // reabstraction thunk
@@ -174,13 +185,16 @@ Entities
   entity-spec ::= 'fd'                       // non-deallocating destructor; untyped
   entity-spec ::= 'fE'                       // ivar destroyer; untyped
   entity-spec ::= 'fe'                       // ivar initializer; untyped
+  entity-spec ::= 'Tv' NATURAL               // outlined global variable (from context function)
+  entity-spec ::= 'Te' bridge-spec           // outlined objective c method call
 
   entity-spec ::= decl-name function-signature generic-signature? 'F'    // function
-  entity-spec ::= decl-name type 'i'                 // subscript ('i'ndex) itself (not the individual accessors)
-  entity-spec ::= decl-name type 'v'                 // variable
-  entity-spec ::= decl-name type 'f' ACCESSOR
+  entity-spec ::= storage-spec
   entity-spec ::= decl-name type 'fp'                // generic type parameter
   entity-spec ::= decl-name type 'fo'                // enum element (currently not used)
+
+  storage-spec ::= type file-discriminator? 'i' ACCESSOR
+  storage-spec ::= decl-name type 'v' ACCESSOR
 
   ACCESSOR ::= 'm'                           // materializeForSet
   ACCESSOR ::= 's'                           // setter
@@ -190,6 +204,7 @@ Entities
   ACCESSOR ::= 'W'                           // didSet
   ACCESSOR ::= 'a' ADDRESSOR-KIND            // mutable addressor
   ACCESSOR ::= 'l' ADDRESSOR-KIND            // non-mutable addressor
+  ACCESSOR ::= 'p'                           // pseudo accessor referring to the storage itself
                                          
   ADDRESSOR-KIND ::= 'u'                     // unsafe addressor (no owner)
   ADDRESSOR-KIND ::= 'O'                     // owning addressor (non-native owner)
@@ -209,6 +224,23 @@ enclosing module. The second identifier is the name of the entity. Not all
 declarations marked ``private`` declarations will use this mangling; if the
 entity's context is enough to uniquely identify the entity, the simple
 ``identifier`` form is preferred.
+
+Outlined bridged Objective C method call mangling includes which parameters and
+return value are bridged and the type of pattern outlined.
+
+::
+
+  bridge-spec := bridged-kind bridged-param* bridged-return '_'
+
+  bridged-param := 'n' // not bridged parameter
+  bridged-param := 'b' // bridged parameter
+
+  bridged-return := 'n' // not bridged return
+  bridged-return := 'b' // bridged return
+
+  bridged-kind := 'm' // bridged method
+  bridged-kind := 'a' // bridged property (by address)
+  bridged-kind := 'p' // bridged property (by value)
 
 Declaration Contexts
 ~~~~~~~~~~~~~~~~~~~~
@@ -286,6 +318,7 @@ Types
   type ::= 'BO'                              // Builtin.UnknownObject
   type ::= 'Bo'                              // Builtin.NativeObject
   type ::= 'Bp'                              // Builtin.RawPointer
+  type ::= 'Bt'                              // Builtin.SILToken
   type ::= type 'Bv' NATURAL '_'             // Builtin.Vec<n>x<type>
   type ::= 'Bw'                              // Builtin.Word
   type ::= function-signature 'c'            // function type
@@ -318,7 +351,8 @@ Types
 
   function-signature ::= params-type params-type throws? // results and parameters
 
-  params-type := type                        // tuple in case of multiple parameters
+  params-type := type 'z'? 'h'?              // tuple in case of multiple parameters or a single parameter with a single tuple type
+                                             // with optional inout convention, shared convention
   params-type := empty-list                  // shortcut for no parameters
 
   throws ::= 'K'                             // 'throws' annotation on function types
@@ -377,9 +411,11 @@ mangled in to disambiguate.
   impl-function-type ::= type* 'I' FUNC-ATTRIBUTES '_'
   impl-function-type ::= type* generic-signature 'I' PSEUDO-GENERIC? FUNC-ATTRIBUTES '_'
 
-  FUNC-ATTRIBUTES ::= CALLEE-CONVENTION? FUNC-REPRESENTATION PARAM-CONVENTION* RESULT-CONVENTION* ('z' RESULT-CONVENTION)
+  FUNC-ATTRIBUTES ::= CALLEE-ESCAPE? CALLEE-CONVENTION FUNC-REPRESENTATION? PARAM-CONVENTION* RESULT-CONVENTION* ('z' RESULT-CONVENTION)
 
   PSEUDO-GENERIC ::= 'P'
+
+  CALLEE-ESCAPE ::= 'e'                      // @escaping (inverse of SIL @noescape)
 
   CALLEE-CONVENTION ::= 'y'                  // @callee_unowned
   CALLEE-CONVENTION ::= 'g'                  // @callee_guaranteed

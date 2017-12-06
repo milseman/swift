@@ -28,17 +28,36 @@ using namespace constraints;
 
 #define DEBUG_TYPE "ConstraintSystem"
 
+ExpressionTimer::ExpressionTimer(Expr *E, ConstraintSystem &CS)
+    : E(E), WarnLimit(CS.TC.getWarnLongExpressionTypeChecking()),
+      Context(CS.getASTContext()),
+      StartTime(llvm::TimeRecord::getCurrentTime()),
+      PrintDebugTiming(CS.TC.getDebugTimeExpressions()), PrintWarning(true) {
+  if (auto *baseCS = CS.baseCS) {
+    // If we already have a timer in the base constraint
+    // system, let's seed its start time to the child.
+    if (baseCS->Timer) {
+      StartTime = baseCS->Timer->startedAt();
+      PrintWarning = false;
+      PrintDebugTiming = false;
+    }
+  }
+}
+
 ExpressionTimer::~ExpressionTimer() {
   auto elapsed = getElapsedProcessTimeInFractionalSeconds();
   unsigned elapsedMS = static_cast<unsigned>(elapsed * 1000);
 
-  if (ShouldDump) {
+  if (PrintDebugTiming) {
     // Round up to the nearest 100th of a millisecond.
     llvm::errs() << llvm::format("%0.2f", ceil(elapsed * 100000) / 100)
                  << "ms\t";
     E->getLoc().print(llvm::errs(), Context.SourceMgr);
     llvm::errs() << "\n";
   }
+
+  if (!PrintWarning)
+    return;
 
   if (WarnLimit != 0 && elapsedMS >= WarnLimit && E->getLoc().isValid())
     Context.Diags.diagnose(E->getLoc(), diag::debug_long_expression,
@@ -371,14 +390,12 @@ Type ConstraintSystem::openUnboundGenericType(UnboundGenericType *unbound,
                                               ConstraintLocatorBuilder locator,
                                               OpenedTypeMap &replacements) {
   auto unboundDecl = unbound->getDecl();
-  if (unboundDecl->isInvalid())
-    return ErrorType::get(getASTContext());
 
   // If the unbound decl hasn't been validated yet, we have a circular
   // dependency that isn't being diagnosed properly.
   if (!unboundDecl->getGenericSignature()) {
     TC.diagnose(unboundDecl, diag::circular_reference);
-    return ErrorType::get(unbound);
+    return Type();
   }
 
   auto parentTy = unbound->getParent();
@@ -439,7 +456,7 @@ Type ConstraintSystem::openUnboundGenericType(
   if (!type->hasUnboundGenericType())
     return type;
 
-  return type.transform([&](Type type) -> Type {
+  type = type.transform([&](Type type) -> Type {
       if (auto unbound = type->getAs<UnboundGenericType>()) {
         OpenedTypeMap replacements;
         return openUnboundGenericType(unbound, locator, replacements);
@@ -447,6 +464,11 @@ Type ConstraintSystem::openUnboundGenericType(
 
       return type;
     });
+
+  if (!type)
+    return ErrorType::get(getASTContext());
+
+  return type;
 }
 
 Type ConstraintSystem::openType(Type type, OpenedTypeMap &replacements) {
@@ -555,6 +577,18 @@ Optional<Type> ConstraintSystem::isSetType(Type type) {
   return None;
 }
 
+bool ConstraintSystem::isCollectionType(Type type) {
+  auto &ctx = type->getASTContext();
+  if (auto *structType = type->getAs<BoundGenericStructType>()) {
+    auto *decl = structType->getDecl();
+    if (decl == ctx.getArrayDecl() || decl == ctx.getDictionaryDecl() ||
+        decl == ctx.getSetDecl())
+      return true;
+  }
+
+  return false;
+}
+
 bool ConstraintSystem::isAnyHashableType(Type type) {
   if (auto tv = type->getAs<TypeVariableType>()) {
     auto fixedType = getFixedType(tv);
@@ -605,6 +639,14 @@ Type ConstraintSystem::getFixedTypeRecursive(Type type,
     }
 
     if (auto typeVar = type->getAs<TypeVariableType>()) {
+      bool hasRepresentative = false;
+      if (auto *repr = getRepresentative(typeVar)) {
+        if (typeVar != repr) {
+          hasRepresentative = true;
+          typeVar = repr;
+        }
+      }
+
       if (auto fixed = getFixedType(typeVar)) {
         if (wantRValue)
           fixed = fixed->getRValueType();
@@ -612,6 +654,12 @@ Type ConstraintSystem::getFixedTypeRecursive(Type type,
         type = fixed;
         continue;
       }
+
+      // If type variable has a representative but
+      // no fixed type, reflect that in the type itself.
+      if (hasRepresentative)
+        type = typeVar;
+
       break;
     }
 
@@ -658,7 +706,7 @@ static bool doesStorageProduceLValue(TypeChecker &TC,
   // getter and setter are nonmutating.
   return !storage->hasStorage() &&
       !storage->isGetterMutating() &&
-      storage->isSetterNonMutating();
+      !storage->isSetterMutating();
 }
 
 Type TypeChecker::getUnopenedTypeOfReference(VarDecl *value, Type baseType,
@@ -681,7 +729,7 @@ Type TypeChecker::getUnopenedTypeOfReference(VarDecl *value, Type baseType,
   if (!wantInterfaceType && requestedType->hasArchetype()) {
     auto valueDC = value->getDeclContext();
     if (valueDC != UseDC) {
-      Type mapped = valueDC->mapTypeOutOfContext(requestedType);
+      Type mapped = requestedType->mapTypeOutOfContext();
       requestedType = UseDC->mapTypeIntoContext(mapped);
     }
   }
@@ -857,7 +905,7 @@ ConstraintSystem::getTypeOfReference(ValueDecl *value,
   if (auto typeDecl = dyn_cast<TypeDecl>(value)) {
     // Resolve the reference to this type declaration in our current context.
     auto type = TC.resolveTypeInContext(typeDecl, nullptr, DC,
-                                        TR_InExpression,
+                                        TypeResolutionFlags::InExpression,
                                         /*isSpecialized=*/false);
 
     // Open the type.
@@ -889,12 +937,17 @@ ConstraintSystem::getTypeOfReference(ValueDecl *value,
   // constraint.
   if (auto *param = dyn_cast<ParamDecl>(varDecl)) {
     if (param->isLet() && valueType->is<TypeVariableType>()) {
-      Type paramType = valueType;
-      valueType = createTypeVariable(getConstraintLocator(locator),
+      auto found = OpenedParameterTypes.find(param);
+      if (found != OpenedParameterTypes.end())
+        return { found->second, found->second };
+
+      auto typeVar = createTypeVariable(getConstraintLocator(locator),
                                      TVO_CanBindToLValue |
                                      TVO_CanBindToInOut);
-      addConstraint(ConstraintKind::BindParam, paramType, valueType,
+      addConstraint(ConstraintKind::BindParam, valueType, typeVar,
                     getConstraintLocator(locator));
+      OpenedParameterTypes.insert(std::make_pair(param, typeVar));
+      return { typeVar, typeVar };
     }
   }
 
@@ -1010,56 +1063,41 @@ void ConstraintSystem::openGeneric(
   bindArchetypesFromContext(*this, outerDC, locatorPtr, replacements);
 
   // Add the requirements as constraints.
-  for (auto req : sig->getRequirements()) {
-  switch (req.getKind()) {
+  auto requirements = sig->getRequirements();
+  for (unsigned pos = 0, n = requirements.size(); pos != n; ++pos) {
+    const auto &req = requirements[pos];
+
+    Optional<Requirement> openedReq;
+    auto openedFirst = openType(req.getFirstType(), replacements);
+
+    auto kind = req.getKind();
+    switch (kind) {
     case RequirementKind::Conformance: {
-      auto subjectTy = openType(req.getFirstType(), replacements);
       auto proto = req.getSecondType()->castTo<ProtocolType>();
       auto protoDecl = proto->getDecl();
-
       // Determine whether this is the protocol 'Self' constraint we should
       // skip.
       if (skipProtocolSelfConstraint &&
           protoDecl == outerDC &&
           protoDecl->getSelfInterfaceType()->isEqual(req.getFirstType()))
-        break;
-
-      addConstraint(ConstraintKind::ConformsTo, subjectTy, proto,
-                    locatorPtr);
+        continue;
+      openedReq = Requirement(kind, openedFirst, proto);
+      break;
+    }
+    case RequirementKind::Superclass:
+    case RequirementKind::SameType:
+      openedReq = Requirement(kind, openedFirst,
+                              openType(req.getSecondType(), replacements));
+      break;
+    case RequirementKind::Layout:
+      openedReq = Requirement(kind, openedFirst, req.getLayoutConstraint());
       break;
     }
 
-    case RequirementKind::Layout: {
-      auto subjectTy = openType(req.getFirstType(), replacements);
-      auto layoutConstraint = req.getLayoutConstraint();
-
-      if (layoutConstraint->isClass())
-        addConstraint(ConstraintKind::ConformsTo, subjectTy,
-                      TC.Context.getAnyObjectType(),
-                      locatorPtr);
-
-      // Nothing else can appear outside of @_specialize yet, and Sema
-      // doesn't know how to check.
-      break;
-    }
-
-    case RequirementKind::Superclass: {
-      auto subjectTy = openType(req.getFirstType(), replacements);
-      auto boundTy = openType(req.getSecondType(), replacements);
-      addConstraint(ConstraintKind::Subtype, subjectTy, boundTy, locatorPtr);
-      addConstraint(ConstraintKind::ConformsTo, subjectTy,
-                    TC.Context.getAnyObjectType(),
-                    locatorPtr);
-      break;
-    }
-
-    case RequirementKind::SameType: {
-      auto firstTy = openType(req.getFirstType(), replacements);
-      auto secondTy = openType(req.getSecondType(), replacements);
-      addConstraint(ConstraintKind::Bind, firstTy, secondTy, locatorPtr);
-      break;
-    }
-  }
+    addConstraint(
+        *openedReq,
+        locator.withPathElement(ConstraintLocator::OpenedGeneric)
+            .withPathElement(LocatorPathElt::getTypeRequirementComponent(pos)));
   }
 }
 
@@ -1206,7 +1244,7 @@ ConstraintSystem::getTypeOfMemberReference(
     // If self is a value type and the base type is an lvalue, wrap it in an
     // inout type.
     auto selfFlags = ParameterTypeFlags();
-    if (!outerDC->getDeclaredTypeOfContext()->hasReferenceSemantics() &&
+    if (!outerDC->getDeclaredInterfaceType()->hasReferenceSemantics() &&
         baseTy->is<LValueType>() &&
         !selfTy->hasError())
       selfFlags = selfFlags.withInOut(true);
@@ -1716,8 +1754,7 @@ Type simplifyTypeImpl(ConstraintSystem &cs, Type type, Fn getFixedTypeFn) {
         // If we're accessing a type member of the IUO itself,
         // stop here. Ugh...
         if (module->lookupConformance(lookupBaseType,
-                                      assocType->getProtocol(),
-                                      &cs.getTypeChecker())) {
+                                      assocType->getProtocol())) {
           break;
         }
 
@@ -1730,7 +1767,7 @@ Type simplifyTypeImpl(ConstraintSystem &cs, Type type, Fn getFixedTypeFn) {
             assocType->getDeclContext());
         auto result = assocType->getDeclaredInterfaceType().subst(subs);
 
-        if (result)
+        if (result && !result->hasError())
           return result;
       }
 

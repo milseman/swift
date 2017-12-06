@@ -953,9 +953,8 @@ public:
     std::string ErrorMsg;
     llvm::TargetOptions TargetOpt;
     std::string CPU;
-    std::string Triple;
     std::vector<std::string> Features;
-    std::tie(TargetOpt, CPU, Features, Triple)
+    std::tie(TargetOpt, CPU, Features)
       = getIRTargetOptions(IRGenOpts, CI.getASTContext());
     
     builder.setRelocationModel(llvm::Reloc::PIC_);
@@ -967,7 +966,7 @@ public:
     EE = builder.create();
 
     IRGenOpts.OutputFilenames.clear();
-    IRGenOpts.Optimize = false;
+    IRGenOpts.OptMode = OptimizationMode::NoOptimization;
     IRGenOpts.OutputKind = IRGenOutputKind::Module;
     IRGenOpts.UseJIT = true;
     IRGenOpts.DebugInfoKind = IRGenDebugInfoKind::None;

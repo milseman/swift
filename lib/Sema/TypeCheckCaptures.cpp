@@ -351,9 +351,7 @@ public:
     if (!validateForwardCapture(DRE->getDecl()))
       return { false, DRE };
 
-    bool isInOut = (isa<ParamDecl>(D) &&
-                    cast<ParamDecl>(D)->hasType() &&
-                    cast<ParamDecl>(D)->getType()->is<InOutType>());
+    bool isInOut = (isa<ParamDecl>(D) && cast<ParamDecl>(D)->isInOut());
     bool isNested = false;
     if (auto f = AFR.getAbstractFunctionDecl())
       isNested = f->getDeclContext()->isLocalContext();
@@ -677,10 +675,8 @@ void TypeChecker::computeCaptures(AnyFunctionRef AFR) {
   unsigned inoutCount = 0;
   for (auto C : Captures) {
     if (auto PD = dyn_cast<ParamDecl>(C.getDecl()))
-      if (PD->hasType())
-        if (auto type = PD->getType())
-          if (isa<InOutType>(type.getPointer()))
-            inoutCount++;
+      if (PD->isInOut())
+        inoutCount++;
   }
 
   if (inoutCount > 0) {

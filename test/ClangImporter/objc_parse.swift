@@ -378,7 +378,7 @@ func testPreferClassMethodToCurriedInstanceMethod(_ obj: NSObject) {
   // FIXME: We shouldn't need the ": Bool" type annotation here.
   // <rdar://problem/18006008>
   let _: Bool = NSObject.isEqual(obj)
-  _ = NSObject.isEqual(obj) as (NSObject!) -> Bool // no-warning
+  _ = NSObject.isEqual(obj) as (NSObject?) -> Bool // no-warning
 }
 
 
@@ -637,4 +637,15 @@ func testTypeAndValue() {
   let _: (testStruct) -> Void = testStruct
   let _: () -> testStruct = testStruct.init
   let _: (CInt) -> testStruct = testStruct.init
+}
+
+// rdar://problem/34913507
+func testBridgedTypedef(bt: BridgedTypedefs) {
+  let _: Int = bt.arrayOfArrayOfStrings // expected-error{{'[[String]]'}}
+}
+
+func testBridgeFunctionPointerTypedefs(fptrTypedef: FPTypedef) {
+  // See also print_clang_bool_bridging.swift.
+  let _: Int = fptrTypedef // expected-error{{'@convention(c) (String) -> String'}}
+  let _: Int = getFP() // expected-error{{'@convention(c) (String) -> String'}}
 }

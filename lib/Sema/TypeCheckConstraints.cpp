@@ -423,7 +423,7 @@ resolveDeclRefExpr(UnresolvedDeclRefExpr *UDRE, DeclContext *DC) {
     // Try ignoring access control.
     NameLookupOptions relookupOptions = lookupOptions;
     relookupOptions |= NameLookupFlags::KnownPrivate;
-    relookupOptions |= NameLookupFlags::IgnoreAccessibility;
+    relookupOptions |= NameLookupFlags::IgnoreAccessControl;
     LookupResult inaccessibleResults = lookupUnqualified(DC, Name, Loc,
                                                          relookupOptions);
     if (inaccessibleResults) {
@@ -635,7 +635,14 @@ resolveDeclRefExpr(UnresolvedDeclRefExpr *UDRE, DeclContext *DC) {
   // FIXME: If we reach this point, the program we're being handed is likely
   // very broken, but it's still conceivable that this may happen due to
   // invalid shadowed declarations.
-  // llvm_unreachable("Can't represent lookup result");
+  //
+  // Make sure we emit a diagnostic, since returning an ErrorExpr without
+  // producing one will break things downstream.
+  diagnose(Loc, diag::ambiguous_decl_ref, Name);
+  for (auto Result : Lookup) {
+    auto *Decl = Result.getValueDecl();
+    diagnose(Decl, diag::decl_declared_here, Decl->getFullName());
+  }
   return new (Context) ErrorExpr(UDRE->getSourceRange());
 }
 
@@ -1002,9 +1009,10 @@ bool PreCheckExpression::walkToClosureExprPre(ClosureExpr *closure) {
 
   // Validate the parameters.
   TypeResolutionOptions options;
-  options |= TR_AllowUnspecifiedTypes;
-  options |= TR_AllowUnboundGenerics;
-  options |= TR_InExpression;
+  options |= TypeResolutionFlags::AllowUnspecifiedTypes;
+  options |= TypeResolutionFlags::AllowUnboundGenerics;
+  options |= TypeResolutionFlags::InExpression;
+  options |= TypeResolutionFlags::AllowIUO;
   bool hadParameterError = false;
 
   GenericTypeToArchetypeResolver resolver(closure);
@@ -1022,7 +1030,7 @@ bool PreCheckExpression::walkToClosureExprPre(ClosureExpr *closure) {
   // Validate the result type, if present.
   if (closure->hasExplicitResultType() &&
       TC.validateType(closure->getExplicitResultTypeLoc(), DC,
-                      TR_InExpression, &resolver)) {
+                      TypeResolutionFlags::InExpression, &resolver)) {
     closure->setType(ErrorType::get(TC.Context));
     return false;
   }
@@ -1104,9 +1112,9 @@ TypeExpr *PreCheckExpression::simplifyNestedTypeExpr(UnresolvedDotExpr *UDE) {
     // Resolve the TypeRepr to get the base type for the lookup.
     // Disable availability diagnostics here, because the final
     // TypeRepr will be resolved again when generating constraints.
-    TypeResolutionOptions options = TR_AllowUnboundGenerics;
-    options |= TR_InExpression;
-    options |= TR_AllowUnavailable;
+    TypeResolutionOptions options = TypeResolutionFlags::AllowUnboundGenerics;
+    options |= TypeResolutionFlags::InExpression;
+    options |= TypeResolutionFlags::AllowUnavailable;
     auto BaseTy = TC.resolveType(InnerTypeRepr, DC, options);
 
     if (BaseTy && BaseTy->mayHaveMembers()) {
@@ -1460,12 +1468,6 @@ void PreCheckExpression::resolveKeyPathExpr(KeyPathExpr *KPE) {
 
         expr = UDE->getBase();
       } else if (auto SE = dyn_cast<SubscriptExpr>(expr)) {
-        if (!TC.Context.LangOpts.EnableExperimentalKeyPathComponents) {
-          TC.diagnose(SE->getLoc(),
-                      diag::expr_swift_keypath_unimplemented_component,
-                      "subscript");
-        }
-      
         // .[0] or just plain [0]
         components.push_back(
             KeyPathExpr::Component::forUnresolvedSubscriptWithPrebuiltIndexExpr(
@@ -1630,6 +1632,15 @@ Expr *ExprTypeCheckListener::appliedSolution(Solution &solution, Expr *expr) {
   return expr;
 }
 
+void ParentConditionalConformance::diagnoseConformanceStack(
+    DiagnosticEngine &diags, SourceLoc loc,
+    ArrayRef<ParentConditionalConformance> conformances) {
+  for (auto history : reversed(conformances)) {
+    diags.diagnose(loc, diag::requirement_implied_by_conditional_conformance,
+                   history.ConformingType, history.Protocol);
+  }
+}
+
 GenericRequirementsCheckListener::~GenericRequirementsCheckListener() {}
 
 bool GenericRequirementsCheckListener::shouldCheck(RequirementKind kind,
@@ -1643,7 +1654,8 @@ void GenericRequirementsCheckListener::satisfiedConformance(
 }
 
 bool GenericRequirementsCheckListener::diagnoseUnsatisfiedRequirement(
-    const Requirement &req, Type first, Type second) {
+    const Requirement &req, Type first, Type second,
+    ArrayRef<ParentConditionalConformance> parents) {
   return false;
 }
 
@@ -2004,7 +2016,7 @@ bool TypeChecker::typeCheckCompletionSequence(Expr *&expr, DeclContext *DC) {
 
   // Attempt to solve the constraint system.
   SmallVector<Solution, 4> viable;
-  if (CS.solve(viable, FreeTypeVariableBinding::UnresolvedType))
+  if (CS.solve(expr, viable, FreeTypeVariableBinding::UnresolvedType))
     return true;
 
   auto &solution = viable[0];
@@ -2048,7 +2060,7 @@ bool TypeChecker::typeCheckExpressionShallow(Expr *&expr, DeclContext *dc) {
 
   // Attempt to solve the constraint system.
   SmallVector<Solution, 4> viable;
-  if ((cs.solve(viable) || viable.size() != 1) &&
+  if ((cs.solve(expr, viable) || viable.size() != 1) &&
       cs.salvage(viable, expr)) {
     return true;
   }
@@ -2175,12 +2187,33 @@ bool TypeChecker::typeCheckBinding(Pattern *&pattern, Expr *&initializer,
 
   auto resultTy = typeCheckExpression(initializer, DC, contextualType,
                                       contextualPurpose, flags, &listener);
+
+  // If we detected that the initializer would have a non-materializable type,
+  // complain.
+  if (resultTy && listener.isInOut()) {
+    diagnose(pattern->getStartLoc(), diag::var_type_not_materializable,
+             resultTy);
+
+    pattern->setType(ErrorType::get(Context));
+    pattern->forEachVariable([&](VarDecl *var) {
+      // Don't change the type of a variable that we've been able to
+      // compute a type for.
+      if (var->hasType() &&
+          !var->getType()->hasUnboundGenericType() &&
+          !var->getType()->hasError())
+        return;
+
+      var->markInvalid();
+    });
+
+    return true;
+  }
+
   if (resultTy) {
-    TypeResolutionOptions options;
-    options |= TR_OverrideType;
-    options |= TR_InExpression;
+    TypeResolutionOptions options = TypeResolutionFlags::OverrideType;
+    options |= TypeResolutionFlags::InExpression;
     if (isa<EditorPlaceholderExpr>(initializer->getSemanticsProvidingExpr())) {
-      options |= TR_EditorPlaceholder;
+      options |= TypeResolutionFlags::EditorPlaceholder;
     }
 
     // FIXME: initTy should be the same as resultTy; now that typeCheckExpression()
@@ -2192,7 +2225,7 @@ bool TypeChecker::typeCheckBinding(Pattern *&pattern, Expr *&initializer,
 
     // Apply the solution to the pattern as well.
     if (coercePatternToType(pattern, DC, initTy, options,
-                            nullptr, TypeLoc(), listener.isInOut())) {
+                            nullptr, TypeLoc())) {
       return true;
     }
   }
@@ -2399,10 +2432,9 @@ bool TypeChecker::typeCheckForEachBinding(DeclContext *dc, ForEachStmt *stmt) {
 
       // Apply the solution to the iteration pattern as well.
       Pattern *pattern = Stmt->getPattern();
-      TypeResolutionOptions options;
-      options |= TR_OverrideType;
-      options |= TR_EnumerationVariable;
-      options |= TR_InExpression;
+      TypeResolutionOptions options = TypeResolutionFlags::OverrideType;
+      options |= TypeResolutionFlags::EnumerationVariable;
+      options |= TypeResolutionFlags::InExpression;
       if (tc.coercePatternToType(pattern, cs.DC, InitType, options)) {
         return nullptr;
       }
@@ -2572,9 +2604,9 @@ bool TypeChecker::typeCheckStmtCondition(StmtCondition &cond, DeclContext *dc,
 
     // Check the pattern, it allows unspecified types because the pattern can
     // provide type information.
-    TypeResolutionOptions options = TR_InExpression;
-    options |= TR_AllowUnspecifiedTypes;
-    options |= TR_AllowUnboundGenerics;
+    TypeResolutionOptions options = TypeResolutionFlags::InExpression;
+    options |= TypeResolutionFlags::AllowUnspecifiedTypes;
+    options |= TypeResolutionFlags::AllowUnboundGenerics;
     if (typeCheckPattern(pattern, dc, options)) {
       typeCheckPatternFailed();
       continue;
@@ -2613,7 +2645,7 @@ bool TypeChecker::typeCheckExprPattern(ExprPattern *EP, DeclContext *DC,
                                          Context.getIdentifier("$match"),
                                          rhsType,
                                          DC);
-  matchVar->setInterfaceType(DC->mapTypeOutOfContext(rhsType));
+  matchVar->setInterfaceType(rhsType->mapTypeOutOfContext());
 
   matchVar->setImplicit();
   EP->setMatchVar(matchVar);
@@ -2728,7 +2760,7 @@ bool TypeChecker::typesSatisfyConstraint(Type type1, Type type2,
   if (openArchetypes) {
     assert(!unwrappedIUO && "FIXME");
     SmallVector<Solution, 4> solutions;
-    return !cs.solve(solutions, FreeTypeVariableBinding::Allow);
+    return !cs.solve(nullptr, solutions, FreeTypeVariableBinding::Allow);
   }
 
   if (auto solution = cs.solveSingle()) {
@@ -2807,7 +2839,7 @@ bool TypeChecker::isSubstitutableFor(Type type, ArchetypeType *archetype,
 
   for (auto proto : archetype->getConformsTo()) {
     if (!dc->getParentModule()->lookupConformance(
-          type, proto, this))
+          type, proto))
       return false;
   }
 
@@ -2909,7 +2941,7 @@ bool TypeChecker::convertToType(Expr *&expr, Type type, DeclContext *dc,
 
   // Attempt to solve the constraint system.
   SmallVector<Solution, 4> viable;
-  if ((cs.solve(viable) || viable.size() != 1) &&
+  if ((cs.solve(expr, viable) || viable.size() != 1) &&
       cs.salvage(viable, expr)) {
     return true;
   }
@@ -2965,10 +2997,15 @@ void Solution::dump(raw_ostream &out) const {
 
   out << "Type variables:\n";
   for (auto binding : typeBindings) {
+    auto &typeVar = binding.first->getImpl();
     out.indent(2);
-    binding.first->getImpl().print(out);
+    typeVar.print(out);
     out << " as ";
     binding.second.print(out);
+    if (auto *locator = typeVar.getLocator()) {
+      out << " @ ";
+      locator->dump(&ctx.SourceMgr, out);
+    }
     out << "\n";
   }
 
@@ -3100,7 +3137,6 @@ void ConstraintSystem::print(raw_ostream &out) {
   out << "Type Variables:\n";
   for (auto tv : TypeVariables) {
     out.indent(2);
-    out << '#' << tv->getID() << " = ";
     tv->getImpl().print(out);
     if (tv->getImpl().canBindToLValue())
       out << " [lvalue allowed]";
@@ -3111,11 +3147,19 @@ void ConstraintSystem::print(raw_ostream &out) {
       if (auto fixed = getFixedType(tv)) {
         out << " as ";
         fixed->print(out);
+      } else {
+        getPotentialBindings(tv).dump(out, 1);
       }
     } else {
       out << " equivalent to ";
       rep->print(out);
     }
+
+    if (auto *locator = tv->getImpl().getLocator()) {
+      out << " @ ";
+      locator->dump(&TC.Context.SourceMgr, out);
+    }
+
     out << "\n";
   }
 

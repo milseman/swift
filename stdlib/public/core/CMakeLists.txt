@@ -47,7 +47,8 @@ set(SWIFTLIB_ESSENTIAL
   CString.swift
   CTypes.swift
   DebuggerSupport.swift
-  DoubleWidth.swift.gyb
+  # FIXME(double-width): <rdar://problem/32726173>
+  #DoubleWidth.swift.gyb
   DropWhile.swift.gyb
   Dump.swift
   EmptyCollection.swift
@@ -72,8 +73,7 @@ set(SWIFTLIB_ESSENTIAL
   HeapBuffer.swift
   ICU.swift
   ImplicitlyUnwrappedOptional.swift
-  Index.swift
-  Indices.swift.gyb
+  Indices.swift
   InputStream.swift
   IntegerParsing.swift
   Integers.swift.gyb
@@ -101,12 +101,13 @@ set(SWIFTLIB_ESSENTIAL
   Print.swift
   RandomAccessCollection.swift
   Range.swift.gyb
-  RangeReplaceableCollection.swift.gyb
+  RangeReplaceableCollection.swift
   ReflectionLegacy.swift
   Repeat.swift
   REPL.swift
   Reverse.swift
   Runtime.swift.gyb
+  RuntimeFunctionCounters.swift
   SipHash.swift.gyb
   SentinelCollection.swift
   Sequence.swift
@@ -115,7 +116,7 @@ set(SWIFTLIB_ESSENTIAL
   SetAlgebra.swift
   ShadowProtocols.swift
   Shims.swift
-  Slice.swift.gyb
+  Slice.swift
   Sort.swift.gyb
   StaticString.swift
   Stride.swift.gyb
@@ -126,10 +127,13 @@ set(SWIFTLIB_ESSENTIAL
   StringBuffer.swift
   StringComparable.swift
   StringCore.swift
+  StringGuts.swift
   StringIndex.swift
   StringInterpolation.swift
   StringLegacy.swift
   StringRangeReplaceableCollection.swift.gyb
+  StringStorage.swift
+  StringSwitch.swift
   StringIndexConversions.swift
   StringUnicodeScalarView.swift
   StringUTF16.swift
@@ -142,6 +146,8 @@ set(SWIFTLIB_ESSENTIAL
   UnicodeEncoding.swift
   UnicodeParser.swift
   Unmanaged.swift
+  UnmanagedOpaqueString.swift
+  UnmanagedString.swift
   UnsafeBitMap.swift
   UnsafeBufferPointer.swift.gyb
   UnsafeRawBufferPointer.swift.gyb
@@ -226,6 +232,8 @@ endif()
 list(APPEND swift_stdlib_compile_flags "-Xllvm" "-sil-inline-generics")
 list(APPEND swift_stdlib_compile_flags "-Xllvm" "-sil-partial-specialization")
 list(APPEND swift_stdlib_compile_flags "-Xfrontend" "-enable-sil-ownership")
+list(APPEND swift_stdlib_compile_flags
+     "-enable-experimental-conditional-conformances")
 
 if(SWIFT_CHECK_ESSENTIAL_STDLIB)
   add_swift_library(swift_stdlib_essential ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STDLIB IS_STDLIB_CORE
@@ -248,7 +256,6 @@ add_swift_library(swiftCore ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STDLIB IS_STD
   # and the generated directory as dependencies.
   FILE_DEPENDS
     copy_shim_headers "${SWIFTLIB_DIR}/shims"
-    section_magic
     ${GROUP_INFO_JSON_FILE}
   SWIFT_COMPILE_FLAGS ${swift_stdlib_compile_flags}
   LINK_FLAGS ${swift_core_link_flags}

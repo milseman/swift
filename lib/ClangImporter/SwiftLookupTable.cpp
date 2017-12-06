@@ -1625,8 +1625,8 @@ void importer::addEntryToLookupTable(SwiftLookupTable &table,
   }
 
   // If we have a name to import as, add this entry to the table.
-  ImportNameVersion currentVersion =
-      nameVersionFromOptions(nameImporter.getLangOpts());
+  auto currentVersion =
+      ImportNameVersion::fromOptions(nameImporter.getLangOpts());
   if (auto importedName = nameImporter.importName(named, currentVersion)) {
     SmallPtrSet<DeclName, 8> distinctNames;
     distinctNames.insert(importedName.getDeclName());
@@ -1640,9 +1640,8 @@ void importer::addEntryToLookupTable(SwiftLookupTable &table,
                               ArrayRef<Identifier>()),
                      named, importedName.getEffectiveContext());
 
-    forEachImportNameVersion([&] (ImportNameVersion alternateVersion) {
-      if (alternateVersion == currentVersion)
-        return;
+    currentVersion.forEachOtherImportNameVersion(
+        [&](ImportNameVersion alternateVersion) {
       auto alternateName = nameImporter.importName(named, alternateVersion);
       if (!alternateName)
         return;
@@ -1671,6 +1670,16 @@ void importer::addEntryToLookupTable(SwiftLookupTable &table,
         addEntryToLookupTable(table, namedMember, nameImporter);
     }
   }
+}
+
+/// Returns the nearest parent of \p module that is marked \c explicit in its
+/// module map. If \p module is itself explicit, it is returned; if no module
+/// in the parent chain is explicit, the top-level module is returned.
+static const clang::Module *
+getExplicitParentModule(const clang::Module *module) {
+  while (!module->IsExplicit && module->Parent)
+    module = module->Parent;
+  return module;
 }
 
 void importer::addMacrosToLookupTable(SwiftLookupTable &table,
@@ -1730,16 +1739,30 @@ void importer::addMacrosToLookupTable(SwiftLookupTable &table,
       maybeAddMacro(MD->getMacroInfo(), nullptr);
 
     } else {
+      clang::Module *currentModule = pp.getCurrentModule();
       SmallVector<clang::ModuleMacro *, 8> worklist;
-      worklist.append(moduleMacros.begin(), moduleMacros.end());
+      llvm::copy_if(moduleMacros, std::back_inserter(worklist),
+                    [currentModule](const clang::ModuleMacro *next) -> bool {
+        return next->getOwningModule()->isSubModuleOf(currentModule);
+      });
+
       while (!worklist.empty()) {
         clang::ModuleMacro *moduleMacro = worklist.pop_back_val();
-        clang::Module *owningModule = moduleMacro->getOwningModule();
-        if (!owningModule->isSubModuleOf(pp.getCurrentModule()))
-          continue;
-        worklist.append(moduleMacro->overrides_begin(),
-                        moduleMacro->overrides_end());
         maybeAddMacro(moduleMacro->getMacroInfo(), moduleMacro);
+
+        // Also visit overridden macros that are in a different explicit
+        // submodule. This isn't a perfect way to tell if these two macros are
+        // supposed to be independent, but it's close enough in practice.
+        clang::Module *owningModule = moduleMacro->getOwningModule();
+        auto *explicitParent = getExplicitParentModule(owningModule);
+        llvm::copy_if(moduleMacro->overrides(), std::back_inserter(worklist),
+                      [&](const clang::ModuleMacro *next) -> bool {
+          const clang::Module *nextModule =
+              getExplicitParentModule(next->getOwningModule());
+          if (!nextModule->isSubModuleOf(currentModule))
+            return false;
+          return nextModule != explicitParent;
+        });
       }
     }
   }

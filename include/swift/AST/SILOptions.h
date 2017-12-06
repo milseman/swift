@@ -20,6 +20,7 @@
 
 #include "swift/Basic/Sanitizers.h"
 #include "swift/Basic/OptionSet.h"
+#include "swift/Basic/OptimizationMode.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
 #include <string>
@@ -31,6 +32,12 @@ class SILOptions {
 public:
   /// Controls the aggressiveness of the performance inliner.
   int InlineThreshold = -1;
+
+  /// Controls the aggressiveness of the performance inliner for Osize.
+  int CallerBaseBenefitReductionFactor = 2;
+
+  /// Controls the aggressiveness of the loop unroller.
+  int UnrollThreshold = 250;
 
   /// The number of threads for multi-threaded code generation.
   int NumThreads = 0;
@@ -44,15 +51,6 @@ public:
 
     /// Link all functions during SIL linking.
     LinkAll
-  };
-
-  /// Representation of optimization modes.
-  enum class SILOptMode: unsigned {
-    NotSet,
-    None,
-    Debug,
-    Optimize,
-    OptimizeUnchecked
   };
 
   /// Controls how to perform SIL linking.
@@ -84,7 +82,7 @@ public:
   bool EmitVerboseSIL = false;
 
   /// Optimization mode being used.
-  SILOptMode Optimization = SILOptMode::NotSet;
+  OptimizationMode OptMode = OptimizationMode::NotSet;
 
   enum AssertConfiguration: unsigned {
     // Used by standard library code to distinguish between a debug and release
@@ -106,15 +104,17 @@ public:
   /// Instrument code to generate profiling information.
   bool GenerateProfile = false;
 
+  /// Path to the profdata file to be used for PGO, or the empty string.
+  std::string UseProfile = "";
+
   /// Emit a mapping of profile counters for use in coverage.
   bool EmitProfileCoverageMapping = false;
 
   /// Should we use a pass pipeline passed in via a json file? Null by default.
   llvm::StringRef ExternalPassPipelineFilename;
-  
-  /// Emit captures and function contexts using +0 caller-guaranteed ARC
-  /// conventions.
-  bool EnableGuaranteedClosureContexts = false;
+
+  /// Emit normal function arguments using the +0 guaranteed convention.
+  bool EnableGuaranteedNormalArguments = false;
 
   /// Don't generate code using partial_apply in SIL generation.
   bool DisableSILPartialApply = false;
@@ -146,16 +146,9 @@ public:
   /// \brief Enable large loadable types IRGen pass.
   bool EnableLargeLoadableTypes = true;
 
-  /// Enables the "fully fragile" resilience strategy.
-  ///
-  /// \see ResilienceStrategy::Fragile
-  bool SILSerializeAll = false;
-
-  /// If set, SIL witness tables will be serialized.
-  ///
-  /// It is supposed to be used only for compiling overlays.
-  /// User code should never be compiled with this flag set.
-  bool SILSerializeWitnessTables = false;
+  /// The name of the file to which the backend should save YAML optimization
+  /// records.
+  std::string OptRecordFile;
 
   SILOptions() {}
 
@@ -163,6 +156,10 @@ public:
   /// contribute to a Swift Bridging PCH hash.
   llvm::hash_code getPCHHashComponents() const {
     return llvm::hash_value(0);
+  }
+
+  bool shouldOptimize() const {
+    return OptMode > OptimizationMode::NoOptimization;
   }
 };
 

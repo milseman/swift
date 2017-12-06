@@ -258,8 +258,10 @@ public:
   /// True if the type, or the referenced type of an address type, is trivial.
   bool isTrivial(SILModule &M) const;
 
-  /// True if the type, or the referenced type of an address type, is a
-  /// scalar reference-counted type.
+  /// True if the type, or the referenced type of an address type, is known to
+  /// be a scalar reference-counted type. If this is false, then some part of
+  /// the type may be opaque. It may become reference counted later after
+  /// specialization.
   bool isReferenceCounted(SILModule &M) const;
 
   /// Returns true if the referenced type is a function type that never
@@ -537,6 +539,9 @@ public:
   /// Get the standard exception type.
   static SILType getExceptionType(const ASTContext &C);
 
+  /// Get the SIL token type.
+  static SILType getSILTokenType(const ASTContext &C);
+
   //
   // Utilities for treating SILType as a pointer-like type.
   //
@@ -570,10 +575,10 @@ NON_SIL_TYPE(AnyFunction)
 NON_SIL_TYPE(LValue)
 #undef NON_SIL_TYPE
 
-CanSILFunctionType getNativeSILFunctionType(SILModule &M,
-                        Lowering::AbstractionPattern origType,
-                        CanAnyFunctionType substType,
-                        Optional<SILDeclRef> constant = None);
+CanSILFunctionType getNativeSILFunctionType(
+    SILModule &M, Lowering::AbstractionPattern origType,
+    CanAnyFunctionType substType, Optional<SILDeclRef> constant = None,
+    Optional<ProtocolConformanceRef> witnessMethodConformance = None);
 
 inline llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, SILType T) {
   T.print(OS);

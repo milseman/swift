@@ -57,45 +57,48 @@ extension String {
   ///         print(asciiPrefix)
   ///     }
   ///     // Prints "My favorite emoji is "
+  @_fixed_layout // FIXME(sil-serialize-all)
   public struct UnicodeScalarView :
     BidirectionalCollection,
     CustomStringConvertible,
     CustomDebugStringConvertible
   {
-    internal init(_ _core: _StringCore, coreOffset: Int = 0) {
-      self._core = _core
-      self._coreOffset = coreOffset
-    }
+    @_versioned
+    internal var _guts: _StringGuts
 
-    internal struct _ScratchIterator : IteratorProtocol {
-      var core: _StringCore
-      var idx: Int
-      @_versioned
-      init(_ core: _StringCore, _ pos: Int) {
-        self.idx = pos
-        self.core = core
-      }
-      @inline(__always)
-      mutating func next() -> UTF16.CodeUnit? {
-        if idx == core.endIndex {
-          return nil
-        }
-        defer { idx += 1 }
-        return self.core[idx]
-      }
+    /// The offset of this view's `_guts` from an original guts. This works
+    /// around the fact that `_StringGuts` is always zero-indexed.
+    /// `_coreOffset` should be subtracted from `Index.encodedOffset` before
+    /// that value is used as a `_guts` index.
+    ///
+    /// Note: this is *only* here to support legacy Swift3-style slicing where
+    /// `s.unicodeScalars[i..<j]` produces a `String.UnicodeScalarView`, and
+    /// should be removed when those semantics are no longer supported.
+    @_versioned // FIXME(sil-serialize-all)
+    internal var _coreOffset: Int
+
+    @_inlineable // FIXME(sil-serialize-all)
+    @_versioned // FIXME(sil-serialize-all)
+    internal init(_ _guts: _StringGuts, coreOffset: Int = 0) {
+      self._guts = _guts
+      self._coreOffset = coreOffset
     }
 
     public typealias Index = String.Index
     public typealias IndexDistance = Int
     
-    /// Translates a `_core` index into a `UnicodeScalarIndex` using this view's
-    /// `_coreOffset`.
+    /// Translates a `_guts` index into a `UnicodeScalarIndex` using this
+    /// view's `_coreOffset`.
+    @_inlineable // FIXME(sil-serialize-all)
+    @_versioned // FIXME(sil-serialize-all)
     internal func _fromCoreIndex(_ i: Int) -> Index {
       return Index(encodedOffset: i + _coreOffset)
     }
     
-    /// Translates a `UnicodeScalarIndex` into a `_core` index using this view's
-    /// `_coreOffset`.
+    /// Translates a `UnicodeScalarIndex` into a `_guts` index using this
+    /// view's `_coreOffset`.
+    @_inlineable // FIXME(sil-serialize-all)
+    @_versioned // FIXME(sil-serialize-all)
     internal func _toCoreIndex(_ i: Index) -> Int {
       return i.encodedOffset - _coreOffset
     }
@@ -104,41 +107,38 @@ extension String {
     /// nonempty.
     ///
     /// If the string is empty, `startIndex` is equal to `endIndex`.
+    @_inlineable // FIXME(sil-serialize-all)
     public var startIndex: Index {
-      return _fromCoreIndex(_core.startIndex)
+      return _fromCoreIndex(_guts.startIndex)
     }
 
     /// The "past the end" position---that is, the position one greater than
     /// the last valid subscript argument.
     ///
     /// In an empty Unicode scalars view, `endIndex` is equal to `startIndex`.
+    @_inlineable // FIXME(sil-serialize-all)
     public var endIndex: Index {
-      return _fromCoreIndex(_core.endIndex)
+      return _fromCoreIndex(_guts.endIndex)
     }
 
     /// Returns the next consecutive location after `i`.
     ///
     /// - Precondition: The next location exists.
+    @_inlineable // FIXME(sil-serialize-all)
     public func index(after i: Index) -> Index {
-      let i = _toCoreIndex(i)
-      var scratch = _ScratchIterator(_core, i)
-      var decoder = UTF16()
-      let (_, length) = decoder._decodeOne(&scratch)
-      return _fromCoreIndex(i + length)
+      let offset = _toCoreIndex(i)
+      let length = _guts._unicodeScalarWidth(startingAt: offset)
+      return _fromCoreIndex(offset + length)
     }
 
     /// Returns the previous consecutive location before `i`.
     ///
     /// - Precondition: The previous location exists.
+    @_inlineable // FIXME(sil-serialize-all)
     public func index(before i: Index) -> Index {
-      var i = _toCoreIndex(i) - 1
-      let codeUnit = _core[i]
-      if _slowPath((codeUnit >> 10) == 0b1101_11) {
-        if i != 0 && (_core[i - 1] >> 10) == 0b1101_10 {
-          i -= 1
-        }
-      }
-      return _fromCoreIndex(i)
+      let offset = _toCoreIndex(i)
+      let length = _guts._unicodeScalarWidth(endingAt: offset - 1)
+      return _fromCoreIndex(offset - length)
     }
 
     /// Accesses the Unicode scalar value at the given position.
@@ -157,42 +157,44 @@ extension String {
     ///
     /// - Parameter position: A valid index of the character view. `position`
     ///   must be less than the view's end index.
+    @_inlineable // FIXME(sil-serialize-all)
     public subscript(position: Index) -> Unicode.Scalar {
-      var scratch = _ScratchIterator(_core, _toCoreIndex(position))
-      var decoder = UTF16()
-      switch decoder.decode(&scratch) {
+      switch _guts._decodeUnicodeScalar(startingAt: _toCoreIndex(position)) {
       case .scalarValue(let us):
         return us
       case .emptyInput:
-        _sanityCheckFailure("cannot subscript using an endIndex")
+        _preconditionFailure("cannot subscript using an endIndex")
       case .error:
-        return Unicode.Scalar(0xfffd)!
+        return Unicode.Scalar._replacementCharacter
       }
     }
 
     /// An iterator over the Unicode scalars that make up a `UnicodeScalarView`
     /// collection.
+    @_fixed_layout // FIXME(sil-serialize-all)
     public struct Iterator : IteratorProtocol {
-      init(_ _base: _StringCore) {
-        self._iterator = _base.makeIterator()
-        if _base.hasContiguousStorage {
-          self._baseSet = true
-          if _base.isASCII {
-            self._ascii = true
-            self._asciiBase = UnsafeBufferPointer(
-              start: _base._baseAddress?.assumingMemoryBound(
-                to: UTF8.CodeUnit.self),
-              count: _base.count).makeIterator()
-          } else {
-            self._ascii = false
-            self._base = UnsafeBufferPointer<UInt16>(
-              start: _base._baseAddress?.assumingMemoryBound(
-                to: UTF16.CodeUnit.self),
-              count: _base.count).makeIterator()
-          }
+      @_versioned // FIXME(sil-serialize-all)
+      internal var _guts: _StringGuts
+
+      @_versioned // FIXME(sil-serialize-all)
+      internal var _asciiIterator: _UnmanagedASCIIString.UnicodeScalarIterator?
+      @_versioned // FIXME(sil-serialize-all)
+      internal var _utf16Iterator: _UnmanagedUTF16String.UnicodeScalarIterator?
+      @_versioned // FIXME(sil-serialize-all)
+      internal var _opaqueIterator: _UnmanagedOpaqueString.UnicodeScalarIterator?
+
+      @_inlineable // FIXME(sil-serialize-all)
+      @_versioned // FIXME(sil-serialize-all)
+      internal init(_ _guts: _StringGuts) {
+        self._guts = _guts
+        if _slowPath(_guts._isOpaque) {
+          self._opaqueIterator = _guts._asOpaque().makeUnicodeScalarIterator()
+        } else if _guts.isASCII {
+          self._asciiIterator =
+            _guts._unmanagedASCIIView.makeUnicodeScalarIterator()
         } else {
-          self._ascii = false
-          self._baseSet = false
+          self._utf16Iterator =
+            _guts._unmanagedUTF16View.makeUnicodeScalarIterator()
         }
       }
 
@@ -203,61 +205,35 @@ extension String {
       ///
       /// - Precondition: `next()` has not been applied to a copy of `self`
       ///   since the copy was made.
+      @_inlineable // FIXME(sil-serialize-all)
       public mutating func next() -> Unicode.Scalar? {
-        var result: UnicodeDecodingResult
-        if _baseSet {
-          if _ascii {
-            switch self._asciiBase.next() {
-            case let x?:
-              result = .scalarValue(Unicode.Scalar(x))
-            case nil:
-              result = .emptyInput
-            }
-          } else {
-            result = _decoder.decode(&(self._base!))
-          }
-        } else {
-          result = _decoder.decode(&(self._iterator))
+        if _slowPath(_opaqueIterator != nil) {
+          return _opaqueIterator!.next()
         }
-        switch result {
-        case .scalarValue(let us):
-          return us
-        case .emptyInput:
-          return nil
-        case .error:
-          return Unicode.Scalar(0xfffd)
+        if _asciiIterator != nil {
+          return _asciiIterator!.next()
         }
+        return _utf16Iterator!.next()
       }
-      internal var _decoder: UTF16 = UTF16()
-      internal let _baseSet: Bool
-      internal let _ascii: Bool
-      internal var _asciiBase: UnsafeBufferPointerIterator<UInt8>!
-      internal var _base: UnsafeBufferPointerIterator<UInt16>!
-      internal var _iterator: IndexingIterator<_StringCore>
     }
 
     /// Returns an iterator over the Unicode scalars that make up this view.
     ///
     /// - Returns: An iterator over this collection's `Unicode.Scalar` elements.
+    @_inlineable // FIXME(sil-serialize-all)
     public func makeIterator() -> Iterator {
-      return Iterator(_core)
+      return Iterator(_guts)
     }
 
+    @_inlineable // FIXME(sil-serialize-all)
     public var description: String {
-      return String(_core)
+      return String(_guts)
     }
 
+    @_inlineable // FIXME(sil-serialize-all)
     public var debugDescription: String {
       return "StringUnicodeScalarView(\(self.description.debugDescription))"
     }
-
-    internal var _core: _StringCore
-    
-    /// The offset of this view's `_core` from an original core. This works
-    /// around the fact that `_StringCore` is always zero-indexed.
-    /// `_coreOffset` should be subtracted from `UnicodeScalarIndex.encodedOffset`
-    /// before that value is used as a `_core` index.
-    internal var _coreOffset: Int
   }
 
   /// Creates a string corresponding to the given collection of Unicode
@@ -277,8 +253,9 @@ extension String {
   /// slice of the `picnicGuest.unicodeScalars` view.
   ///
   /// - Parameter unicodeScalars: A collection of Unicode scalar values.
+  @_inlineable // FIXME(sil-serialize-all)
   public init(_ unicodeScalars: UnicodeScalarView) {
-    self.init(unicodeScalars._core)
+    self.init(unicodeScalars._guts)
   }
 
   /// The index type for a string's `unicodeScalars` view.
@@ -286,25 +263,41 @@ extension String {
 }
 
 extension String.UnicodeScalarView : _SwiftStringView {
-  var _persistentContent : String { return String(_core) }
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var _persistentContent : String { return String(_guts) }
+
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  var _wholeString : String {
+    return String(_guts)
+  }
+
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  var _encodedOffsetRange : Range<Int> {
+    return 0..<_guts.count
+  }
 }
 
 extension String {
   /// The string's value represented as a collection of Unicode scalar values.
+  @_inlineable // FIXME(sil-serialize-all)
   public var unicodeScalars: UnicodeScalarView {
     get {
-      return UnicodeScalarView(_core)
+      return UnicodeScalarView(_guts)
     }
     set {
-      _core = newValue._core
+      _guts = newValue._guts
     }
   }
 }
 
 extension String.UnicodeScalarView : RangeReplaceableCollection {
   /// Creates an empty view instance.
+  @_inlineable // FIXME(sil-serialize-all)
   public init() {
-    self = String.UnicodeScalarView(_StringCore())
+    self = String.UnicodeScalarView(_StringGuts())
   }
   
   /// Reserves enough space in the view's underlying storage to store the
@@ -319,15 +312,41 @@ extension String.UnicodeScalarView : RangeReplaceableCollection {
   ///   to allocate.
   ///
   /// - Complexity: O(*n*), where *n* is the capacity being reserved.
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func reserveCapacity(_ n: Int) {
-    _core.reserveCapacity(n)
+    if _guts.isASCII {
+      _guts.reserveCapacity(n, of: UInt8.self)
+    } else {
+      _guts.reserveCapacity(n, of: UTF16.CodeUnit.self)
+    }
   }
   
   /// Appends the given Unicode scalar to the view.
   ///
   /// - Parameter c: The character to append to the string.
-  public mutating func append(_ x: Unicode.Scalar) {
-    _core.append(x)
+  @_inlineable // FIXME(sil-serialize-all)
+  public mutating func append(_ c: Unicode.Scalar) {
+    if _fastPath(_guts.isASCII && c.value <= 0x7f) {
+      _guts.withMutableASCIIStorage(unusedCapacity: 1) { storage in
+        unowned(unsafe) let s = storage._value
+        s.end.pointee = UInt8(c.value)
+        s.count += 1
+      }
+    } else {
+      let width = UTF16.width(c)
+      _guts.withMutableUTF16Storage(unusedCapacity: width) { storage in
+        unowned(unsafe) let s = storage._value
+        _sanityCheck(s.count + width <= s.capacity)
+        if _fastPath(width == 1) {
+          s.end.pointee = UTF16.CodeUnit(c.value)
+        } else {
+          _sanityCheck(width == 2)
+          s.end[0] = UTF16.leadSurrogate(c)
+          s.end[1] = UTF16.trailSurrogate(c)
+        }
+        s.count += width
+      }
+    }
   }
 
   /// Appends the Unicode scalar values in the given sequence to the view.
@@ -335,11 +354,36 @@ extension String.UnicodeScalarView : RangeReplaceableCollection {
   /// - Parameter newElements: A sequence of Unicode scalar values.
   ///
   /// - Complexity: O(*n*), where *n* is the length of the resulting view.
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func append<S : Sequence>(contentsOf newElements: S)
-    where S.Element == Unicode.Scalar {
-    _core.append(contentsOf: newElements.lazy.flatMap { $0.utf16 })
+  where S.Element == Unicode.Scalar {
+    _guts.reserveCapacity(
+      newElements.underestimatedCount,
+      of: UTF16.CodeUnit.self)
+    var it = newElements.makeIterator()
+    var next = it.next()
+    while let n = next {
+      _guts.withMutableUTF16Storage(unusedCapacity: UTF16.width(n)) { storage in
+        var p = storage._value.end
+        let limit = storage._value.capacityEnd
+        while let n = next {
+          let w = UTF16.width(n)
+          guard p + w <= limit else { break }
+          if w == 1 {
+            p.pointee = UTF16.CodeUnit(n.value)
+          } else {
+            _sanityCheck(w == 2)
+            p[0] = UTF16.leadSurrogate(n)
+            p[1] = UTF16.trailSurrogate(n)
+          }
+          p += w
+          next = it.next()
+        }
+        storage._value.count = p - storage._value.start
+      }
+    }
   }
-  
+
   /// Replaces the elements within the specified bounds with the given Unicode
   /// scalar values.
   ///
@@ -355,6 +399,7 @@ extension String.UnicodeScalarView : RangeReplaceableCollection {
   ///   `newElements`. If the call to `replaceSubrange(_:with:)` simply
   ///   removes elements at the end of the string, the complexity is O(*n*),
   ///   where *n* is equal to `bounds.count`.
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func replaceSubrange<C>(
     _ bounds: Range<Index>,
     with newElements: C
@@ -362,7 +407,7 @@ extension String.UnicodeScalarView : RangeReplaceableCollection {
     let rawSubRange: Range<Int> = _toCoreIndex(bounds.lowerBound) ..<
       _toCoreIndex(bounds.upperBound)
     let lazyUTF16 = newElements.lazy.flatMap { $0.utf16 }
-    _core.replaceSubrange(rawSubRange, with: lazyUTF16)
+    _guts.replaceSubrange(rawSubRange, with: lazyUTF16)
   }
 }
 
@@ -393,6 +438,7 @@ extension String.UnicodeScalarIndex {
   ///     must be an element of `String(unicodeScalars).utf16.indices`.
   ///   - unicodeScalars: The `UnicodeScalarView` in which to find the new
   ///     position.
+  @_inlineable // FIXME(sil-serialize-all)
   public init?(
     _ sourcePosition: String.UTF16Index,
     within unicodeScalars: String.UnicodeScalarView
@@ -421,31 +467,36 @@ extension String.UnicodeScalarIndex {
   ///   position in `characters`, this method returns `nil`. For example,
   ///   an attempt to convert the position of a UTF-8 continuation byte
   ///   returns `nil`.
+  @_inlineable // FIXME(sil-serialize-all)
   public func samePosition(in characters: String) -> String.Index? {
     return String.Index(self, within: characters)
   }
 }
 
 extension String.UnicodeScalarView {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
   internal func _isOnUnicodeScalarBoundary(_ i: Index) -> Bool {
-    if _fastPath(_core.isASCII) { return true }
+    if _fastPath(_guts.isASCII) { return true }
     if i == startIndex || i == endIndex {
       return true
     }
     if i._transcodedOffset != 0 { return false }
     let i2 = _toCoreIndex(i)
-    if _fastPath(_core[i2] & 0xFC00 != 0xDC00) { return true }
-    return _core[i2 &- 1] & 0xFC00 != 0xD800
+    if _fastPath(!UTF16.isTrailSurrogate(_guts[i2])) { return true }
+    return i2 == 0 || !UTF16.isLeadSurrogate(_guts[i2 &- 1])
   }
   
   // NOTE: Don't make this function inlineable.  Grapheme cluster
   // segmentation uses a completely different algorithm in Unicode 9.0.
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
   internal func _isOnGraphemeClusterBoundary(_ i: Index) -> Bool {
     if i == startIndex || i == endIndex {
       return true
     }
     if !_isOnUnicodeScalarBoundary(i) { return false }
-    let str = String(_core)
+    let str = String(_guts)
     return i == str.index(before: str.index(after: i))
   }
 }
@@ -453,12 +504,14 @@ extension String.UnicodeScalarView {
 // Reflection
 extension String.UnicodeScalarView : CustomReflectable {
   /// Returns a mirror that reflects the Unicode scalars view of a string.
+  @_inlineable // FIXME(sil-serialize-all)
   public var customMirror: Mirror {
     return Mirror(self, unlabeledChildren: self)
   }
 }
 
 extension String.UnicodeScalarView : CustomPlaygroundQuickLookable {
+  @_inlineable // FIXME(sil-serialize-all)
   public var customPlaygroundQuickLook: PlaygroundQuickLook {
     return .text(description)
   }
@@ -466,24 +519,28 @@ extension String.UnicodeScalarView : CustomPlaygroundQuickLookable {
 
 // backward compatibility for index interchange.  
 extension String.UnicodeScalarView {
+  @_inlineable // FIXME(sil-serialize-all)
   @available(
     swift, obsoleted: 4.0,
     message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(after i: Index?) -> Index {
     return index(after: i!)
   }
+  @_inlineable // FIXME(sil-serialize-all)
   @available(
     swift, obsoleted: 4.0,
     message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(_ i: Index?,  offsetBy n: IndexDistance) -> Index {
     return index(i!, offsetBy: n)
   }
+  @_inlineable // FIXME(sil-serialize-all)
   @available(
     swift, obsoleted: 4.0,
     message: "Any String view index conversion can fail in Swift 4; please unwrap the optional indices")
   public func distance(from i: Index?, to j: Index?) -> IndexDistance {
     return distance(from: i!, to: j!)
   }
+  @_inlineable // FIXME(sil-serialize-all)
   @available(
     swift, obsoleted: 4.0,
     message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
@@ -505,6 +562,7 @@ extension String.UnicodeScalarView {
 extension String.UnicodeScalarView {
   public typealias SubSequence = Substring.UnicodeScalarView
 
+  @_inlineable // FIXME(sil-serialize-all)
   @available(swift, introduced: 4)
   public subscript(r: Range<Index>) -> String.UnicodeScalarView.SubSequence {
     return String.UnicodeScalarView.SubSequence(self, _bounds: r)
@@ -523,13 +581,17 @@ extension String.UnicodeScalarView {
   ///
   /// - Complexity: O(*n*) if the underlying string is bridged from
   ///   Objective-C, where *n* is the length of the string; otherwise, O(1).
+  @_inlineable // FIXME(sil-serialize-all)
   @available(swift, obsoleted: 4)
   public subscript(r: Range<Index>) -> String.UnicodeScalarView {
-    let rawSubRange = _toCoreIndex(r.lowerBound)..<_toCoreIndex(r.upperBound)
+    let rawSubRange: Range<Int> =
+      _toCoreIndex(r.lowerBound)..<_toCoreIndex(r.upperBound)
     return String.UnicodeScalarView(
-      _core[rawSubRange], coreOffset: r.lowerBound.encodedOffset)
+      _guts._extractSlice(rawSubRange),
+      coreOffset: r.lowerBound.encodedOffset)
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String.UnicodeScalarView {
     return self[bounds.relative(to: self)]

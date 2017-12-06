@@ -25,15 +25,18 @@
 // extra element requirement for 8 bit elements.  See the
 // implementation of subscript(Int) -> UTF16.CodeUnit below for details.
 @_fixed_layout
-public struct _StringCore {
+public struct _LegacyStringCore {
   //===--------------------------------------------------------------------===//
   // Internals
   public var _baseAddress: UnsafeMutableRawPointer?
+  @_versioned // FIXME(sil-serialize-all)
   var _countAndFlags: UInt
   public var _owner: AnyObject?
 
   /// (private) create the implementation of a string from its component parts.
-  init(
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal init(
     baseAddress: UnsafeMutableRawPointer?,
     _countAndFlags: UInt,
     owner: AnyObject?
@@ -44,7 +47,9 @@ public struct _StringCore {
     _invariantCheck()
   }
 
-  func _invariantCheck() {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal func _invariantCheck() {
     // Note: this code is intentionally #if'ed out.  It unconditionally
     // accesses lazily initialized globals, and thus it is a performance burden
     // in non-checked builds.
@@ -59,7 +64,7 @@ public struct _StringCore {
       _sanityCheck(elementWidth == 2,
         "Opaque cocoa strings should have an elementWidth of 2")
     }
-    else if _baseAddress == _emptyStringBase {
+    else if UnsafeRawPointer(_baseAddress) == _emptyStringBase {
       _sanityCheck(!hasCocoaBuffer)
       _sanityCheck(count == 0, "Empty string storage with non-zero count")
       _sanityCheck(_owner == nil, "String pointing at empty storage has owner")
@@ -67,7 +72,7 @@ public struct _StringCore {
     else if let buffer = nativeBuffer {
       _sanityCheck(!hasCocoaBuffer)
       _sanityCheck(elementWidth == buffer.elementWidth,
-        "_StringCore elementWidth doesn't match its buffer's")
+        "_LegacyStringCore elementWidth doesn't match its buffer's")
       _sanityCheck(_baseAddress! >= buffer.start)
       _sanityCheck(_baseAddress! <= buffer.usedEnd)
       _sanityCheck(_pointer(toElementAt: count) <= buffer.usedEnd)
@@ -76,19 +81,25 @@ public struct _StringCore {
   }
 
   /// Bitmask for the count part of `_countAndFlags`.
-  var _countMask: UInt {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var _countMask: UInt {
     return UInt.max &>> 2
   }
 
   /// Bitmask for the flags part of `_countAndFlags`.
-  var _flagMask: UInt {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var _flagMask: UInt {
     return ~_countMask
   }
 
   /// Value by which to multiply a 2nd byte fetched in order to
   /// assemble a UTF-16 code unit from our contiguous storage.  If we
   /// store ASCII, this will be zero.  Otherwise, it will be 0x100.
-  var _highByteMultiplier: UTF16.CodeUnit {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var _highByteMultiplier: UTF16.CodeUnit {
     return UTF16.CodeUnit(elementShift) &<< 8
   }
 
@@ -96,13 +107,17 @@ public struct _StringCore {
   /// storage.  Caveats: The string must have contiguous storage; the
   /// element may be 1 or 2 bytes wide, depending on elementWidth; the
   /// result may be null if the string is empty.
-  func _pointer(toElementAt n: Int) -> UnsafeMutableRawPointer {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal func _pointer(toElementAt n: Int) -> UnsafeMutableRawPointer {
     _sanityCheck(hasContiguousStorage && n >= 0 && n <= count)
     return _baseAddress! + (n &<< elementShift)
   }
 
-  static func _copyElements(
-    _ srcStart: UnsafeMutableRawPointer, srcElementWidth: Int,
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal static func _copyElements(
+    _ srcStart: UnsafeRawPointer, srcElementWidth: Int,
     dstStart: UnsafeMutableRawPointer, dstElementWidth: Int,
     count: Int
   ) {
@@ -140,6 +155,7 @@ public struct _StringCore {
 
   //===--------------------------------------------------------------------===//
   // Initialization
+  @_inlineable // FIXME(sil-serialize-all)
   public init(
     baseAddress: UnsafeMutableRawPointer?,
     count: Int,
@@ -161,9 +177,11 @@ public struct _StringCore {
     _invariantCheck()
   }
 
-  /// Create a _StringCore that covers the entire length of the _StringBuffer.
-  init(_ buffer: _StringBuffer) {
-    self = _StringCore(
+  /// Create a _LegacyStringCore that covers the entire length of the _StringBuffer.
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal init(_ buffer: _StringBuffer) {
+    self = _LegacyStringCore(
       baseAddress: buffer.start,
       count: buffer.usedCount,
       elementShift: buffer.elementShift,
@@ -175,8 +193,9 @@ public struct _StringCore {
   /// Create the implementation of an empty string.
   ///
   /// - Note: There is no null terminator in an empty string.
+  @_inlineable // FIXME(sil-serialize-all)
   public init() {
-    self._baseAddress = _emptyStringBase
+    self._baseAddress = UnsafeMutableRawPointer(mutating: _emptyStringBase)
     self._countAndFlags = 0
     self._owner = nil
     _invariantCheck()
@@ -187,6 +206,7 @@ public struct _StringCore {
 
   /// The number of elements stored
   /// - Complexity: O(1).
+  @_inlineable // FIXME(sil-serialize-all)
   public var count: Int {
     get {
       return Int(_countAndFlags & _countMask)
@@ -199,7 +219,9 @@ public struct _StringCore {
 
   /// Left shift amount to apply to an offset N so that when
   /// added to a UnsafeMutableRawPointer, it traverses N elements.
-  var elementShift: Int {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var elementShift: Int {
     return Int(_countAndFlags &>> (UInt.bitWidth - 1))
   }
 
@@ -207,10 +229,12 @@ public struct _StringCore {
   ///
   /// If the string does not have an ASCII buffer available (including the case
   /// when we don't have a utf16 buffer) then it equals 2.
+  @_inlineable // FIXME(sil-serialize-all)
   public var elementWidth: Int {
     return elementShift &+ 1
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public var hasContiguousStorage: Bool {
 #if _runtime(_ObjC)
     return _fastPath(_baseAddress != nil)
@@ -220,20 +244,24 @@ public struct _StringCore {
   }
 
   /// Are we using an `NSString` for storage?
+  @_inlineable // FIXME(sil-serialize-all)
   public var hasCocoaBuffer: Bool {
     return Int((_countAndFlags &<< 1)._value) < 0
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public var startASCII: UnsafeMutablePointer<UTF8.CodeUnit> {
     _sanityCheck(elementWidth == 1, "String does not contain contiguous ASCII")
     return _baseAddress!.assumingMemoryBound(to: UTF8.CodeUnit.self)
   }
 
   /// True iff a contiguous ASCII buffer available.
+  @_inlineable // FIXME(sil-serialize-all)
   public var isASCII: Bool {
     return elementWidth == 1
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public var startUTF16: UnsafeMutablePointer<UTF16.CodeUnit> {
     _sanityCheck(
       count == 0 || elementWidth == 2,
@@ -241,6 +269,7 @@ public struct _StringCore {
     return _baseAddress!.assumingMemoryBound(to: UTF16.CodeUnit.self)
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public var asciiBuffer: UnsafeMutableBufferPointer<UTF8.CodeUnit>? {
     if elementWidth != 1 {
       return nil
@@ -249,6 +278,7 @@ public struct _StringCore {
   }
 
   /// the native _StringBuffer, if any, or `nil`.
+  @_inlineable // FIXME(sil-serialize-all)
   public var nativeBuffer: _StringBuffer? {
     if !hasCocoaBuffer {
       return _owner.map {
@@ -260,6 +290,7 @@ public struct _StringCore {
 
 #if _runtime(_ObjC)
   /// the Cocoa String buffer, if any, or `nil`.
+  @_inlineable // FIXME(sil-serialize-all)
   public var cocoaBuffer: _CocoaString? {
     if hasCocoaBuffer {
       return _owner
@@ -271,8 +302,9 @@ public struct _StringCore {
   //===--------------------------------------------------------------------===//
   // slicing
 
-  /// Returns the given sub-`_StringCore`.
-  public subscript(bounds: Range<Int>) -> _StringCore {
+  /// Returns the given sub-`_LegacyStringCore`.
+  @_inlineable // FIXME(sil-serialize-all)
+  public subscript(bounds: Range<Int>) -> _LegacyStringCore {
     _precondition(
       bounds.lowerBound >= 0,
       "subscript: subrange start precedes String start")
@@ -285,21 +317,23 @@ public struct _StringCore {
     _sanityCheck(UInt(newCount) & _flagMask == 0)
 
     if hasContiguousStorage {
-      return _StringCore(
+      return _LegacyStringCore(
         baseAddress: _pointer(toElementAt: bounds.lowerBound),
         _countAndFlags: (_countAndFlags & _flagMask) | UInt(newCount),
         owner: _owner)
     }
 #if _runtime(_ObjC)
-    return _cocoaStringSlice(self, bounds)
+    return String(_cocoaString:
+      _cocoaStringSlice(cocoaBuffer.unsafelyUnwrapped, bounds))._core
 #else
     _sanityCheckFailure("subscript: non-native string without objc runtime")
 #endif
   }
 
   /// Get the Nth UTF-16 Code Unit stored.
+  @_inlineable // FIXME(sil-serialize-all)
   @_versioned
-  func _nthContiguous(_ position: Int) -> UTF16.CodeUnit {
+  internal func _nthContiguous(_ position: Int) -> UTF16.CodeUnit {
     let p =
         UnsafeMutablePointer<UInt8>(_pointer(toElementAt: position)._rawValue)
     // Always dereference two bytes, but when elements are 8 bits we
@@ -314,6 +348,7 @@ public struct _StringCore {
   }
 
   /// Get the Nth UTF-16 Code Unit stored.
+  @_inlineable // FIXME(sil-serialize-all)
   public subscript(position: Int) -> UTF16.CodeUnit {
     @inline(__always)
     get {
@@ -329,14 +364,16 @@ public struct _StringCore {
         return _nthContiguous(position)
       }
 #if _runtime(_ObjC)
-      return _cocoaStringSubscript(self, position)
+      return _cocoaStringSubscript(self.cocoaBuffer.unsafelyUnwrapped, position)
 #else
       _sanityCheckFailure("subscript: non-native string without objc runtime")
 #endif
     }
   }
 
-  var _unmanagedASCII : UnsafeBufferPointer<Unicode.ASCII.CodeUnit>? {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var _unmanagedASCII : UnsafeBufferPointer<Unicode.ASCII.CodeUnit>? {
     @inline(__always)
     get {
       guard _fastPath(_baseAddress != nil && elementWidth == 1) else {
@@ -350,7 +387,9 @@ public struct _StringCore {
     }
   }
   
-  var _unmanagedUTF16 : UnsafeBufferPointer<UTF16.CodeUnit>? {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal var _unmanagedUTF16 : UnsafeBufferPointer<UTF16.CodeUnit>? {
     @inline(__always)
     get {
       guard _fastPath(_baseAddress != nil && elementWidth != 1) else {
@@ -364,7 +403,9 @@ public struct _StringCore {
   }
   
   /// Write the string, in the given encoding, to output.
-  func encode<Encoding: Unicode.Encoding>(
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal func encode<Encoding: Unicode.Encoding>(
     _ encoding: Encoding.Type,
     into processCodeUnit: (Encoding.CodeUnit) -> Void)
   {
@@ -394,7 +435,7 @@ public struct _StringCore {
     }
     else if hasCocoaBuffer {
 #if _runtime(_ObjC)
-      _StringCore(
+      _LegacyStringCore(
         _cocoaStringToContiguous(
           source: cocoaBuffer!, range: 0..<count, minimumCapacity: 0)
       ).encode(encoding, into: processCodeUnit)
@@ -416,8 +457,10 @@ public struct _StringCore {
   /// - Note: If unsuccessful because of insufficient space in an
   ///   existing buffer, the suggested new capacity will at least double
   ///   the existing buffer's storage.
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
   @inline(__always)
-  mutating func _claimCapacity(
+  internal mutating func _claimCapacity(
     _ newSize: Int, minElementWidth: Int) -> (Int, UnsafeMutableRawPointer?) {
     if _fastPath(
       (nativeBuffer != nil) && elementWidth >= minElementWidth
@@ -425,7 +468,7 @@ public struct _StringCore {
     ) {
       var buffer = nativeBuffer!
 
-      // In order to grow the substring in place, this _StringCore should point
+      // In order to grow the substring in place, this _LegacyStringCore should point
       // at the substring at the end of a _StringBuffer.  Otherwise, some other
       // String is using parts of the buffer beyond our last byte.
       let usedEnd = _pointer(toElementAt:count)
@@ -449,8 +492,10 @@ public struct _StringCore {
   /// Effectively appends garbage to the String until it has newSize
   /// UTF-16 code units.  Returns a pointer to the garbage code units;
   /// you must immediately copy valid data into that storage.
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
   @inline(__always)
-  mutating func _growBuffer(
+  internal mutating func _growBuffer(
     _ newSize: Int, minElementWidth: Int
   ) -> UnsafeMutableRawPointer {
     let (newCapacity, existingStorage)
@@ -474,7 +519,9 @@ public struct _StringCore {
   /// capacity of at least newCapacity elements of at least the given
   /// width.  Effectively appends garbage to the String until it has
   /// newSize UTF-16 code units.
-  mutating func _copyInPlace(
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal mutating func _copyInPlace(
     newSize: Int, newCapacity: Int, minElementWidth: Int
   ) {
     _sanityCheck(newCapacity >= newSize)
@@ -490,7 +537,7 @@ public struct _StringCore {
                                    elementWidth: newElementWidth)
 
     if hasContiguousStorage {
-      _StringCore._copyElements(
+      _LegacyStringCore._copyElements(
         _baseAddress!, srcElementWidth: elementWidth,
         dstStart: UnsafeMutableRawPointer(newStorage.start),
         dstElementWidth: newElementWidth, count: oldCount)
@@ -509,14 +556,16 @@ public struct _StringCore {
 #endif
     }
 
-    self = _StringCore(newStorage)
+    self = _LegacyStringCore(newStorage)
   }
 
   /// Append `c` to `self`.
   ///
   /// - Complexity: O(1) when amortized over repeated appends of equal
   ///   character values.
-  mutating func append(_ c: Unicode.Scalar) {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal mutating func append(_ c: Unicode.Scalar) {
     let width = UTF16.width(c)
     append(
       width == 2 ? UTF16.leadSurrogate(c) : UTF16.CodeUnit(c.value),
@@ -527,11 +576,14 @@ public struct _StringCore {
   /// Append `u` to `self`.
   ///
   /// - Complexity: Amortized O(1).
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func append(_ u: UTF16.CodeUnit) {
     append(u, nil)
   }
 
-  mutating func append(_ u0: UTF16.CodeUnit, _ u1: UTF16.CodeUnit?) {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal mutating func append(_ u0: UTF16.CodeUnit, _ u1: UTF16.CodeUnit?) {
     _invariantCheck()
     let minBytesPerCodeUnit = u0 <= 0x7f ? 1 : 2
     let utf16Width = u1 == nil ? 1 : 2
@@ -557,8 +609,10 @@ public struct _StringCore {
     _invariantCheck()
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
   @inline(never)
-  mutating func append(_ rhs: _StringCore) {
+  internal mutating func append(_ rhs: _LegacyStringCore) {
     _invariantCheck()
     let minElementWidth
     = elementWidth >= rhs.elementWidth
@@ -569,7 +623,7 @@ public struct _StringCore {
       count + rhs.count, minElementWidth: minElementWidth)
 
     if _fastPath(rhs.hasContiguousStorage) {
-      _StringCore._copyElements(
+      _LegacyStringCore._copyElements(
         rhs._baseAddress!, srcElementWidth: rhs.elementWidth,
         dstStart: destination, dstElementWidth:elementWidth, count: rhs.count)
     }
@@ -589,7 +643,9 @@ public struct _StringCore {
   /// represented as pure ASCII.
   ///
   /// - Complexity: O(*n*) in the worst case.
-  func isRepresentableAsASCII() -> Bool {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal func isRepresentableAsASCII() -> Bool {
     if _slowPath(!hasContiguousStorage) {
       return false
     }
@@ -604,27 +660,30 @@ public struct _StringCore {
   }
 }
 
-extension _StringCore : RandomAccessCollection {
+extension _LegacyStringCore : RandomAccessCollection {
   
   public typealias Indices = CountableRange<Int>
 
+  @_inlineable // FIXME(sil-serialize-all)
   public // @testable
   var startIndex: Int {
     return 0
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public // @testable
   var endIndex: Int {
     return count
   }
 }
 
-extension _StringCore : RangeReplaceableCollection {
+extension _LegacyStringCore : RangeReplaceableCollection {
 
   /// Replace the elements within `bounds` with `newElements`.
   ///
   /// - Complexity: O(`bounds.count`) if `bounds.upperBound
   ///   == self.endIndex` and `newElements.isEmpty`, O(*n*) otherwise.
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func replaceSubrange<C>(
     _ bounds: Range<Int>,
     with newElements: C
@@ -660,8 +719,8 @@ extension _StringCore : RangeReplaceableCollection {
       let tailStart = rangeStart + (replacedCount &<< elementShift)
 
       if growth > 0 {
-        (tailStart + (growth &<< elementShift)).copyBytes(
-          from: tailStart, count: tailCount &<< elementShift)
+        (tailStart + (growth &<< elementShift)).copyMemory(
+          from: tailStart, byteCount: tailCount &<< elementShift)
       }
 
       if _fastPath(elementWidth == 1) {
@@ -680,12 +739,12 @@ extension _StringCore : RangeReplaceableCollection {
       }
 
       if growth < 0 {
-        (tailStart + (growth &<< elementShift)).copyBytes(
-          from: tailStart, count: tailCount &<< elementShift)
+        (tailStart + (growth &<< elementShift)).copyMemory(
+          from: tailStart, byteCount: tailCount &<< elementShift)
       }
     }
     else {
-      var r = _StringCore(
+      var r = _LegacyStringCore(
         _StringBuffer(
           capacity: newCount,
           initialSize: 0,
@@ -701,6 +760,7 @@ extension _StringCore : RangeReplaceableCollection {
     }
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func reserveCapacity(_ n: Int) {
     if _fastPath(!hasCocoaBuffer) {
       if _fastPath(isKnownUniquelyReferenced(&_owner)) {
@@ -720,6 +780,7 @@ extension _StringCore : RangeReplaceableCollection {
       minElementWidth: 1)
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
   public mutating func append<S : Sequence>(contentsOf s: S)
     where S.Element == UTF16.CodeUnit {
     var width = elementWidth
@@ -757,12 +818,4 @@ extension _StringCore : RangeReplaceableCollection {
       self.append(u)
     }
   }
-}
-
-// Used to support a tighter invariant: all strings with contiguous
-// storage have a non-NULL base address.
-var _emptyStringStorage: UInt32 = 0
-
-var _emptyStringBase: UnsafeMutableRawPointer {
-  return UnsafeMutableRawPointer(Builtin.addressof(&_emptyStringStorage))
 }

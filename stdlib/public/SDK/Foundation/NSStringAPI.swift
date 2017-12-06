@@ -14,7 +14,19 @@
 //
 //===----------------------------------------------------------------------===//
 
+// Important Note
+// ==============
+//
+// This file is shared between two projects:
+//
+// 1. https://github.com/apple/swift/tree/master/stdlib/public/SDK/Foundation
+// 2. https://github.com/apple/swift-corelibs-foundation/tree/master/Foundation
+//
+// If you change this file, you must update it in both places.
+
+#if !DEPLOYMENT_RUNTIME_SWIFT
 @_exported import Foundation // Clang module
+#endif
 
 // Open Issues
 // ===========
@@ -30,12 +42,7 @@ func _toNSArray<T, U : AnyObject>(_ a: [T], f: (T) -> U) -> NSArray {
   return result
 }
 
-func _toNSRange(_ r: Range<String.Index>) -> NSRange {
-  return NSRange(
-    location: r.lowerBound.encodedOffset,
-    length: r.upperBound.encodedOffset - r.lowerBound.encodedOffset)
-}
-
+#if !DEPLOYMENT_RUNTIME_SWIFT
 // We only need this for UnsafeMutablePointer, but there's not currently a way
 // to write that constraint.
 extension Optional {
@@ -57,6 +64,7 @@ extension Optional {
     return self == nil ? body(nil) : body(&object)
   }
 }
+#endif
 
 extension String {
   //===--- Class Methods --------------------------------------------------===//
@@ -156,7 +164,7 @@ extension String {
   /// C array of UTF8-encoded bytes.
   public init?(utf8String bytes: UnsafePointer<CChar>) {
     if let ns = NSString(utf8String: bytes) {
-      self = ns as String
+      self = String._unconditionallyBridgeFromObjectiveC(ns)
     } else {
       return nil
     }
@@ -185,7 +193,7 @@ extension String {
     if let ns = NSString(
       bytes: byteArray, length: byteArray.count, encoding: encoding.rawValue) {
 
-      self = ns as String
+      self = String._unconditionallyBridgeFromObjectiveC(ns)
     } else {
       return nil
     }
@@ -210,7 +218,7 @@ extension String {
       bytesNoCopy: bytes, length: length, encoding: encoding.rawValue,
       freeWhenDone: flag) {
 
-      self = ns as String
+      self = String._unconditionallyBridgeFromObjectiveC(ns)
     } else {
       return nil
     }
@@ -227,7 +235,7 @@ extension String {
     utf16CodeUnits: UnsafePointer<unichar>,
     count: Int
   ) {
-    self = NSString(characters: utf16CodeUnits, length: count) as String
+    self = String._unconditionallyBridgeFromObjectiveC(NSString(characters: utf16CodeUnits, length: count))
   }
 
   // - (instancetype)
@@ -242,10 +250,10 @@ extension String {
     count: Int,
     freeWhenDone flag: Bool
   ) {
-    self = NSString(
+    self = String._unconditionallyBridgeFromObjectiveC(NSString(
       charactersNoCopy: UnsafeMutablePointer(mutating: utf16CodeUnitsNoCopy),
       length: count,
-      freeWhenDone: flag) as String
+      freeWhenDone: flag))
   }
 
   //===--- Initializers that can fail -------------------------------------===//
@@ -263,7 +271,7 @@ extension String {
     encoding enc: Encoding
   ) throws {
     let ns = try NSString(contentsOfFile: path, encoding: enc.rawValue)
-    self = ns as String
+    self = String._unconditionallyBridgeFromObjectiveC(ns)
   }
 
   // - (instancetype)
@@ -281,14 +289,14 @@ extension String {
     var enc: UInt = 0
     let ns = try NSString(contentsOfFile: path, usedEncoding: &enc)
     usedEncoding = Encoding(rawValue: enc)
-    self = ns as String
+    self = String._unconditionallyBridgeFromObjectiveC(ns)
   }
 
   public init(
     contentsOfFile path: String
   ) throws {
     let ns = try NSString(contentsOfFile: path, usedEncoding: nil)
-    self = ns as String
+    self = String._unconditionallyBridgeFromObjectiveC(ns)
   }
 
   // - (instancetype)
@@ -304,7 +312,7 @@ extension String {
     encoding enc: Encoding
   ) throws {
     let ns = try NSString(contentsOf: url, encoding: enc.rawValue)
-    self = ns as String
+    self = String._unconditionallyBridgeFromObjectiveC(ns)
   }
 
   // - (instancetype)
@@ -322,14 +330,14 @@ extension String {
     var enc: UInt = 0
     let ns = try NSString(contentsOf: url as URL, usedEncoding: &enc)
     usedEncoding = Encoding(rawValue: enc)
-    self = ns as String
+    self = String._unconditionallyBridgeFromObjectiveC(ns)
   }
 
   public init(
     contentsOf url: URL
   ) throws {
     let ns = try NSString(contentsOf: url, usedEncoding: nil)
-    self = ns as String
+    self = String._unconditionallyBridgeFromObjectiveC(ns)
   }
 
   // - (instancetype)
@@ -343,7 +351,7 @@ extension String {
     encoding enc: Encoding
   ) {
     if let ns = NSString(cString: cString, encoding: enc.rawValue) {
-      self = ns as String
+      self = String._unconditionallyBridgeFromObjectiveC(ns)
     } else {
       return nil
     }
@@ -359,7 +367,7 @@ extension String {
   /// Unicode characters using a given `encoding`.
   public init?(data: Data, encoding: Encoding) {
     guard let s = NSString(data: data, encoding: encoding.rawValue) else { return nil }
-    self = s as String
+    self = String._unconditionallyBridgeFromObjectiveC(s)
   }
 
   // - (instancetype)initWithFormat:(NSString *)format, ...
@@ -400,9 +408,17 @@ extension String {
   /// format string as a template into which the remaining argument
   /// values are substituted according to given locale information.
   public init(format: String, locale: Locale?, arguments: [CVarArg]) {
+#if DEPLOYMENT_RUNTIME_SWIFT
+    self = withVaList(arguments) {
+      String._unconditionallyBridgeFromObjectiveC(
+        NSString(format: format, locale: locale?._bridgeToObjectiveC(), arguments: $0)
+      )
+    }
+#else
     self = withVaList(arguments) {
       NSString(format: format, locale: locale, arguments: $0) as String
     }
+#endif
   }
 
 }
@@ -414,13 +430,29 @@ extension StringProtocol where Index == String.Index {
   /// The corresponding `NSString` - a convenience for bridging code.
   // FIXME(strings): There is probably a better way to bridge Self to NSString
   var _ns: NSString {
-    return self._ephemeralString as NSString
+    return self._ephemeralString._bridgeToObjectiveC()
+  }
+
+  // self can be a Substring so we need to subtract/add this offset when
+  // passing _ns to the Foundation APIs. Will be 0 if self is String.
+  @_inlineable
+  @_versioned
+  internal var _substringOffset: Int {
+    return self.startIndex.encodedOffset
   }
 
   /// Return an `Index` corresponding to the given offset in our UTF-16
   /// representation.
   func _index(_ utf16Index: Int) -> Index {
-    return Index(encodedOffset: utf16Index)
+    return Index(encodedOffset: utf16Index + _substringOffset)
+  }
+
+  @_inlineable
+  @_versioned
+  internal func _toRelativeNSRange(_ r: Range<String.Index>) -> NSRange {
+    return NSRange(
+      location: r.lowerBound.encodedOffset - _substringOffset,
+      length: r.upperBound.encodedOffset - r.lowerBound.encodedOffset)
   }
 
   /// Return a `Range<Index>` corresponding to the given `NSRange` of
@@ -581,16 +613,16 @@ extension StringProtocol where Index == String.Index {
     return locale != nil ? _ns.compare(
       aString,
       options: mask,
-      range: _toNSRange(
+      range: _toRelativeNSRange(
         range ?? startIndex..<endIndex
       ),
-      locale: locale
+      locale: locale?._bridgeToObjectiveC()
     )
 
     : range != nil ? _ns.compare(
       aString,
       options: mask,
-      range: _toNSRange(range!)
+      range: _toRelativeNSRange(range!)
     )
 
     : !mask.isEmpty ? _ns.compare(aString, options: mask)
@@ -616,6 +648,23 @@ extension StringProtocol where Index == String.Index {
     matchesInto outputArray: UnsafeMutablePointer<[String]>? = nil,
     filterTypes: [String]? = nil
   ) -> Int {
+#if DEPLOYMENT_RUNTIME_SWIFT
+    var outputNamePlaceholder: String?
+    var outputArrayPlaceholder = [String]()
+    let res = self._ns.completePath(
+        into: &outputNamePlaceholder,
+        caseSensitive: caseSensitive,
+        matchesInto: &outputArrayPlaceholder,
+        filterTypes: filterTypes
+    )
+    if let n = outputNamePlaceholder {
+        outputName?.pointee = n
+    } else {
+        outputName?.pointee = ""
+    }
+    outputArray?.pointee = outputArrayPlaceholder
+    return res
+#else // DEPLOYMENT_RUNTIME_SWIFT
     var nsMatches: NSArray?
     var nsOutputName: NSString?
 
@@ -647,6 +696,7 @@ extension StringProtocol where Index == String.Index {
       outputName?.pointee = n as String
     }
     return result
+#endif // DEPLOYMENT_RUNTIME_SWIFT
   }
 
   // - (NSArray *)
@@ -875,6 +925,7 @@ extension StringProtocol where Index == String.Index {
     return _ns.precomposedStringWithCompatibilityMapping
   }
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   // - (id)propertyList
 
   /// Parses the `String` as a text representation of a
@@ -891,6 +942,7 @@ extension StringProtocol where Index == String.Index {
   public func propertyListFromStringsFileFormat() -> [String : String] {
     return _ns.propertyListFromStringsFileFormat() as! [String : String]? ?? [:]
   }
+#endif
 
   // - (BOOL)localizedStandardContainsString:(NSString *)str NS_AVAILABLE(10_11, 9_0);
 
@@ -1008,7 +1060,7 @@ extension StringProtocol where Index == String.Index {
     T : StringProtocol, R : RangeExpression
   >(in range: R, with replacement: T) -> String where R.Bound == Index {
     return _ns.replacingCharacters(
-      in: _toNSRange(range.relative(to: self)),
+      in: _toRelativeNSRange(range.relative(to: self)),
       with: replacement._ephemeralString)
   }
 
@@ -1041,13 +1093,14 @@ extension StringProtocol where Index == String.Index {
       of: target,
       with: replacement,
       options: options,
-      range: _toNSRange(
+      range: _toRelativeNSRange(
         searchRange ?? startIndex..<endIndex
       )
     )
     : _ns.replacingOccurrences(of: target, with: replacement)
   }
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   // - (NSString *)
   //     stringByReplacingPercentEscapesUsingEncoding:(NSStringEncoding)encoding
 
@@ -1061,6 +1114,7 @@ extension StringProtocol where Index == String.Index {
   ) -> String? {
     return _ns.replacingPercentEscapes(using: encoding.rawValue)
   }
+#endif
 
   // - (NSString *)stringByTrimmingCharactersInSet:(NSCharacterSet *)set
 
@@ -1129,6 +1183,7 @@ extension StringProtocol where Index == String.Index {
 
   // - (nullable NSString *)stringByApplyingTransform:(NSString *)transform reverse:(BOOL)reverse NS_AVAILABLE(10_11, 9_0);
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   /// Perform string transliteration.
   @available(OSX 10.11, iOS 9.0, *)
   public func applyingTransform(
@@ -1163,7 +1218,7 @@ extension StringProtocol where Index == String.Index {
   ) where R.Bound == Index {
     let range = range.relative(to: self)
     _ns.enumerateLinguisticTags(
-      in: _toNSRange(range),
+      in: _toRelativeNSRange(range),
       scheme: tagScheme._ephemeralString,
       options: opts,
       orthography: orthography != nil ? orthography! : nil
@@ -1175,6 +1230,7 @@ extension StringProtocol where Index == String.Index {
       }
     }
   }
+#endif
 
   // - (void)
   //     enumerateSubstringsInRange:(NSRange)range
@@ -1227,7 +1283,7 @@ extension StringProtocol where Index == String.Index {
     ) -> Void
   ) where R.Bound == Index {
     _ns.enumerateSubstrings(
-      in: _toNSRange(range.relative(to: self)), options: opts) {
+      in: _toRelativeNSRange(range.relative(to: self)), options: opts) {
       var stop_ = false
 
       body($0,
@@ -1300,7 +1356,7 @@ extension StringProtocol where Index == String.Index {
         usedLength: usedBufferCount,
         encoding: encoding.rawValue,
         options: options,
-        range: _toNSRange(range.relative(to: self)),
+        range: _toRelativeNSRange(range.relative(to: self)),
         remaining: $0)
     }
   }
@@ -1327,7 +1383,7 @@ extension StringProtocol where Index == String.Index {
           contentsEnd in self._ns.getLineStart(
             start, end: end,
             contentsEnd: contentsEnd,
-            for: _toNSRange(range.relative(to: self)))
+            for: _toRelativeNSRange(range.relative(to: self)))
         }
       }
     }
@@ -1355,7 +1411,7 @@ extension StringProtocol where Index == String.Index {
           contentsEnd in self._ns.getParagraphStart(
             start, end: end,
             contentsEnd: contentsEnd,
-            for: _toNSRange(range.relative(to: self)))
+            for: _toRelativeNSRange(range.relative(to: self)))
         }
       }
     }
@@ -1382,9 +1438,11 @@ extension StringProtocol where Index == String.Index {
   public func lineRange<
     R : RangeExpression
   >(for aRange: R) -> Range<Index> where R.Bound == Index {
-    return _range(_ns.lineRange(for: _toNSRange(aRange.relative(to: self))))
+    return _range(_ns.lineRange(
+      for: _toRelativeNSRange(aRange.relative(to: self))))
   }
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   // - (NSArray *)
   //     linguisticTagsInRange:(NSRange)range
   //     scheme:(NSString *)tagScheme
@@ -1406,7 +1464,7 @@ extension StringProtocol where Index == String.Index {
     var nsTokenRanges: NSArray?
     let result = tokenRanges._withNilOrAddress(of: &nsTokenRanges) {
       self._ns.linguisticTags(
-        in: _toNSRange(range.relative(to: self)),
+        in: _toRelativeNSRange(range.relative(to: self)),
         scheme: tagScheme._ephemeralString,
         options: opts,
         orthography: orthography,
@@ -1430,8 +1488,9 @@ extension StringProtocol where Index == String.Index {
     R : RangeExpression
   >(for aRange: R) -> Range<Index> where R.Bound == Index {
     return _range(
-      _ns.paragraphRange(for: _toNSRange(aRange.relative(to: self))))
+      _ns.paragraphRange(for: _toRelativeNSRange(aRange.relative(to: self))))
   }
+#endif
 
   // - (NSRange)rangeOfCharacterFromSet:(NSCharacterSet *)aSet
   //
@@ -1456,7 +1515,7 @@ extension StringProtocol where Index == String.Index {
       _ns.rangeOfCharacter(
         from: aSet,
         options: mask,
-        range: _toNSRange(
+        range: _toRelativeNSRange(
           aRange ?? startIndex..<endIndex
         )
       )
@@ -1487,7 +1546,7 @@ extension StringProtocol where Index == String.Index {
     // and output ranges due (if nothing else) to locale changes
     return _range(
       _ns.rangeOfComposedCharacterSequences(
-        for: _toNSRange(range.relative(to: self))))
+        for: _toRelativeNSRange(range.relative(to: self))))
   }
 
   // - (NSRange)rangeOfString:(NSString *)aString
@@ -1522,13 +1581,13 @@ extension StringProtocol where Index == String.Index {
       locale != nil ? _ns.range(
         of: aString,
         options: mask,
-        range: _toNSRange(
+        range: _toRelativeNSRange(
           searchRange ?? startIndex..<endIndex
         ),
         locale: locale
       )
       : searchRange != nil ? _ns.range(
-        of: aString, options: mask, range: _toNSRange(searchRange!)
+        of: aString, options: mask, range: _toRelativeNSRange(searchRange!)
       )
       : !mask.isEmpty ? _ns.range(of: aString, options: mask)
       : _ns.range(of: aString)
@@ -1553,6 +1612,7 @@ extension StringProtocol where Index == String.Index {
       _ns.localizedStandardRange(of: string._ephemeralString))
   }
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   // - (NSString *)
   //     stringByAddingPercentEscapesUsingEncoding:(NSStringEncoding)encoding
 
@@ -1566,6 +1626,7 @@ extension StringProtocol where Index == String.Index {
   ) -> String? {
     return _ns.addingPercentEscapes(using: encoding.rawValue)
   }
+#endif
 
   //===--- From the 10.10 release notes; not in public documentation ------===//
   // No need to make these unavailable on earlier OSes, since they can
@@ -1637,7 +1698,7 @@ extension StringProtocol where Index == String.Index {
   @available(swift, deprecated: 4.0,
     message: "Please use String slicing subscript.")
   public func substring(with aRange: Range<Index>) -> String {
-    return _ns.substring(with: _toNSRange(aRange))
+    return _ns.substring(with: _toRelativeNSRange(aRange))
   }
 }
 
@@ -1874,6 +1935,7 @@ extension StringProtocol {
     fatalError("unavailable function can't be called")
   }
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   @available(*, unavailable, renamed: "enumerateLinguisticTags(in:scheme:options:orthography:_:)")
   public func enumerateLinguisticTagsIn(
     _ range: Range<Index>,
@@ -1885,6 +1947,7 @@ extension StringProtocol {
   ) {
     fatalError("unavailable function can't be called")
   }
+#endif
 
   @available(*, unavailable, renamed: "enumerateSubstrings(in:options:_:)")
   public func enumerateSubstringsIn(
@@ -1941,6 +2004,7 @@ extension StringProtocol {
     fatalError("unavailable function can't be called")
   }
 
+#if !DEPLOYMENT_RUNTIME_SWIFT
   @available(*, unavailable, renamed: "linguisticTags(in:scheme:options:orthography:tokenRanges:)")
   public func linguisticTagsIn(
     _ range: Range<Index>,
@@ -1951,6 +2015,7 @@ extension StringProtocol {
   ) -> [String] {
     fatalError("unavailable function can't be called")
   }
+#endif
 
   @available(*, unavailable, renamed: "lowercased(with:)")
   public func lowercaseStringWith(_ locale: Locale?) -> String {

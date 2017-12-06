@@ -21,25 +21,6 @@
 using namespace swift;
 using namespace Lowering;
 
-RValue &ArgumentSource::forceAndPeekRValue(SILGenFunction &SGF) & {
-  if (isRValue()) {
-    return peekRValue();
-  }
-
-  // Extract an r-value.
-  SILLocation loc = getLocation();
-  RValue value = std::move(*this).getAsRValue(SGF);
-
-  // Destroy the current state.
-  Storage.destruct(StoredKind);
-
-  // Emplace the r-value back into the source.
-  StoredKind = Kind::RValue;
-  Storage.emplaceAggregate<RValueStorage>(StoredKind, std::move(value), loc);
-
-  return peekRValue();
-}
-
 RValue &ArgumentSource::peekRValue() & {
   assert(isRValue() && "Undefined behavior to call this method without the "
          "ArgumentSource actually being an RValue");
@@ -58,8 +39,26 @@ void ArgumentSource::rewriteType(CanType newType) & {
     Storage.get<RValueStorage>(StoredKind).Value.rewriteType(newType);
     return;
   case Kind::Expr:
-    Expr *expr = Storage.get<Expr*>(StoredKind);
-    if (expr->getType()->isEqual(newType)) return;
+    Expr *&expr = Storage.get<Expr*>(StoredKind);
+    CanType oldType = expr->getType()->getCanonicalType();
+
+    // Usually nothing is required.
+    if (oldType == newType) return;
+
+    // Sometimes we need to wrap the expression in a single-element tuple.
+    // This is only necessary because we don't break down the argument list
+    // when dealing with SILGenApply.
+    if (auto newTuple = dyn_cast<TupleType>(newType)) {
+      if (newTuple->getNumElements() == 1 &&
+          newTuple.getElementType(0) == oldType) {
+        expr = TupleExpr::create(newType->getASTContext(),
+                                 SourceLoc(), expr, {}, {}, SourceLoc(),
+                                 /*trailing closure*/ false,
+                                 /*implicit*/ true, newType);
+        return;
+      }
+    }
+
     llvm_unreachable("unimplemented! hope it doesn't happen");
   }
   llvm_unreachable("bad kind");
@@ -119,7 +118,7 @@ RValue ArgumentSource::getAsRValue(SILGenFunction &SGF, SGFContext C) && {
   case Kind::LValue:
     llvm_unreachable("cannot get l-value as r-value");
   case Kind::RValue:
-    return std::move(*this).asKnownRValue();
+    return std::move(*this).asKnownRValue(SGF);
   case Kind::Expr:
     return SGF.emitRValue(std::move(*this).asKnownExpr(), C);
   case Kind::Tuple:
@@ -175,10 +174,10 @@ ManagedValue ArgumentSource::getAsSingleValue(SILGenFunction &SGF,
   case Kind::RValue: {
     auto loc = getKnownRValueLocation();
     if (auto init = C.getEmitInto()) {
-      std::move(*this).asKnownRValue().forwardInto(SGF, loc, init);
+      std::move(*this).asKnownRValue(SGF).forwardInto(SGF, loc, init);
       return ManagedValue::forInContext();
     } else {
-      return std::move(*this).asKnownRValue().getAsSingleValue(SGF, loc);
+      return std::move(*this).asKnownRValue(SGF).getAsSingleValue(SGF, loc);
     }
   }
   case Kind::Expr: {
@@ -237,7 +236,7 @@ void ArgumentSource::forwardInto(SILGenFunction &SGF, Initialization *dest) && {
     llvm_unreachable("cannot forward an l-value");
   case Kind::RValue: {
     auto loc = getKnownRValueLocation();
-    std::move(*this).asKnownRValue().forwardInto(SGF, loc, dest);
+    std::move(*this).asKnownRValue(SGF).forwardInto(SGF, loc, dest);
     return;
   }
   case Kind::Expr: {
@@ -256,10 +255,37 @@ void ArgumentSource::forwardInto(SILGenFunction &SGF, Initialization *dest) && {
   llvm_unreachable("bad kind");
 }
 
+// FIXME: Once uncurrying is removed, get rid of this constructor.
+ArgumentSource::ArgumentSource(SILLocation loc, RValue &&rv, Kind kind)
+    : Storage(), StoredKind(kind) {
+  Storage.emplaceAggregate<RValueStorage>(StoredKind, std::move(rv), loc);
+}
+
+ArgumentSource ArgumentSource::borrow(SILGenFunction &SGF) const & {
+  switch (StoredKind) {
+  case Kind::Invalid:
+    llvm_unreachable("argument source is invalid");
+  case Kind::LValue:
+    llvm_unreachable("cannot borrow an l-value");
+  case Kind::RValue: {
+    auto loc = getKnownRValueLocation();
+    return ArgumentSource(loc, asKnownRValue().borrow(SGF, loc));
+  }
+  case Kind::Expr: {
+    llvm_unreachable("cannot borrow an expression");
+  }
+  case Kind::Tuple: {
+    // FIXME: We can if we check the sub argument sources.
+    llvm_unreachable("cannot borrow a tuple");
+  }
+  }
+  llvm_unreachable("bad kind");
+}
+
 ManagedValue ArgumentSource::materialize(SILGenFunction &SGF) && {
   if (isRValue()) {
     auto loc = getKnownRValueLocation();
-    return std::move(*this).asKnownRValue().materialize(SGF, loc);
+    return std::move(*this).asKnownRValue(SGF).materialize(SGF, loc);
   }
 
   auto loc = getLocation();
@@ -349,6 +375,7 @@ SILType ArgumentSource::getSILSubstType(SILGenFunction &SGF) const & {
 void ArgumentSource::dump() const {
   dump(llvm::errs());
 }
+
 void ArgumentSource::dump(raw_ostream &out, unsigned indent) const {
   out.indent(indent) << "ArgumentSource::";
   switch (StoredKind) {

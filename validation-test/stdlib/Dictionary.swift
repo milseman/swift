@@ -77,6 +77,13 @@ DictionaryTestSuite.test("sizeof") {
 #endif
 }
 
+DictionaryTestSuite.test("Index.Hashable") {
+  let d = [1: "meow", 2: "meow", 3: "meow"]
+  let e = Dictionary(uniqueKeysWithValues: zip(d.indices, d))
+  expectEqual(d.count, e.count)
+  expectNotNil(e[d.startIndex])
+}
+
 DictionaryTestSuite.test("valueDestruction") {
   var d1 = Dictionary<Int, TestValueTy>()
   for i in 100...110 {
@@ -216,8 +223,6 @@ DictionaryTestSuite.test("COW.Slow.SubscriptWithIndexDoesNotReallocate") {
 
 
 DictionaryTestSuite.test("COW.Fast.SubscriptWithKeyDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   var d = getCOWFastDictionary()
   var identity1 = d._rawIdentifier()
@@ -273,8 +278,6 @@ DictionaryTestSuite.test("COW.Fast.SubscriptWithKeyDoesNotReallocate")
 }
 
 DictionaryTestSuite.test("COW.Slow.SubscriptWithKeyDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
 
   var d = getCOWSlowDictionary()
@@ -485,8 +488,6 @@ DictionaryTestSuite.test("COW.Slow.AddDoesNotReallocate") {
 }
 
 DictionaryTestSuite.test("COW.Fast.MergeSequenceDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
 
   do {
@@ -610,8 +611,6 @@ DictionaryTestSuite.test("COW.Fast.MergeSequenceDoesNotReallocate")
 }
 
 DictionaryTestSuite.test("COW.Fast.MergeDictionaryDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
 
   do {
@@ -881,8 +880,6 @@ DictionaryTestSuite.test("COW.Slow.IndexForKeyDoesNotReallocate") {
 
 
 DictionaryTestSuite.test("COW.Fast.RemoveAtDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   do {
     var d = getCOWFastDictionary()
@@ -927,8 +924,6 @@ DictionaryTestSuite.test("COW.Fast.RemoveAtDoesNotReallocate")
 }
 
 DictionaryTestSuite.test("COW.Slow.RemoveAtDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   do {
     var d = getCOWSlowDictionary()
@@ -972,8 +967,6 @@ DictionaryTestSuite.test("COW.Slow.RemoveAtDoesNotReallocate")
 
 
 DictionaryTestSuite.test("COW.Fast.RemoveValueForKeyDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   do {
     var d1 = getCOWFastDictionary()
@@ -1013,8 +1006,6 @@ DictionaryTestSuite.test("COW.Fast.RemoveValueForKeyDoesNotReallocate")
 }
 
 DictionaryTestSuite.test("COW.Slow.RemoveValueForKeyDoesNotReallocate")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   do {
     var d1 = getCOWSlowDictionary()
@@ -1264,18 +1255,7 @@ DictionaryTestSuite.test("COW.Slow.GenerateDoesNotReallocate") {
   var iter = d.makeIterator()
   var pairs = Array<(Int, Int)>()
   while let (key, value) = iter.next() {
-    // FIXME: This doesn't work (<rdar://problem/17751308> Can't +=
-    // with array literal of pairs)
-    // pairs += [(key.value, value.value)]
-
-    // FIXME: This doesn't work (<rdar://problem/17750582> generics over tuples)
-    // pairs.append((key.value, value.value))
-
-    // FIXME: This doesn't work (<rdar://problem/17751359>)
-    // pairs.append(key.value, value.value)
-
-    let kv = (key.value, value.value)
-    pairs += [kv]
+    pairs += [(key.value, value.value)]
   }
   assert(equalsUnordered(pairs, [ (10, 1010), (20, 1020), (30, 1030) ]))
   assert(identity1 == d._rawIdentifier())
@@ -2442,8 +2422,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Verbatim.RemoveAt") {
 }
 
 DictionaryTestSuite.test("BridgedFromObjC.Nonverbatim.RemoveAt")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   var d = getBridgedNonverbatimDictionary()
   var identity1 = d._rawIdentifier()
@@ -2524,8 +2502,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Verbatim.RemoveValueForKey") {
 }
 
 DictionaryTestSuite.test("BridgedFromObjC.Nonverbatim.RemoveValueForKey")
-  .xfail(.custom({ _isStdlibDebugConfiguration() },
-                 reason: "rdar://33358110"))
   .code {
   do {
     var d = getBridgedNonverbatimDictionary()
@@ -2784,8 +2760,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Verbatim.Generate") {
     pairs.append(kv)
   }
   assert(equalsUnordered(pairs, [ (10, 1010), (20, 1020), (30, 1030) ]))
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2804,8 +2778,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Nonverbatim.Generate") {
     pairs.append(kv)
   }
   assert(equalsUnordered(pairs, [ (10, 1010), (20, 1020), (30, 1030) ]))
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2822,8 +2794,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Verbatim.Generate_Empty") {
   // <rdar://problem/16811736> Optional tuples are broken as optionals regarding == comparison
   // assert(iter.next() == .none)
   assert(iter.next() == nil)
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2840,8 +2810,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Nonverbatim.Generate_Empty") {
   // <rdar://problem/16811736> Optional tuples are broken as optionals regarding == comparison
   // assert(iter.next() == .none)
   assert(iter.next() == nil)
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2865,8 +2833,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Verbatim.Generate_Huge") {
     expectedPairs += [(i, 1000 + i)]
   }
   assert(equalsUnordered(pairs, expectedPairs))
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2889,8 +2855,6 @@ DictionaryTestSuite.test("BridgedFromObjC.Nonverbatim.Generate_Huge") {
     expectedPairs += [(i, 1000 + i)]
   }
   assert(equalsUnordered(pairs, expectedPairs))
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2915,8 +2879,6 @@ autoreleasepoolIfUnoptimizedReturnAutoreleased {
   }
   var expectedPairs = [ (10, 1111), (20, 1111), (30, 1111), (40, 1111) ]
   assert(equalsUnordered(pairs, expectedPairs))
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)
@@ -2941,8 +2903,6 @@ autoreleasepoolIfUnoptimizedReturnAutoreleased {
   }
   var expectedPairs = [ (10, 1111), (20, 1111), (30, 1111), (40, 1111) ]
   assert(equalsUnordered(pairs, expectedPairs))
-  // The following is not required by the IteratorProtocol protocol, but
-  // it is a nice QoI.
   assert(iter.next() == nil)
   assert(iter.next() == nil)
   assert(iter.next() == nil)

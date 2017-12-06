@@ -192,6 +192,14 @@ namespace {
       return fieldInfo.getStructIndex();
     }
 
+    Optional<unsigned> getFieldIndexIfNotEmpty(IRGenModule &IGM,
+                                               VarDecl *field) const {
+      auto &fieldInfo = getFieldInfo(field);
+      if (fieldInfo.isEmpty())
+        return None;
+      return fieldInfo.getStructIndex();
+    }
+
     // For now, just use extra inhabitants from the first field.
     // FIXME: generalize
     bool mayHaveExtraInhabitants(IRGenModule &IGM) const override {
@@ -254,6 +262,70 @@ namespace {
       field.getTypeInfo().storeExtraInhabitant(IGF, index, fieldAddr,
                                           field.getType(IGF.IGM, structType));
     }
+    
+    void verify(IRGenTypeVerifierFunction &IGF,
+                llvm::Value *metadata,
+                SILType structType) const override {
+      // Check that constant field offsets we know match
+      for (auto &field : asImpl().getFields()) {
+        switch (field.getKind()) {
+        case ElementLayout::Kind::Fixed: {
+          // We know the offset at compile time. See whether there's also an
+          // entry for this field in the field offset vector.
+          class FindOffsetOfFieldOffsetVector
+            : public StructMetadataScanner<FindOffsetOfFieldOffsetVector> {
+          public:
+            VarDecl *FieldToFind;
+            Size FieldOffset = Size::invalid();
+
+            using super = StructMetadataScanner<FindOffsetOfFieldOffsetVector>;
+
+            FindOffsetOfFieldOffsetVector(IRGenModule &IGM,
+                                          VarDecl *Field)
+              : super(IGM, cast<StructDecl>(Field->getDeclContext())),
+                FieldToFind(Field)
+            {}
+              
+            void addFieldOffset(VarDecl *Field) {
+              if (Field == FieldToFind) {
+                FieldOffset = this->NextOffset;
+              }
+              super::addFieldOffset(Field);
+            }
+          };
+          
+          FindOffsetOfFieldOffsetVector scanner(IGF.IGM, field.Field);
+          scanner.layout();
+          
+          if (scanner.FieldOffset == Size::invalid())
+            continue;
+          
+          // Load the offset from the field offset vector and ensure it matches
+          // the compiler's idea of the offset.
+          auto metadataBytes =
+            IGF.Builder.CreateBitCast(metadata, IGF.IGM.Int8PtrTy);
+          auto fieldOffsetPtr =
+            IGF.Builder.CreateInBoundsGEP(metadataBytes,
+                                          IGF.IGM.getSize(scanner.FieldOffset));
+          fieldOffsetPtr =
+            IGF.Builder.CreateBitCast(fieldOffsetPtr,
+                                      IGF.IGM.SizeTy->getPointerTo());
+          auto fieldOffset =
+            IGF.Builder.CreateLoad(fieldOffsetPtr,
+                                   IGF.IGM.getPointerAlignment());
+          
+          IGF.verifyValues(metadata, fieldOffset,
+                       IGF.IGM.getSize(field.getFixedByteOffset()),
+                       Twine("offset of struct field ") + field.getFieldName());
+          break;
+        }
+        case ElementLayout::Kind::Empty:
+        case ElementLayout::Kind::InitialNonFixedSize:
+        case ElementLayout::Kind::NonFixed:
+          continue;
+        }
+      }
+    }
   };
 
   /// A type implementation for loadable record types imported from Clang.
@@ -275,8 +347,9 @@ namespace {
     }
 
     void initializeFromParams(IRGenFunction &IGF, Explosion &params,
-                              Address addr, SILType T) const override {
-      ClangRecordTypeInfo::initialize(IGF, params, addr);
+                              Address addr, SILType T,
+                              bool isOutlined) const override {
+      ClangRecordTypeInfo::initialize(IGF, params, addr, isOutlined);
     }
 
     void addToAggLowering(IRGenModule &IGM, SwiftAggLowering &lowering,
@@ -324,8 +397,9 @@ namespace {
     }
 
     void initializeFromParams(IRGenFunction &IGF, Explosion &params,
-                              Address addr, SILType T) const override {
-      LoadableStructTypeInfo::initialize(IGF, params, addr);
+                              Address addr, SILType T,
+                              bool isOutlined) const override {
+      LoadableStructTypeInfo::initialize(IGF, params, addr, isOutlined);
     }
     llvm::NoneType getNonFixedOffsets(IRGenFunction &IGF) const {
       return None;
@@ -760,9 +834,10 @@ irgen::getPhysicalStructMemberAccessStrategy(IRGenModule &IGM,
   FOR_STRUCT_IMPL(IGM, baseType, getFieldAccessStrategy, baseType, field);
 }
 
-unsigned irgen::getPhysicalStructFieldIndex(IRGenModule &IGM, SILType baseType,
-                                            VarDecl *field) {
-  FOR_STRUCT_IMPL(IGM, baseType, getFieldIndex, field);
+Optional<unsigned> irgen::getPhysicalStructFieldIndex(IRGenModule &IGM,
+                                                      SILType baseType,
+                                                      VarDecl *field) {
+  FOR_STRUCT_IMPL(IGM, baseType, getFieldIndexIfNotEmpty, field);
 }
 
 void IRGenModule::emitStructDecl(StructDecl *st) {

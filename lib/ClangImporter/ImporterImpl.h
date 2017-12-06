@@ -191,10 +191,13 @@ enum class Bridgeability {
   Full
 };
 
+/// Controls whether a typedef for \p type should name the fully-bridged Swift
+/// type or the original Clang type.
+///
+/// In either case we end up losing sugar at some uses sites, so this is more
+/// about what the right default is.
 static inline Bridgeability getTypedefBridgeability(clang::QualType type) {
-  return (type->isBlockPointerType() || type->isFunctionType())
-            ? Bridgeability::Full
-            : Bridgeability::None;
+  return type->isBlockPointerType() ? Bridgeability::Full : Bridgeability::None;
 }
 
 /// \brief Describes the kind of the C type that can be mapped to a stdlib
@@ -274,7 +277,8 @@ using LookupTableMap = llvm::StringMap<std::unique_ptr<SwiftLookupTable>>;
 
 /// \brief Implementation of the Clang importer.
 class LLVM_LIBRARY_VISIBILITY ClangImporter::Implementation 
-  : public LazyMemberLoader
+  : public LazyMemberLoader,
+    public LazyConformanceLoader
 {
   friend class ClangImporter;
   using Version = importer::ImportNameVersion;
@@ -640,7 +644,9 @@ public:
 
   /// Print an imported name as a string suitable for the swift_name attribute,
   /// or the 'Rename' field of AvailableAttr.
-  void printSwiftName(importer::ImportedName, bool fullyQualified,
+  void printSwiftName(importer::ImportedName name,
+                      importer::ImportNameVersion version,
+                      bool fullyQualified,
                       llvm::raw_ostream &os);
 
   /// \brief Import the given Clang identifier into Swift.
@@ -904,22 +910,45 @@ public:
   ///
   /// \param type The Clang type to import.
   ///
-  /// \param kind The kind of type import we're performing.
+  /// \param kind A classification of the immediate context in which this type
+  ///   will be used. Different contexts result in the type being imported
+  ///   differently; for example, CF types are normally considered Unmanaged,
+  ///   but in parameter position they are known to always be passed at +0.
+  ///   See also the \p topLevelBridgeability parameter.
   ///
   /// \param allowNSUIntegerAsInt If true, NSUInteger will be imported as Int
-  ///        in certain contexts. If false, it will always be imported as UInt.
+  ///   in certain contexts. If false, it will always be imported as UInt.
   ///
-  /// \param bridgeability Whether we can bridge types in this context.
-  ///        This may restrict the ability to bridge types even in contexts
-  ///        that otherwise allow bridging, such as function results and
-  ///        parameters.
+  /// \param topLevelBridgeability A classification of the top-level context in
+  ///   which this type will be used. This and \p kind are used together to
+  ///   determine whether a type can be imported in a more Swifty way than
+  ///   a naive translation of its C type. Full bridgeability requires that SIL
+  ///   can get back to the original Clang type if it needs to, which implies
+  ///   that this type is part of a top-level declaration where we do bridging.
+  ///   Without full bridgeability, we can still do some Swifty importing (e.g.
+  ///   mapping NSString to String) if we're in an immediate context \p kind
+  ///   that allows bridging, but only in cases where Swift's default mapping
+  ///   "back" to C is the correct one. If the original type has something
+  ///   funny going on, we either have to use a less lossy version of the type
+  ///   (ObjCBool rather than Bool) or refuse to import it at all (a block with
+  ///   the \c ns_returns_retained attribute).
+  ///
+  /// \param optional If the imported type was a pointer-like type in C, this
+  ///   optionality is applied to the resulting Swift type.
+  ///
+  /// \param resugarNSErrorPointer If true, Objective-C's `NSError **` is
+  ///   imported as Foundation.NSErrorPointer rather than
+  ///   AutoreleasingUnsafeMutablePointer<...>. This is usually desirable
+  ///   behavior, but isn't necessary when we use Swift's \c throws anyway.
+  ///   Strictly speaking, though, this is a hack used to break cyclic
+  ///   dependencies.
   ///
   /// \returns The imported type, or null if this type could
-  /// not be represented in Swift.
+  ///   not be represented in Swift.
   Type importType(clang::QualType type,
                   ImportTypeKind kind,
                   bool allowNSUIntegerAsInt,
-                  Bridgeability bridgeability,
+                  Bridgeability topLevelBridgeability,
                   OptionalTypeKind optional = OTK_ImplicitlyUnwrappedOptional,
                   bool resugarNSErrorPointer = true);
 
@@ -1119,6 +1148,32 @@ public:
   virtual void
   loadAllMembers(Decl *D, uint64_t unused) override;
 
+  virtual Optional<TinyPtrVector<ValueDecl *>>
+  loadNamedMembers(const IterableDeclContext *IDC, DeclName N,
+                   uint64_t contextData) override;
+
+private:
+  void
+  loadAllMembersOfObjcContainer(Decl *D,
+                                const clang::ObjCContainerDecl *objcContainer);
+  void collectMembersToAdd(const clang::ObjCContainerDecl *objcContainer,
+                           Decl *D, DeclContext *DC,
+                           SmallVectorImpl<Decl *> &members);
+  void insertMembersAndAlternates(const clang::NamedDecl *nd,
+                                  SmallVectorImpl<Decl *> &members);
+  void loadAllMembersIntoExtension(Decl *D, uint64_t extra);
+
+  /// Imports \p decl under \p nameVersion with the name \p newName, and adds
+  /// it and its alternates to \p ext.
+  ///
+  /// \returns true if \p decl was successfully imported, whether or not it was
+  /// ultimately added to \p ext. This matches the behavior of
+  /// forEachDistinctName's callback.
+  bool addMemberAndAlternatesToExtension(
+      clang::NamedDecl *decl, importer::ImportedName newName,
+      importer::ImportNameVersion nameVersion, ExtensionDecl *ext);
+
+public:
   void
   loadAllConformances(
     const Decl *D, uint64_t contextData,
@@ -1126,9 +1181,21 @@ public:
 
   void finishNormalConformance(NormalProtocolConformance *conformance,
                                uint64_t unused) override;
+  
+  /// Returns the default definition type for \p ATD.
+  TypeLoc loadAssociatedTypeDefault(const AssociatedTypeDecl *ATD,
+                                            uint64_t contextData) override {
+    llvm_unreachable("unimplemented for ClangImporter");
+  }
+  
+  /// Returns the generic environment.
+  virtual GenericEnvironment *loadGenericEnvironment(const DeclContext *decl,
+                                                     uint64_t contextData) override {
+    llvm_unreachable("unimplemented for ClangImporter");
+  }
 
   template <typename DeclTy, typename ...Targs>
-  DeclTy *createDeclWithClangNode(ClangNode ClangN, Accessibility access,
+  DeclTy *createDeclWithClangNode(ClangNode ClangN, AccessLevel access,
                                   Targs &&... Args) {
     assert(ClangN);
     void *DeclPtr = allocateMemoryForDecl<DeclTy>(SwiftContext, sizeof(DeclTy),
@@ -1136,9 +1203,9 @@ public:
     auto D = ::new (DeclPtr) DeclTy(std::forward<Targs>(Args)...);
     D->setClangNode(ClangN);
     D->setEarlyAttrValidation(true);
-    D->setAccessibility(access);
+    D->setAccess(access);
     if (auto ASD = dyn_cast<AbstractStorageDecl>(D))
-      ASD->setSetterAccessibility(access);
+      ASD->setSetterAccess(access);
     // All imported decls are constructed fully validated.
     D->setValidationStarted();
     if (auto AFD = dyn_cast<AbstractFunctionDecl>(static_cast<Decl *>(D)))
@@ -1193,11 +1260,14 @@ public:
   /// will eventually reference that declaration, the contexts will still be
   /// considered distinct.
   ///
-  /// The names are generated in the same order as
-  /// forEachImportNameVersionFromCurrent. The current name is always first.
+  /// If \p action returns false, the current name will \e not be added to the
+  /// set of seen names.
+  ///
+  /// The active name is always first, followed by the other names in the order
+  /// of ImportNameVersion::forEachOtherImportNameVersion.
   void forEachDistinctName(
       const clang::NamedDecl *decl,
-      llvm::function_ref<void(importer::ImportedName,
+      llvm::function_ref<bool(importer::ImportedName,
                               importer::ImportNameVersion)> action);
 
   /// Dump the Swift-specific name lookup tables we generate.

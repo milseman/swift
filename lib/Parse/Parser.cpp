@@ -19,6 +19,7 @@
 #include "swift/AST/ASTWalker.h"
 #include "swift/AST/DiagnosticsParse.h"
 #include "swift/AST/PrettyStackTrace.h"
+#include "swift/Basic/Defer.h"
 #include "swift/Basic/SourceManager.h"
 #include "swift/Basic/Timer.h"
 #include "swift/Parse/Lexer.h"
@@ -26,6 +27,7 @@
 #include "swift/Parse/DelayedParsingCallbacks.h"
 #include "swift/Parse/ParseSILSupport.h"
 #include "swift/Syntax/TokenSyntax.h"
+#include "swift/Syntax/SyntaxParsingContext.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -34,6 +36,7 @@
 #include "llvm/ADT/Twine.h"
 
 using namespace swift;
+using namespace swift::syntax;
 
 void DelayedParsingCallbacks::anchor() { }
 void SILParserTUStateBase::anchor() { }
@@ -67,7 +70,7 @@ private:
     SourceManager &SourceMgr = SF.getASTContext().SourceMgr;
     unsigned BufferID = SourceMgr.findBufferContainingLoc(AFD->getLoc());
     Parser TheParser(BufferID, SF, nullptr, &ParserState);
-
+    TheParser.SyntaxContext->disable();
     std::unique_ptr<CodeCompletionCallbacks> CodeCompletion;
     if (CodeCompletionFactory) {
       CodeCompletion.reset(
@@ -101,6 +104,9 @@ static void parseDelayedDecl(
     SourceMgr.findBufferContainingLoc(ParserState.getDelayedDeclLoc());
   Parser TheParser(BufferID, SF, nullptr, &ParserState);
 
+  // Disable libSyntax creation in the delayed parsing.
+  TheParser.SyntaxContext->disable();
+
   std::unique_ptr<CodeCompletionCallbacks> CodeCompletion;
   if (CodeCompletionFactory) {
     CodeCompletion.reset(
@@ -122,6 +128,14 @@ static void parseDelayedDecl(
     CodeCompletion->doneParsing();
 }
 } // unnamed namespace
+
+
+swift::Parser::BacktrackingScope::~BacktrackingScope() {
+  if (Backtrack) {
+    P.backtrackToPosition(PP);
+    DT.abort();
+  }
+}
 
 void swift::performDelayedParsing(
     DeclContext *DC, PersistentParserState &PersistentState,
@@ -222,9 +236,10 @@ std::vector<Token> swift::tokenize(const LangOptions &LangOpts,
   }
 
   std::vector<Token> Tokens;
+  Trivia LeadingTrivia, TrailingTrivia;
   do {
     Tokens.emplace_back();
-    L.lex(Tokens.back());
+    L.lex(Tokens.back(), LeadingTrivia, TrailingTrivia);
 
     // If the token has the same location as a reset location,
     // reset the token stream
@@ -267,8 +282,18 @@ swift::tokenizeWithTrivia(const LangOptions &LangOpts,
   std::vector<std::pair<RC<syntax::RawTokenSyntax>,
                         syntax::AbsolutePosition>> Tokens;
   syntax::AbsolutePosition RunningPos;
+  Token Tok;
+  Trivia LeadingTrivia, TrailingTrivia;
   do {
-    auto ThisToken = L.fullLex();
+    L.lex(Tok, LeadingTrivia, TrailingTrivia);
+    if (Tok.isEscapedIdentifier()) {
+      LeadingTrivia.push_back(TriviaPiece::backtick());
+      TrailingTrivia.push_front(TriviaPiece::backtick());
+    }
+    auto ThisToken = RawTokenSyntax::make(Tok.getKind(), Tok.getText(),
+                                      SourcePresence::Present, LeadingTrivia,
+                                      TrailingTrivia);
+
     auto ThisTokenPos = ThisToken->accumulateAbsolutePosition(RunningPos);
     Tokens.push_back({ThisToken, ThisTokenPos});
   } while (Tokens.back().first->isNot(tok::eof));
@@ -282,14 +307,132 @@ swift::tokenizeWithTrivia(const LangOptions &LangOpts,
 
 Parser::Parser(unsigned BufferID, SourceFile &SF, SILParserTUStateBase *SIL,
                PersistentParserState *PersistentState)
-  : Parser(std::unique_ptr<Lexer>(
-             new Lexer(SF.getASTContext().LangOpts, SF.getASTContext().SourceMgr,
-                   BufferID, &SF.getASTContext().Diags,
-                   /*InSILMode=*/SIL != nullptr,
-                   SF.getASTContext().LangOpts.AttachCommentsToDecls
-                   ? CommentRetentionMode::AttachToNextToken
-                   : CommentRetentionMode::None)), SF, SIL, PersistentState){
-}
+    : Parser(
+          std::unique_ptr<Lexer>(new Lexer(
+              SF.getASTContext().LangOpts, SF.getASTContext().SourceMgr,
+              BufferID, &SF.getASTContext().Diags,
+              /*InSILMode=*/SIL != nullptr,
+              SF.getASTContext().LangOpts.AttachCommentsToDecls
+                  ? CommentRetentionMode::AttachToNextToken
+                  : CommentRetentionMode::None,
+              SF.shouldKeepSyntaxInfo()
+                  ? TriviaRetentionMode::WithTrivia
+                  : TriviaRetentionMode::WithoutTrivia)),
+          SF, SIL, PersistentState) {}
+
+namespace {
+
+/// This is the token receiver that helps SourceFile to keep track of its
+/// underlying corrected token stream.
+class TokenRecorder: public ConsumeTokenReceiver {
+  ASTContext &Ctx;
+  SourceManager &SM;
+
+  // Token list ordered by their appearance in the source file.
+  std::vector<Token> &Bag;
+  unsigned BufferID;
+
+  // Registered token kind change. These changes are regiestered before the
+  // token is consumed, so we need to keep track of them here.
+  llvm::DenseMap<const void*, tok> TokenKindChangeMap;
+
+  std::vector<Token>::iterator lower_bound(SourceLoc Loc) {
+    return token_lower_bound(Bag, Loc);
+  }
+
+  std::vector<Token>::iterator lower_bound(Token Tok) {
+    return lower_bound(Tok.getLoc());
+  }
+
+  void relexComment(CharSourceRange CommentRange,
+                    llvm::SmallVectorImpl<Token> &Scracth) {
+    Lexer L(Ctx.LangOpts, Ctx.SourceMgr, BufferID, nullptr, /*InSILMode=*/false,
+            CommentRetentionMode::ReturnAsTokens,
+            TriviaRetentionMode::WithoutTrivia,
+            SM.getLocOffsetInBuffer(CommentRange.getStart(), BufferID),
+            SM.getLocOffsetInBuffer(CommentRange.getEnd(), BufferID));
+    while(true) {
+      Token Result;
+      L.lex(Result);
+      if (Result.is(tok::eof))
+        break;
+      assert(Result.is(tok::comment));
+      Scracth.push_back(Result);
+    }
+  }
+
+public:
+  TokenRecorder(SourceFile &SF):
+  Ctx(SF.getASTContext()),
+  SM(SF.getASTContext().SourceMgr),
+  Bag(SF.getTokenVector()),
+  BufferID(SF.getBufferID().getValue()) {};
+
+  void finalize() override {
+
+    // We should consume the comments at the end of the file that don't attach
+    // to any tokens.
+    SourceLoc TokEndLoc;
+    if (!Bag.empty()) {
+      Token Last = Bag.back();
+      TokEndLoc = Last.getLoc().getAdvancedLoc(Last.getLength());
+    } else {
+
+      // Special case: the file contains nothing but comments.
+      TokEndLoc = SM.getLocForBufferStart(BufferID);
+    }
+    llvm::SmallVector<Token, 4> Scratch;
+    relexComment(CharSourceRange(SM, TokEndLoc,
+                                 SM.getRangeForBuffer(BufferID).getEnd()),
+                 Scratch);
+    // Accept these orphaned comments.
+    Bag.insert(Bag.end(), Scratch.begin(), Scratch.end());
+  }
+
+  void registerTokenKindChange(SourceLoc Loc, tok NewKind) override {
+    // If a token with the same location is already in the bag, update its kind.
+    auto Pos = lower_bound(Loc);
+    if (Pos != Bag.end() && Pos->getLoc().getOpaquePointerValue() ==
+        Loc.getOpaquePointerValue()) {
+      Pos->setKind(NewKind);
+      return;
+    }
+
+    // Save the update for later.
+    TokenKindChangeMap[Loc.getOpaquePointerValue()] = NewKind;
+  }
+
+  void receive(Token Tok) override {
+    // We filter out all tokens without valid location
+    if(Tok.getLoc().isInvalid())
+      return;
+
+    // If a token with the same location is already in the bag, skip this token.
+    auto Pos = lower_bound(Tok);
+    if (Pos != Bag.end() && Pos->getLoc().getOpaquePointerValue() ==
+        Tok.getLoc().getOpaquePointerValue()) {
+      return;
+    }
+
+    // Update Token kind if a kind update was regiestered before.
+    auto Found = TokenKindChangeMap.find(Tok.getLoc().
+                                         getOpaquePointerValue());
+    if (Found != TokenKindChangeMap.end()) {
+      Tok.setKind(Found->getSecond());
+    }
+
+    // If the token has comment attached to it, re-lexing these comments and
+    // consume them as separate tokens.
+    llvm::SmallVector<Token, 4> TokensToConsume;
+    if (Tok.hasComment()) {
+      relexComment(Tok.getCommentRange(), TokensToConsume);
+    }
+
+    TokensToConsume.push_back(Tok);
+    Bag.insert(Pos, TokensToConsume.begin(), TokensToConsume.end());
+  }
+};
+} // End of an anonymous namespace.
 
 Parser::Parser(std::unique_ptr<Lexer> Lex, SourceFile &SF,
                SILParserTUStateBase *SIL,
@@ -300,8 +443,11 @@ Parser::Parser(std::unique_ptr<Lexer> Lex, SourceFile &SF,
     L(Lex.release()),
     SIL(SIL),
     CurDeclContext(&SF),
-    Context(SF.getASTContext()) {
-
+    Context(SF.getASTContext()),
+    TokReceiver(SF.shouldKeepSyntaxInfo() ?
+                new TokenRecorder(SF) :
+                new ConsumeTokenReceiver()),
+    SyntaxContext(new SyntaxParsingContext(SyntaxContext, SF)) {
   State = PersistentState;
   if (!State) {
     OwnedState.reset(new PersistentParserState());
@@ -322,24 +468,38 @@ Parser::Parser(std::unique_ptr<Lexer> Lex, SourceFile &SF,
 }
 
 Parser::~Parser() {
+  if (Tok.is(tok::eof))
+    SyntaxContext->addToken(Tok, LeadingTrivia, TrailingTrivia);
+
   delete L;
+  delete TokReceiver;
+  delete SyntaxContext;
 }
 
 const Token &Parser::peekToken() {
   return L->peekNextToken();
 }
 
-SourceLoc Parser::consumeToken() {
+SourceLoc Parser::consumeTokenWithoutFeedingReceiver() {
   SourceLoc Loc = Tok.getLoc();
   assert(Tok.isNot(tok::eof) && "Lexing past eof!");
 
   if (IsParsingInterfaceTokens && !Tok.getText().empty()) {
     SF.recordInterfaceToken(Tok.getText());
   }
-
-  L->lex(Tok);
+  L->lex(Tok, LeadingTrivia, TrailingTrivia);
   PreviousLoc = Loc;
   return Loc;
+}
+
+void Parser::consumeExtraToken(Token Extra) {
+  TokReceiver->receive(Extra);
+}
+
+SourceLoc Parser::consumeToken() {
+  TokReceiver->receive(Tok);
+  SyntaxContext->addToken(Tok, LeadingTrivia, TrailingTrivia);
+  return consumeTokenWithoutFeedingReceiver();
 }
 
 SourceLoc Parser::getEndOfPreviousLoc() {
@@ -353,16 +513,17 @@ Parser::ParserPosition Parser::getParserPositionAfterFirstCharacter(Token T) {
   return ParserPosition(NewState, Loc);
 }
 
-SourceLoc Parser::consumeStartingCharacterOfCurrentToken() {
+SourceLoc Parser::consumeStartingCharacterOfCurrentToken(tok Kind) {
   // Consumes one-character token (like '?', '<', '>' or '!') and returns
   // its location.
 
   // Current token can be either one-character token we want to consume...
   if (Tok.getLength() == 1) {
+    Tok.setKind(Kind);
     return consumeToken();
   }
 
-  markSplitToken(tok::oper_binary_unspaced, Tok.getText().substr(0, 1));
+  markSplitToken(Kind, Tok.getText().substr(0, 1));
 
   // ... or a multi-character token with the first character being the one that
   // we want to consume as a separate token.
@@ -374,16 +535,20 @@ SourceLoc Parser::consumeStartingCharacterOfCurrentToken() {
 void Parser::markSplitToken(tok Kind, StringRef Txt) {
   SplitTokens.emplace_back();
   SplitTokens.back().setToken(Kind, Txt);
+  Trivia EmptyTrivia;
+  SyntaxContext->addToken(SplitTokens.back(), LeadingTrivia, EmptyTrivia);
+  LeadingTrivia.empty();
+  TokReceiver->receive(SplitTokens.back());
 }
 
 SourceLoc Parser::consumeStartingLess() {
   assert(startsWithLess(Tok) && "Token does not start with '<'");
-  return consumeStartingCharacterOfCurrentToken();
+  return consumeStartingCharacterOfCurrentToken(tok::l_angle);
 }
 
 SourceLoc Parser::consumeStartingGreater() {
   assert(startsWithGreater(Tok) && "Token does not start with '>'");
-  return consumeStartingCharacterOfCurrentToken();
+  return consumeStartingCharacterOfCurrentToken(tok::r_angle);
 }
 
 void Parser::skipSingle() {
@@ -669,10 +834,29 @@ bool Parser::parseMatchingToken(tok K, SourceLoc &TokLoc, Diag<> ErrorDiag,
   return false;
 }
 
+static SyntaxKind getListElementKind(SyntaxKind ListKind) {
+  switch (ListKind) {
+  case SyntaxKind::FunctionCallArgumentList:
+    return SyntaxKind::FunctionCallArgument;
+  case SyntaxKind::ArrayElementList:
+    return SyntaxKind::ArrayElement;
+  case SyntaxKind::DictionaryElementList:
+    return SyntaxKind::DictionaryElement;
+  case SyntaxKind::TupleElementList:
+    return SyntaxKind::TupleElement;
+  default:
+    return SyntaxKind::Unknown;
+  }
+}
+
 ParserStatus
 Parser::parseList(tok RightK, SourceLoc LeftLoc, SourceLoc &RightLoc,
-                  bool AllowSepAfterLast, Diag<> ErrorDiag,
+                  bool AllowSepAfterLast, Diag<> ErrorDiag, SyntaxKind Kind,
                   std::function<ParserStatus()> callback) {
+  llvm::Optional<SyntaxParsingContext> ListContext;
+  ListContext.emplace(SyntaxContext, Kind);
+
+  SyntaxKind ElementKind = getListElementKind(Kind);
 
   if (Tok.is(RightK)) {
     RightLoc = consumeToken(RightK);
@@ -687,6 +871,9 @@ Parser::parseList(tok RightK, SourceLoc LeftLoc, SourceLoc &RightLoc,
       consumeToken();
     }
     SourceLoc StartLoc = Tok.getLoc();
+
+    SyntaxParsingContext ElementContext(SyntaxContext, ElementKind);
+
     Status |= callback();
     if (Tok.is(RightK))
       break;
@@ -730,6 +917,8 @@ Parser::parseList(tok RightK, SourceLoc LeftLoc, SourceLoc &RightLoc,
     Status.setIsParseError();
   }
 
+  ListContext.reset();
+
   if (Status.isError()) {
     // If we've already got errors, don't emit missing RightK diagnostics.
     RightLoc = Tok.is(RightK) ? consumeToken() : PreviousLoc;
@@ -766,7 +955,8 @@ struct ParserUnit::Implementation {
       SF(new (Ctx) SourceFile(
             *ModuleDecl::create(Ctx.getIdentifier(ModuleName), Ctx),
             SourceFileKind::Main, BufferID,
-            SourceFile::ImplicitModuleImportKind::None)) {
+            SourceFile::ImplicitModuleImportKind::None,
+            Opts.KeepSyntaxInfoInSourceFile)) {
   }
 };
 

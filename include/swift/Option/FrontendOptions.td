@@ -21,10 +21,6 @@ def triple : Separate<["-"], "triple">, Alias<target>;
 def color_diagnostics : Flag<["-"], "color-diagnostics">,
   HelpText<"Print diagnostics in color">;
 
-def delayed_function_body_parsing :
-  Flag<["-"], "delayed-function-body-parsing">,
-  HelpText<"Delay function body parsing until the end of all files">;
-
 def primary_file : Separate<["-"], "primary-file">,
   HelpText<"Produce output for this file, not the whole module">;
 
@@ -76,6 +72,9 @@ def verify_apply_fixes : Flag<["-"], "verify-apply-fixes">,
   HelpText<"Like -verify, but updates the original source file">;
 def verify_ignore_unknown: Flag<["-"], "verify-ignore-unknown">,
   HelpText<"Allow diagnostics for '<unknown>' location in verify mode">;
+def verify_generic_signatures : Separate<["-"], "verify-generic-signatures">,
+  MetaVarName<"<module-name>">,
+  HelpText<"Verify the generic signatures in the given module">;
 
 def show_diagnostics_after_fatal : Flag<["-"], "show-diagnostics-after-fatal">,
   HelpText<"Keep emitting subsequent diagnostics after a fatal error">;
@@ -156,6 +155,9 @@ def propagate_constraints : Flag<["-"], "propagate-constraints">,
 def iterative_type_checker : Flag<["-"], "iterative-type-checker">,
   HelpText<"Enable the iterative type checker">;
 
+def enable_named_lazy_member_loading : Flag<["-"], "enable-named-lazy-member-loading">,
+  HelpText<"Enable per-name lazy member loading">;
+
 def debug_generic_signatures : Flag<["-"], "debug-generic-signatures">,
   HelpText<"Debug generic signatures">;
 
@@ -190,9 +192,6 @@ def enable_guaranteed_closure_contexts : Flag<["-"], "enable-guaranteed-closure-
 
 def disable_sil_partial_apply : Flag<["-"], "disable-sil-partial-apply">,
   HelpText<"Disable use of partial_apply in SIL generation">;
-
-def remove_runtime_asserts : Flag<["-"], "remove-runtime-asserts">,
-  HelpText<"Remove runtime asserts.">;
 
 def disable_access_control : Flag<["-"], "disable-access-control">,
   HelpText<"Don't respect access control restrictions">;
@@ -264,6 +263,9 @@ def pch_disable_validation : Flag<["-"], "pch-disable-validation">,
 def enable_sil_ownership : Flag<["-"], "enable-sil-ownership">,
   HelpText<"Enable the SIL Ownership Model">;
 
+def enable_guaranteed_normal_arguments : Flag<["-"], "enable-guaranteed-normal-arguments">,
+  HelpText<"If set to true, all normal parameters (except to inits/setters) will be passed at +0">;
+
 def disable_mandatory_semantic_arc_opts : Flag<["-"], "disable-mandatory-semantic-arc-opts">,
   HelpText<"Disable the mandatory semantic arc optimizer">;
 
@@ -283,10 +285,6 @@ def enable_experimental_property_behaviors :
   Flag<["-"], "enable-experimental-property-behaviors">,
   HelpText<"Enable experimental property behaviors">;
   
-def enable_experimental_keypath_components :
-  Flag<["-"], "enable-experimental-keypath-components">,
-  HelpText<"Enable unimplemented keypath component kinds">;
-
 def enable_deserialization_recovery :
   Flag<["-"], "enable-deserialization-recovery">,
   HelpText<"Attempt to recover from missing xrefs (etc) in swiftmodules">;
@@ -301,6 +299,9 @@ def disable_availability_checking : Flag<["-"],
 def disable_tsan_inout_instrumentation : Flag<["-"],
   "disable-tsan-inout-instrumentation">,
   HelpText<"Disable treatment of inout parameters as Thread Sanitizer accesses">;
+
+def report_errors_to_debugger : Flag<["-"], "report-errors-to-debugger">,
+  HelpText<"Deprecated, will be removed in future versions.">;
 
 def enable_infer_import_as_member :
   Flag<["-"], "enable-infer-import-as-member">,
@@ -367,17 +368,21 @@ def sil_inline_threshold : Separate<["-"], "sil-inline-threshold">,
   MetaVarName<"<50>">,
   HelpText<"Controls the aggressiveness of performance inlining">;
 
+def sil_inline_caller_benefit_reduction_factor : Separate<["-"], "sil-inline-caller-benefit-reduction-factor">,
+  MetaVarName<"<2>">,
+  HelpText<"Controls the aggressiveness of performance inlining in -Osize "
+          "mode by reducing the base benefits of a caller (lower value "
+          "permits more inlining!)">;
+
+def sil_unroll_threshold : Separate<["-"], "sil-unroll-threshold">,
+  MetaVarName<"<250>">,
+  HelpText<"Controls the aggressiveness of loop unrolling">;
+
 def sil_merge_partial_modules : Flag<["-"], "sil-merge-partial-modules">,
   HelpText<"Merge SIL from all partial swiftmodules into the final module">;
 
 def sil_link_all : Flag<["-"], "sil-link-all">,
   HelpText<"Link all SIL functions">;
-
-def sil_serialize_all : Flag<["-"], "sil-serialize-all">,
-  HelpText<"Serialize all generated SIL">;
-
-def sil_serialize_witness_tables : Flag<["-"], "sil-serialize-witness-tables">,
-  HelpText<"Serialize eligible SIL witness tables">;
 
 def sil_verify_all : Flag<["-"], "sil-verify-all">,
   HelpText<"Verify SIL after each transform">;

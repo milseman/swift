@@ -20,7 +20,6 @@
 // RUN: fi
 // RUN: %target-run %t/Mirror
 // REQUIRES: executable_test
-// UNSUPPORTED: CPU=armv7
 
 import StdlibUnittest
 
@@ -104,7 +103,7 @@ mirrors.test("struct/StructHasNativeWeakReference") {
 import Foundation
 
 @objc protocol ObjCClassExistential : class {
-  weak var weakProperty: AnyObject? { get set }
+  var weakProperty: AnyObject? { get set }
   var x: Int { get }
 }
 

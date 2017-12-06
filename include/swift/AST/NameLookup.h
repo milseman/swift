@@ -28,6 +28,7 @@ namespace swift {
   class DeclContext;
   class DeclName;
   class Expr;
+  class GenericSignatureBuilder;
   class LazyResolver;
   class TupleType;
   class Type;
@@ -319,7 +320,7 @@ enum class ResolutionKind {
 /// \param typeResolver The type resolver for decls that need to be
 ///        type-checked. This is needed for shadowing resolution.
 /// \param moduleScopeContext The top-level context from which the lookup is
-///        being performed, for checking accessibility. This must be either a
+///        being performed, for checking access. This must be either a
 ///        FileUnit or a Module.
 /// \param extraImports Private imports to include in this search.
 void lookupInModule(ModuleDecl *module, ModuleDecl::AccessPathTy accessPath,

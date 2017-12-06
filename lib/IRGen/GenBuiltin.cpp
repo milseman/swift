@@ -271,14 +271,14 @@ void irgen::emitBuiltinCall(IRGenFunction &IGF, Identifier FnId,
     return out.add(v); \
   }
 
-#define BUILTIN_RUNTIME_CALL(id, name, attrs) \
-  if (Builtin.ID == BuiltinValueKind::id) { \
-    llvm::CallInst *call = IGF.Builder.CreateCall(IGF.IGM.get##id##Fn(),  \
-                           args.claimNext()); \
-    call->setCallingConv(IGF.IGM.DefaultCC); \
-    call->setDoesNotThrow(); \
-    return out.add(call); \
- }
+#define BUILTIN_RUNTIME_CALL(id, name, attrs)                                  \
+  if (Builtin.ID == BuiltinValueKind::id) {                                    \
+    auto *fn = cast<llvm::Function>(IGF.IGM.get##id##Fn());                    \
+    llvm::CallInst *call = IGF.Builder.CreateCall(fn, args.claimNext());       \
+    call->setCallingConv(fn->getCallingConv());                                \
+    call->setAttributes(fn->getAttributes());                                  \
+    return out.add(call);                                                      \
+  }
 
 #define BUILTIN_BINARY_OPERATION_WITH_OVERFLOW(id, name, uncheckedID, attrs, overload) \
 if (Builtin.ID == BuiltinValueKind::id) { \
@@ -784,10 +784,15 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     valueTy.second.destroyArray(IGF, array, count, valueTy.first);
     return;
   }
-  
-  if (Builtin.ID == BuiltinValueKind::CopyArray
-      || Builtin.ID == BuiltinValueKind::TakeArrayFrontToBack
-      || Builtin.ID == BuiltinValueKind::TakeArrayBackToFront) {
+
+  if (Builtin.ID == BuiltinValueKind::CopyArray ||
+      Builtin.ID == BuiltinValueKind::TakeArrayNoAlias ||
+      Builtin.ID == BuiltinValueKind::TakeArrayFrontToBack ||
+      Builtin.ID == BuiltinValueKind::TakeArrayBackToFront ||
+      Builtin.ID == BuiltinValueKind::AssignCopyArrayNoAlias ||
+      Builtin.ID == BuiltinValueKind::AssignCopyArrayFrontToBack ||
+      Builtin.ID == BuiltinValueKind::AssignCopyArrayBackToFront ||
+      Builtin.ID == BuiltinValueKind::AssignTakeArray) {
     // The input type is (T.Type, Builtin.RawPointer, Builtin.RawPointer, Builtin.Word).
     /* metatype (which may be thin) */
     if (args.size() == 4)
@@ -811,6 +816,10 @@ if (Builtin.ID == BuiltinValueKind::id) { \
       valueTy.second.initializeArrayWithCopy(IGF, destArray, srcArray, count,
                                              valueTy.first);
       break;
+    case BuiltinValueKind::TakeArrayNoAlias:
+      valueTy.second.initializeArrayWithTakeNoAlias(IGF, destArray, srcArray,
+                                                    count, valueTy.first);
+      break;
     case BuiltinValueKind::TakeArrayFrontToBack:
       valueTy.second.initializeArrayWithTakeFrontToBack(IGF, destArray, srcArray,
                                                         count, valueTy.first);
@@ -818,6 +827,22 @@ if (Builtin.ID == BuiltinValueKind::id) { \
     case BuiltinValueKind::TakeArrayBackToFront:
       valueTy.second.initializeArrayWithTakeBackToFront(IGF, destArray, srcArray,
                                                         count, valueTy.first);
+      break;
+    case BuiltinValueKind::AssignCopyArrayNoAlias:
+      valueTy.second.assignArrayWithCopyNoAlias(IGF, destArray, srcArray, count,
+                                                valueTy.first);
+      break;
+    case BuiltinValueKind::AssignCopyArrayFrontToBack:
+      valueTy.second.assignArrayWithCopyFrontToBack(IGF, destArray, srcArray,
+                                                    count, valueTy.first);
+      break;
+    case BuiltinValueKind::AssignCopyArrayBackToFront:
+      valueTy.second.assignArrayWithCopyBackToFront(IGF, destArray, srcArray,
+                                                    count, valueTy.first);
+      break;
+    case BuiltinValueKind::AssignTakeArray:
+      valueTy.second.assignArrayWithTake(IGF, destArray, srcArray, count,
+                                         valueTy.first);
       break;
     default:
       llvm_unreachable("out of sync with if condition");

@@ -20,7 +20,8 @@
 #include "swift/AST/Identifier.h"
 #include "swift/Basic/LangOptions.h"
 #include "swift/Basic/SourceManager.h"
-#include "swift/Syntax/TokenSyntax.h"
+#include "swift/Syntax/SyntaxParsingContext.h"
+#include "swift/Syntax/RawTokenSyntax.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -325,7 +326,7 @@ void Lexer::skipUpToEndOfLine() {
         return;
       default:
         // If this is a "high" UTF-8 character, validate it.
-        if (*((signed char *)CurPtr) < 0) {
+        if (*reinterpret_cast<const signed char *>(CurPtr) < 0) {
           const char *CharStart = CurPtr;
           if (validateUTF8CharacterAndAdvance(CurPtr, BufferEnd) == ~0U)
             diagnose(CharStart, diag::lex_invalid_utf8);
@@ -735,23 +736,6 @@ static bool rangeContainsPlaceholderEnd(const char *CurPtr,
     }
   }
   return false;
-}
-
-RC<syntax::RawTokenSyntax> Lexer::fullLex() {
-  if (NextToken.isEscapedIdentifier()) {
-    LeadingTrivia.push_back(syntax::TriviaPiece::backtick());
-    TrailingTrivia.push_front(syntax::TriviaPiece::backtick());
-  }
-  auto Result = syntax::RawTokenSyntax::make(NextToken.getKind(),
-                                        OwnedString(NextToken.getText()).copy(),
-                                        syntax::SourcePresence::Present,
-                                        {LeadingTrivia}, {TrailingTrivia});
-  LeadingTrivia.clear();
-  TrailingTrivia.clear();
-  if (NextToken.isNot(tok::eof)) {
-    lexImpl();
-  }
-  return Result;
 }
 
 /// lexOperatorIdentifier - Match identifiers formed out of punctuation.
@@ -2363,6 +2347,7 @@ Optional<syntax::TriviaPiece> Lexer::lexWhitespace(bool StopAtFirstNewline) {
   switch (Last) {
     case '\n':
     case '\r':
+      NextToken.setAtStartOfLine(true);
       return syntax::TriviaPiece {
         syntax::TriviaKind::Newline,
         Length,
@@ -2460,10 +2445,18 @@ void Lexer::lexTrivia(syntax::TriviaList &Pieces,
   while (CurPtr != BufferEnd) {
     if (auto Whitespace = lexWhitespace(StopAtFirstNewline)) {
       Pieces.push_back(Whitespace.getValue());
+    } else if (isKeepingComments()) {
+      // Don't try to lex comments as trivias.
+      return;
+    } else if (StopAtFirstNewline && *CurPtr == '/') {
+      // Don't lex comments as trailing trivias (for now).
+      return;
     } else if (auto DocComment = lexDocComment()) {
       Pieces.push_back(DocComment.getValue());
+      SeenComment = true;
     } else if (auto Comment = lexComment()) {
       Pieces.push_back(Comment.getValue());
+      SeenComment = true;
     } else {
       return;
     }
@@ -2642,4 +2635,14 @@ StringRef Lexer::getIndentationForLine(SourceManager &SM, SourceLoc Loc) {
     ++EndOfIndentation;
 
   return StringRef(StartOfLine, EndOfIndentation - StartOfLine);
+}
+
+ArrayRef<Token> swift::
+slice_token_array(ArrayRef<Token> AllTokens, SourceLoc StartLoc,
+                  SourceLoc EndLoc) {
+  assert(StartLoc.isValid() && EndLoc.isValid());
+  auto StartIt = token_lower_bound(AllTokens, StartLoc);
+  auto EndIt = token_lower_bound(AllTokens, EndLoc);
+  assert(StartIt->getLoc() == StartLoc && EndIt->getLoc() == EndLoc);
+  return AllTokens.slice(StartIt - AllTokens.begin(), EndIt - StartIt + 1);
 }

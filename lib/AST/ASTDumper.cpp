@@ -14,7 +14,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "swift/Basic/QuotedString.h"
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/ASTPrinter.h"
 #include "swift/AST/ASTVisitor.h"
@@ -24,12 +23,14 @@
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/TypeVisitor.h"
+#include "swift/Basic/QuotedString.h"
 #include "swift/Basic/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/raw_ostream.h"
@@ -46,7 +47,7 @@ static const TerminalColor NAME##Color = { llvm::raw_ostream::COLOR, BOLD };
 
 DEF_COLOR(Func, YELLOW, false)
 DEF_COLOR(Range, YELLOW, false)
-DEF_COLOR(Accessibility, YELLOW, false)
+DEF_COLOR(AccessLevel, YELLOW, false)
 DEF_COLOR(ASTNode, YELLOW, true)
 DEF_COLOR(Parameter, YELLOW, false)
 DEF_COLOR(Extension, MAGENTA, false)
@@ -250,16 +251,16 @@ static StringRef getImportKindString(ImportKind value) {
   
   llvm_unreachable("Unhandled ImportKind in switch.");
 }
-static StringRef getAccessibilityString(Accessibility value) {
+static StringRef getAccessLevelString(AccessLevel value) {
   switch (value) {
-  case Accessibility::Private: return "private";
-  case Accessibility::FilePrivate: return "fileprivate";
-  case Accessibility::Internal: return "internal";
-  case Accessibility::Public: return "public";
-  case Accessibility::Open: return "open";
+  case AccessLevel::Private: return "private";
+  case AccessLevel::FilePrivate: return "fileprivate";
+  case AccessLevel::Internal: return "internal";
+  case AccessLevel::Public: return "public";
+  case AccessLevel::Open: return "open";
   }
 
-  llvm_unreachable("Unhandled Accessibility in switch.");
+  llvm_unreachable("Unhandled AccessLevel in switch.");
 }
 static StringRef
 getForeignErrorConventionKindString(ForeignErrorConvention::Kind value) {
@@ -282,7 +283,7 @@ static StringRef getDefaultArgumentKindString(DefaultArgumentKind value) {
     case DefaultArgumentKind::Function: return "#function";
     case DefaultArgumentKind::Inherited: return "inherited";
     case DefaultArgumentKind::Line: return "#line";
-    case DefaultArgumentKind::Nil: return "nil";
+    case DefaultArgumentKind::NilLiteral: return "nil";
     case DefaultArgumentKind::EmptyArray: return "[]";
     case DefaultArgumentKind::EmptyDictionary: return "[:]";
     case DefaultArgumentKind::Normal: return "normal";
@@ -667,6 +668,15 @@ namespace {
                    [&](const RequirementRepr &req) { req.print(OS); },
                    [&] { OS << ", "; });
       }
+      if (decl->overriddenDeclsComputed()) {
+        OS << " overridden=";
+        interleave(decl->getOverriddenDecls(),
+                   [&](AssociatedTypeDecl *overridden) {
+                     OS << overridden->getProtocol()->getName();
+                   }, [&]() {
+                     OS << ", ";
+                   });
+      }
 
       OS << ")";
     }
@@ -724,9 +734,9 @@ namespace {
         PrintWithColorRAII(OS, InterfaceTypeColor) << "'";
       }
 
-      if (VD->hasAccessibility()) {
-        PrintWithColorRAII(OS, AccessibilityColor) << " access="
-          << getAccessibilityString(VD->getFormalAccess());
+      if (VD->hasAccess()) {
+        PrintWithColorRAII(OS, AccessLevelColor) << " access="
+          << getAccessLevelString(VD->getFormalAccess());
       }
 
       if (auto Overridden = VD->getOverriddenDecl()) {
@@ -1166,6 +1176,16 @@ void ParameterList::dump(raw_ostream &OS, unsigned Indent) const {
 
 void Decl::dump() const {
   dump(llvm::errs(), 0);
+}
+
+void Decl::dump(const char *filename) const {
+  std::error_code ec;
+  llvm::raw_fd_ostream stream(filename, ec, llvm::sys::fs::F_RW);
+  // In assert builds, we blow up. Otherwise, we just return.
+  assert(!ec && "Failed to open file for dumping?!");
+  if (ec)
+    return;
+  dump(stream, 0);
 }
 
 void Decl::dump(raw_ostream &OS, unsigned Indent) const {
@@ -1758,7 +1778,7 @@ public:
     PrintWithColorRAII(OS, DeclColor) << " decl=";
     printDeclRef(E->getDeclRef());
     if (E->getAccessSemantics() != AccessSemantics::Ordinary)
-      PrintWithColorRAII(OS, AccessibilityColor)
+      PrintWithColorRAII(OS, AccessLevelColor)
         << " " << getAccessSemanticsString(E->getAccessSemantics());
     PrintWithColorRAII(OS, ExprModifierColor)
       << " function_ref=" << getFunctionRefKindStr(E->getFunctionRefKind());
@@ -1821,7 +1841,7 @@ public:
       << " decl=";
     E->getMember().dump(OS);
     if (E->getAccessSemantics() != AccessSemantics::Ordinary)
-      PrintWithColorRAII(OS, AccessibilityColor)
+      PrintWithColorRAII(OS, AccessLevelColor)
         << " " << getAccessSemanticsString(E->getAccessSemantics());
     if (E->isSuper())
       OS << " super";
@@ -1906,7 +1926,7 @@ public:
   void visitSubscriptExpr(SubscriptExpr *E) {
     printCommon(E, "subscript_expr");
     if (E->getAccessSemantics() != AccessSemantics::Ordinary)
-      PrintWithColorRAII(OS, AccessibilityColor)
+      PrintWithColorRAII(OS, AccessLevelColor)
         << " " << getAccessSemanticsString(E->getAccessSemantics());
     if (E->isSuper())
       OS << " super";
@@ -2343,7 +2363,7 @@ public:
     printCommon(E, "enum_is_case_expr") << ' ' <<
       E->getEnumElement()->getName() << "\n";
     printRec(E->getSubExpr());
-    
+    PrintWithColorRAII(OS, ParenthesisColor) << ')';
   }
   void visitUnresolvedPatternExpr(UnresolvedPatternExpr *E) {
     printCommon(E, "unresolved_pattern_expr") << '\n';
@@ -2743,7 +2763,7 @@ void ProtocolConformance::dump(llvm::raw_ostream &out, unsigned indent) const {
 
     printCommon("normal");
     // Maybe print information about the conforming context?
-    if (normal->isLazilyResolved()) {
+    if (normal->isLazilyLoaded()) {
       out << " lazy";
     } else {
       forEachTypeWitness(nullptr, [&](const AssociatedTypeDecl *req,
@@ -2777,6 +2797,11 @@ void ProtocolConformance::dump(llvm::raw_ostream &out, unsigned indent) const {
       out << '\n';
       conformance.dump(out, indent + 2);
     }
+    for (auto requirement : normal->getConditionalRequirements()) {
+      out << '\n';
+      out.indent(indent + 2);
+      requirement.dump(out);
+    }
     break;
   }
 
@@ -2794,6 +2819,11 @@ void ProtocolConformance::dump(llvm::raw_ostream &out, unsigned indent) const {
     out << '\n';
     for (auto sub : conf->getGenericSubstitutions()) {
       sub.dump(out, indent + 2);
+      out << '\n';
+    }
+    for (auto subReq : conf->getConditionalRequirements()) {
+      out.indent(indent + 2);
+      subReq.dump(out);
       out << '\n';
     }
     conf->getGenericConformance()->dump(out, indent + 2);
@@ -2907,6 +2937,7 @@ namespace {
     TRIVIAL_TYPE_PRINTER(BuiltinBridgeObject, builtin_bridge_object)
     TRIVIAL_TYPE_PRINTER(BuiltinUnknownObject, builtin_unknown_object)
     TRIVIAL_TYPE_PRINTER(BuiltinUnsafeValueBuffer, builtin_unsafe_value_buffer)
+    TRIVIAL_TYPE_PRINTER(SILToken, sil_token)
 
     void visitBuiltinVectorType(BuiltinVectorType *T, StringRef label) {
       printCommon(label, "builtin_vector_type");

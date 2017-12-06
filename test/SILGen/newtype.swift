@@ -35,7 +35,7 @@ func getRawValue(ed: ErrorDomain) -> String {
   return ed.rawValue
 }
 
-// CHECK-RAW-LABEL: sil shared [serializable] @_T0SC11ErrorDomainV8rawValueSSfg
+// CHECK-RAW-LABEL: sil shared [serializable] @_T0SC11ErrorDomainV8rawValueSSvg
 // CHECK-RAW: bb0([[SELF:%[0-9]+]] : $ErrorDomain):
 // CHECK-RAW: [[STORED_VALUE:%[0-9]+]] = struct_extract [[SELF]] : $ErrorDomain, #ErrorDomain._rawValue
 // CHECK-RAW: [[STORED_VALUE_COPY:%.*]] = copy_value [[STORED_VALUE]]
@@ -66,7 +66,7 @@ func bridgeToNewtype() -> MyString {
 // CHECK-RAW: [[TO_NS:%.*]] = function_ref @_T0SS10FoundationE19_bridgeToObjectiveCSo8NSStringCyF
 // CHECK-RAW: [[BORROW:%.*]] = begin_borrow [[STRING]]
 // CHECK-RAW: [[NS:%.*]] = apply [[TO_NS]]([[BORROW]])
-// CHECK-RAW: [[TO_MY:%.*]] = function_ref @_T0s20_SwiftNewtypeWrapperPssAARzs21_ObjectiveCBridgeable8RawValueRpzlE026_unconditionallyBridgeFromD1CxAD_01_D5CTypeQZSgFZ : $@convention(method) <τ_0_0 where τ_0_0 : _SwiftNewtypeWrapper, τ_0_0.RawValue : _ObjectiveCBridgeable> (@owned Optional<τ_0_0.RawValue._ObjectiveCType>, @thick τ_0_0.Type)
+// CHECK-RAW: [[TO_MY:%.*]] = function_ref @_T0s20_SwiftNewtypeWrapperPss21_ObjectiveCBridgeable8RawValueRpzrlE026_unconditionallyBridgeFromD1CxAD_01_D5CTypeQZSgFZ : $@convention(method) <τ_0_0 where τ_0_0 : _SwiftNewtypeWrapper, τ_0_0.RawValue : _ObjectiveCBridgeable> (@owned Optional<τ_0_0.RawValue._ObjectiveCType>, @thick τ_0_0.Type)
 // CHECK-RAW: [[OPTNS:%.*]] = enum $Optional<NSString>, #Optional.some!enumelt.1, [[NS]]
 // CHECK-RAW: [[META:%.*]] = metatype $@thick MyString.Type
 // CHECK-RAW: apply [[TO_MY]]<MyString, String>({{.*}}, [[OPTNS]], [[META]])
@@ -75,7 +75,7 @@ func bridgeToNewtype() -> MyString {
 
 // CHECK-RAW-LABEL: sil hidden @_T07newtype17bridgeFromNewtypeSSSC8MyStringV6string_tF
 func bridgeFromNewtype(string: MyString) -> String {
-// CHECK-RAW: [[FROM_MY:%.*]] = function_ref @_T0s20_SwiftNewtypeWrapperPssAARzs21_ObjectiveCBridgeable8RawValueRpzlE09_bridgeToD1CAD_01_D5CTypeQZyF : $@convention(method) <τ_0_0 where τ_0_0 : _SwiftNewtypeWrapper, τ_0_0.RawValue : _ObjectiveCBridgeable> (@in_guaranteed τ_0_0) -> @owned τ_0_0.RawValue._ObjectiveCType
+// CHECK-RAW: [[FROM_MY:%.*]] = function_ref @_T0s20_SwiftNewtypeWrapperPss21_ObjectiveCBridgeable8RawValueRpzrlE09_bridgeToD1CAD_01_D5CTypeQZyF : $@convention(method) <τ_0_0 where τ_0_0 : _SwiftNewtypeWrapper, τ_0_0.RawValue : _ObjectiveCBridgeable> (@in_guaranteed τ_0_0) -> @owned τ_0_0.RawValue._ObjectiveCType
 // CHECK-RAW: [[NS:%.*]] = apply [[FROM_MY]]<MyString, String>(
 // CHECK-RAW: [[FROM_NS:%.*]] = function_ref @_T0SS10FoundationE36_unconditionallyBridgeFromObjectiveCSSSo8NSStringCSgFZ
 // CHECK-RAW: [[OPTNS:%.*]] = enum $Optional<NSString>, #Optional.some!enumelt.1, [[NS]]

@@ -184,6 +184,13 @@ enum class SourcePresence {
   Missing,
 };
 
+/// The print option to specify when printing a raw syntax node.
+struct SyntaxPrintOptions {
+  bool Visual = false;
+  bool PrintSyntaxKind = false;
+  bool PrintTrivialNodeKind = false;
+};
+
 /// RawSyntax - the strictly immutable, shared backing nodes for all syntax.
 ///
 /// This is implementation detail - do not expose it in public API.
@@ -205,6 +212,8 @@ struct RawSyntax : public llvm::ThreadSafeRefCountedBase<RawSyntax> {
   RawSyntax(const SyntaxKind Kind, const std::vector<RC<RawSyntax>> Layout,
             const SourcePresence Presence)
       : Kind(Kind), Layout(Layout), Presence(Presence) {}
+
+  virtual ~RawSyntax() = default;
 
   /// Returns a raw syntax node of the given Kind, specified Layout,
   /// and source presence.
@@ -234,42 +243,24 @@ struct RawSyntax : public llvm::ThreadSafeRefCountedBase<RawSyntax> {
   }
 
   /// Returns true if this raw syntax node is some kind of declaration.
-  bool isDecl() const {
-    return Kind >= SyntaxKind::First_Decl && Kind <= SyntaxKind::Last_Decl;
-  }
+  bool isDecl() const { return isDeclKind(Kind); }
 
   /// Returns true if this raw syntax node is some kind of type syntax.
-  bool isType() const {
-    return Kind >= SyntaxKind::First_Type && Kind <= SyntaxKind::Last_Type;
-  }
+  bool isType() const { return isTypeKind(Kind); }
 
   /// Returns true if this raw syntax node is some kind of statement.
-  bool isStmt() const {
-    return Kind >= SyntaxKind::First_Stmt && Kind <= SyntaxKind::Last_Stmt;
-  }
+  bool isStmt() const { return isStmtKind(Kind); }
 
   /// Returns true if this raw syntax node is some kind of expression.
-  bool isExpr() const {
-    return Kind >= SyntaxKind::First_Expr && Kind <= SyntaxKind::Last_Expr;
-  }
+  bool isExpr() const { return isExprKind(Kind); }
 
   /// Returns true if this raw syntax node is some kind of pattern.
-  bool isPattern() const {
-    return Kind >= SyntaxKind::First_Pattern &&
-           Kind <= SyntaxKind::Last_Pattern;
-  }
+  bool isPattern() const { return isPatternKind(Kind); }
 
   /// Return true if this raw syntax node is a token.
-  bool isToken() const {
-    return Kind == SyntaxKind::Token;
-  }
+  bool isToken() const { return isTokenKind(Kind); }
 
-  bool isUnknown() const {
-    return Kind == SyntaxKind::Unknown ||
-           Kind == SyntaxKind::UnknownDecl ||
-           Kind == SyntaxKind::UnknownExpr ||
-           Kind == SyntaxKind::UnknownStmt;
-  }
+  bool isUnknown() const { return isUnknownKind(Kind); }
 
   /// Get the absolute position of this raw syntax: its offset, line,
   /// and column.
@@ -298,7 +289,7 @@ struct RawSyntax : public llvm::ThreadSafeRefCountedBase<RawSyntax> {
   }
 
   /// Print this piece of syntax recursively.
-  void print(llvm::raw_ostream &OS) const;
+  void print(llvm::raw_ostream &OS, SyntaxPrintOptions Opts) const;
 
   /// Dump this piece of syntax recursively for debugging or testing.
   void dump() const;

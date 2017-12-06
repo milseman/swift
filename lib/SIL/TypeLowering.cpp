@@ -211,6 +211,7 @@ namespace {
     IMPL(BuiltinUnknownObject, Reference)
     IMPL(BuiltinUnsafeValueBuffer, AddressOnly)
     IMPL(BuiltinVector, Trivial)
+    IMPL(SILToken, Trivial)
     IMPL(Class, Reference)
     IMPL(BoundGenericClass, Reference)
     IMPL(AnyMetatype, Trivial)
@@ -256,11 +257,10 @@ namespace {
 
     RetTy visitAbstractTypeParamType(CanType type) {
       if (auto genericSig = getGenericSignature()) {
-        auto &mod = *M.getSwiftModule();
-        if (genericSig->requiresClass(type, mod)) {
+        if (genericSig->requiresClass(type)) {
           return asImpl().handleReference(type);
-        } else if (genericSig->isConcreteType(type, mod)) {
-          return asImpl().visit(genericSig->getConcreteType(type, mod)
+        } else if (genericSig->isConcreteType(type)) {
+          return asImpl().visit(genericSig->getConcreteType(type)
                                     ->getCanonicalType());
         } else {
           return asImpl().handleAddressOnly(type);
@@ -284,20 +284,19 @@ namespace {
 
     bool hasNativeReferenceCounting(CanType type) {
       if (type->isTypeParameter()) {
-        auto &mod = *M.getSwiftModule();
         auto signature = getGenericSignature();
         assert(signature && "dependent type without generic signature?!");
 
-        if (auto concreteType = signature->getConcreteType(type, mod))
+        if (auto concreteType = signature->getConcreteType(type))
           return hasNativeReferenceCounting(concreteType->getCanonicalType());
 
-        assert(signature->requiresClass(type, mod));
+        assert(signature->requiresClass(type));
 
         // If we have a superclass bound, recurse on that.  This should
         // always terminate: even if we allow
         //   <T, U: T, V: U, ...>
         // at some point the type-checker should prove acyclic-ness.
-        auto bound = signature->getSuperclassBound(type, mod);
+        auto bound = signature->getSuperclassBound(type);
         if (bound) {
           return hasNativeReferenceCounting(bound->getCanonicalType());
         }
@@ -492,7 +491,7 @@ namespace {
       // signature plumbed through.
       if (Sig && type->hasTypeParameter()) {
         type = Sig->getCanonicalSignature()
-          .getGenericEnvironment(*M.getSwiftModule())
+          .getGenericEnvironment()
           ->mapTypeIntoContext(type)
           ->getCanonicalType();
       }
@@ -930,6 +929,10 @@ namespace {
 
     void emitLoweredDestroyValue(SILBuilder &B, SILLocation loc, SILValue value,
                                  LoweringStyle style) const override {
+      if (style == LoweringStyle::Shallow) {
+        emitDestroyValue(B, loc, value);
+        return;
+      }
       assert(style != LoweringStyle::Shallow &&
              "This method should never be called when performing a shallow "
              "destroy value.");
@@ -1112,7 +1115,7 @@ namespace {
   class OpaqueValueTypeLowering : public LeafLoadableTypeLowering {
   public:
     OpaqueValueTypeLowering(SILType type)
-      : LeafLoadableTypeLowering(type, IsAddressOnly, IsReferenceCounted) {}
+      : LeafLoadableTypeLowering(type, IsAddressOnly, IsNotReferenceCounted) {}
 
     void emitCopyInto(SILBuilder &B, SILLocation loc,
                       SILValue src, SILValue dest, IsTake_t isTake,
@@ -1733,9 +1736,7 @@ static CanAnyFunctionType getDefaultArgGeneratorInterfaceType(
 
   // The result type might be written in terms of type parameters
   // that have been made fully concrete.
-  CanType canResultTy = resultTy->getCanonicalType(
-      AFD->getGenericSignature(),
-      *TC.M.getSwiftModule());
+  CanType canResultTy = resultTy->getCanonicalType(AFD->getGenericSignature());
 
   // Get the generic signature from the surrounding context.
   auto funcInfo = TC.getConstantInfo(SILDeclRef(AFD));
@@ -1750,7 +1751,7 @@ static CanAnyFunctionType getStoredPropertyInitializerInterfaceType(
                                                      VarDecl *VD) {
   auto *DC = VD->getDeclContext();
   CanType resultTy =
-      DC->mapTypeOutOfContext(VD->getParentPattern()->getType())
+    VD->getParentPattern()->getType()->mapTypeOutOfContext()
           ->getCanonicalType();
   auto sig = TC.getEffectiveGenericSignature(DC);
 
@@ -1764,8 +1765,7 @@ static CanAnyFunctionType getDestructorInterfaceType(TypeConverter &TC,
                                                      bool isDeallocating,
                                                      bool isForeign) {
   auto classType = dd->getDeclContext()->getDeclaredInterfaceType()
-    ->getCanonicalType(dd->getGenericSignatureOfContext(),
-                       *TC.M.getSwiftModule());
+    ->getCanonicalType(dd->getGenericSignatureOfContext());
 
   assert((!isForeign || isDeallocating)
          && "There are no foreign destroying destructors");
@@ -1795,8 +1795,7 @@ static CanAnyFunctionType getIVarInitDestroyerInterfaceType(TypeConverter &TC,
                                                             bool isObjC,
                                                             bool isDestroyer) {
   auto classType = cd->getDeclaredInterfaceType()
-    ->getCanonicalType(cd->getGenericSignatureOfContext(),
-                       *TC.M.getSwiftModule());
+    ->getCanonicalType(cd->getGenericSignatureOfContext());
 
   CanType emptyTupleTy = TupleType::getEmpty(TC.Context);
   auto resultType = (isDestroyer ? emptyTupleTy : classType);
@@ -1872,7 +1871,7 @@ CanAnyFunctionType TypeConverter::makeConstantInterfaceType(SILDeclRef c) {
       // FIXME: Closures could have an interface type computed by Sema.
       auto funcTy = cast<AnyFunctionType>(ACE->getType()->getCanonicalType());
       funcTy = cast<AnyFunctionType>(
-          ACE->mapTypeOutOfContext(funcTy)
+          funcTy->mapTypeOutOfContext()
               ->getCanonicalType());
       return getFunctionInterfaceTypeWithCaptures(funcTy, ACE);
     }
@@ -2071,11 +2070,10 @@ TypeConverter::getProtocolDispatchStrategy(ProtocolDecl *P) {
   return ProtocolDispatchStrategy::Swift;
 }
 
-CanSILFunctionType TypeConverter::
-getMaterializeForSetCallbackType(AbstractStorageDecl *storage,
-                                 CanGenericSignature genericSig,
-                                 Type selfType,
-                                 SILFunctionTypeRepresentation rep) {
+CanSILFunctionType TypeConverter::getMaterializeForSetCallbackType(
+    AbstractStorageDecl *storage, CanGenericSignature genericSig, Type selfType,
+    SILFunctionTypeRepresentation rep,
+    Optional<ProtocolConformanceRef> witnessMethodConformance) {
   auto &ctx = M.getASTContext();
 
   // Get lowered formal types for callback parameters.
@@ -2093,10 +2091,8 @@ getMaterializeForSetCallbackType(AbstractStorageDecl *storage,
     }
   }
 
-  auto canSelfType = selfType->getCanonicalType(
-    genericSig, *M.getSwiftModule());
-  auto canSelfMetatypeType = selfMetatypeType->getCanonicalType(
-    genericSig, *M.getSwiftModule());
+  auto canSelfType = selfType->getCanonicalType(genericSig);
+  auto canSelfMetatypeType = selfMetatypeType->getCanonicalType(genericSig);
 
   // Create the SILFunctionType for the callback.
   SILParameterInfo params[] = {
@@ -2112,9 +2108,10 @@ getMaterializeForSetCallbackType(AbstractStorageDecl *storage,
   if (genericSig && genericSig->areAllParamsConcrete())
     genericSig = nullptr;
 
-  return SILFunctionType::get(genericSig, extInfo,
-                   /*callee*/ ParameterConvention::Direct_Unowned,
-                              params, results, None, ctx);
+  return SILFunctionType::get(genericSig, extInfo, SILCoroutineKind::None,
+                              /*callee*/ ParameterConvention::Direct_Unowned,
+                              params, {}, results, None, ctx,
+                              witnessMethodConformance);
 }
 
 /// If a capture references a local function, return a reference to that
@@ -2464,8 +2461,7 @@ TypeConverter::getInterfaceBoxTypeForCapture(ValueDecl *captured,
   // Instantiate the layout with identity substitutions.
   auto subMap = signature->getSubstitutionMap(
     [&](SubstitutableType *type) -> Type {
-      return signature->getCanonicalTypeInContext(type,
-                                                  *M.getSwiftModule());
+      return signature->getCanonicalTypeInContext(type);
     },
     [](Type depTy, Type replacementTy, ProtocolType *conformedTy)
     -> ProtocolConformanceRef {
@@ -2481,7 +2477,7 @@ TypeConverter::getInterfaceBoxTypeForCapture(ValueDecl *captured,
   auto loweredContextType = loweredInterfaceType;
   auto contextBoxTy = boxTy;
   if (signature) {
-    auto env = signature.getGenericEnvironment(*M.getSwiftModule());
+    auto env = signature.getGenericEnvironment();
     loweredContextType = env->mapTypeIntoContext(loweredContextType)
                             ->getCanonicalType();
     contextBoxTy = cast<SILBoxType>(
@@ -2506,8 +2502,8 @@ TypeConverter::getContextBoxTypeForCapture(ValueDecl *captured,
     auto homeSig = captured->getDeclContext()
         ->getGenericSignatureOfContext();
     loweredInterfaceType =
-      env->mapTypeOutOfContext(loweredInterfaceType)
-        ->getCanonicalType(homeSig, *M.getSwiftModule());
+      loweredInterfaceType->mapTypeOutOfContext()
+        ->getCanonicalType(homeSig);
   }
   
   auto boxType = getInterfaceBoxTypeForCapture(captured,
@@ -2519,4 +2515,75 @@ TypeConverter::getContextBoxTypeForCapture(ValueDecl *captured,
          ->getCanonicalType());
   
   return boxType;
+}
+
+static void countNumberOfInnerFields(unsigned &fieldsCount, SILModule &Module,
+                                     SILType Ty) {
+  if (auto *structDecl = Ty.getStructOrBoundGenericStruct()) {
+    assert(structDecl->hasFixedLayout(Module.getSwiftModule(),
+                                      ResilienceExpansion::Minimal) &&
+           " FSO should not be trying to explode resilient (ie address-only) "
+           "types at all");
+    for (auto *prop : structDecl->getStoredProperties()) {
+      SILType propTy = Ty.getFieldType(prop, Module);
+      unsigned fieldsCountBefore = fieldsCount;
+      countNumberOfInnerFields(fieldsCount, Module, propTy);
+      if (fieldsCount == fieldsCountBefore) {
+        // size of Struct(BigStructType) == size of BigStructType()
+        // prevent counting its size as BigStructType()+1
+        ++fieldsCount;
+      }
+    }
+    return;
+  }
+  if (auto tupleTy = Ty.getAs<TupleType>()) {
+    for (auto elt : tupleTy->getElementTypes()) {
+      auto silElt = SILType::getPrimitiveObjectType(elt->getCanonicalType());
+      countNumberOfInnerFields(fieldsCount, Module, silElt);
+    }
+    return;
+  }
+  if (auto *enumDecl = Ty.getEnumOrBoundGenericEnum()) {
+    if (enumDecl->isIndirect()) {
+      return;
+    }
+    assert(enumDecl->hasFixedLayout(Module.getSwiftModule(),
+                                    ResilienceExpansion::Minimal) &&
+           " FSO should not be trying to explode resilient (ie address-only) "
+           "types at all");
+    unsigned fieldsCountBefore = fieldsCount;
+    unsigned maxEnumCount = 0;
+    for (auto elt : enumDecl->getAllElements()) {
+      if (!elt->getArgumentInterfaceType()) {
+        continue;
+      }
+      if (elt->isIndirect()) {
+        continue;
+      }
+      // Although one might assume enums have a fields count of 1
+      // Which holds true for current uses of this code
+      // (we shouldn't expand enums)
+      // Number of fields > 1 as "future proof" for this heuristic:
+      // In case it is used by a pass that tries to explode enums.
+      auto payloadTy = Ty.getEnumElementType(elt, Module);
+      fieldsCount = 0;
+      countNumberOfInnerFields(fieldsCount, Module, payloadTy);
+      if (fieldsCount > maxEnumCount) {
+        maxEnumCount = fieldsCount;
+      }
+    }
+    fieldsCount = fieldsCountBefore + maxEnumCount;
+    return;
+  }
+}
+
+unsigned TypeConverter::countNumberOfFields(SILType Ty) {
+  auto Iter = TypeFields.find(Ty);
+  if (Iter != TypeFields.end()) {
+    return std::max(Iter->second, 1U);
+  }
+  unsigned fieldsCount = 0;
+  countNumberOfInnerFields(fieldsCount, M, Ty);
+  TypeFields[Ty] = fieldsCount;
+  return std::max(fieldsCount, 1U);
 }

@@ -21,6 +21,7 @@
 #include "SILGen.h"
 #include "SILGenBuilder.h"
 #include "swift/AST/AnyFunctionRef.h"
+#include "swift/Basic/ProfileCounter.h"
 #include "swift/SIL/SILBuilder.h"
 #include "llvm/ADT/PointerIntPair.h"
 
@@ -201,7 +202,7 @@ public:
   bool NeedsReturn = false;
 
   /// \brief Is emission currently within a formal modification?
-  bool InWritebackScope = false;
+  bool InFormalEvaluationScope = false;
 
   /// \brief Is emission currently within an inout conversion?
   bool InInOutConversionScope = false;
@@ -355,6 +356,12 @@ public:
   RValue emitRValueForSelfInDelegationInit(SILLocation loc, CanType refType,
                                            SILValue result, SGFContext C);
 
+  /// A version of emitRValueForSelfInDelegationInit that uses formal evaluation
+  /// operations instead of normal scoped operations.
+  RValue emitFormalEvaluationRValueForSelfInDelegationInit(SILLocation loc,
+                                                           CanType refType,
+                                                           SILValue addr,
+                                                           SGFContext C);
   /// The metatype argument to an allocating constructor, if we're emitting one.
   SILValue AllocatorMetatype;
 
@@ -364,10 +371,11 @@ public:
 
   /// Emit code to increment a counter for profiling.
   void emitProfilerIncrement(ASTNode N) {
-    if (SGM.Profiler && SGM.Profiler->hasRegionCounters())
+    if (SGM.Profiler && SGM.Profiler->hasRegionCounters() &&
+        SGM.M.getOptions().UseProfile.empty())
       SGM.Profiler->emitCounterIncrement(B, N);
   }
-  
+
   SILGenFunction(SILGenModule &SGM, SILFunction &F);
   ~SILGenFunction();
   
@@ -500,8 +508,9 @@ public:
   ///
   /// \param selfValue The 'self' value.
   /// \param cd The class declaration whose members are being destroyed.
-  void emitClassMemberDestruction(SILValue selfValue, ClassDecl *cd,
+  void emitClassMemberDestruction(ManagedValue selfValue, ClassDecl *cd,
                                   CleanupLocation cleanupLoc);
+
   /// Generates code for a curry thunk from one uncurry level
   /// of a function to another.
   void emitCurryThunk(SILDeclRef thunk);
@@ -509,6 +518,8 @@ public:
   void emitForeignToNativeThunk(SILDeclRef thunk);
   /// Generates a thunk from a native function to the conventions.
   void emitNativeToForeignThunk(SILDeclRef thunk);
+  /// Generates a resilient method dispatch thunk.
+  void emitDispatchThunk(SILDeclRef constant);
   
   /// Generate a nullary function that returns the given value.
   void emitGeneratorFunction(SILDeclRef function, Expr *value);
@@ -585,13 +596,20 @@ public:
   /// \param contArgs - the types of the arguments to the continuation BB.
   ///        Matching argument values must be passed to exitTrue and exitFalse
   ///        of the resulting Condition object.
-  Condition emitCondition(Expr *E,
-                          bool hasFalseCode = true, bool invertValue = false,
-                          ArrayRef<SILType> contArgs = {});
+  /// \param NumTrueTaken - The number of times the condition evaluates to true.
+  /// \param NumFalseTaken - The number of times the condition evaluates to
+  /// false.
+  Condition emitCondition(Expr *E, bool hasFalseCode = true,
+                          bool invertValue = false,
+                          ArrayRef<SILType> contArgs = {},
+                          ProfileCounter NumTrueTaken = ProfileCounter(),
+                          ProfileCounter NumFalseTaken = ProfileCounter());
 
-  Condition emitCondition(SILValue V, SILLocation Loc,
-                          bool hasFalseCode = true, bool invertValue = false,
-                          ArrayRef<SILType> contArgs = {});
+  Condition emitCondition(SILValue V, SILLocation Loc, bool hasFalseCode = true,
+                          bool invertValue = false,
+                          ArrayRef<SILType> contArgs = {},
+                          ProfileCounter NumTrueTaken = ProfileCounter(),
+                          ProfileCounter NumFalseTaken = ProfileCounter());
 
   /// Create a new basic block.
   ///
@@ -916,8 +934,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   SILValue emitOSVersionRangeCheck(SILLocation loc, const VersionRange &range);
-  void emitStmtCondition(StmtCondition Cond, JumpDest FailDest,
-                         SILLocation loc);
+  void emitStmtCondition(StmtCondition Cond, JumpDest FailDest, SILLocation loc,
+                         ProfileCounter NumTrueTaken = ProfileCounter(),
+                         ProfileCounter NumFalseTaken = ProfileCounter());
 
   void emitConditionalPBD(PatternBindingDecl *PBD, SILBasicBlock *FailBB);
 
@@ -935,10 +954,26 @@ public:
   /// Generate SIL for the given expression, storing the final result into the
   /// specified Initialization buffer(s). This avoids an allocation and copy if
   /// the result would be allocated into temporary memory normally.
-  void emitExprInto(Expr *E, Initialization *I);
+  /// The location defaults to \c E.
+  void emitExprInto(Expr *E, Initialization *I, Optional<SILLocation> L = None);
 
   /// Emit the given expression as an r-value.
   RValue emitRValue(Expr *E, SGFContext C = SGFContext());
+
+  /// Emit the given expression as a +1 r-value.
+  ///
+  /// *NOTE* This creates the +1 r-value and then pushes that +1 r-value through
+  /// a scope. So all temporaries resulting will be cleaned up.
+  ///
+  /// *NOTE* +0 vs +1 is ignored by this function. The only reason to use the
+  /// SGFContext argument is to pass in an initialization.
+  RValue emitPlusOneRValue(Expr *E, SGFContext C = SGFContext());
+
+  /// Emit the given expression as a +0 r-value.
+  ///
+  /// *NOTE* This does not scope the creation of the +0 r-value. The reason why
+  /// this is done is that +0 r-values can not be pushed through scopes.
+  RValue emitPlusZeroRValue(Expr *E);
 
   /// Emit the given expression as an r-value with the given conversion
   /// context.  This may be more efficient --- and, in some cases,
@@ -1010,7 +1045,12 @@ public:
   /// Returns a reference to a function value that dynamically dispatches
   /// the function in a runtime-modifiable way.
   SILValue emitDynamicMethodRef(SILLocation loc, SILDeclRef constant,
-                                SILConstantInfo constantInfo);  
+                                CanSILFunctionType constantTy);
+
+  /// Returns a reference to a vtable-dispatched method.
+  SILValue emitClassMethodRef(SILLocation loc, SILValue selfPtr,
+                              SILDeclRef constant,
+                              CanSILFunctionType constantTy);
 
   /// Emit the specified VarDecl as an LValue if possible, otherwise return
   /// null.
@@ -1027,15 +1067,23 @@ public:
                            AccessSemantics semantics,
                            SGFContext C = SGFContext());
 
-  /// Produce an RValue for a load from the specified property.
-  RValue emitRValueForPropertyLoad(SILLocation loc,
-                                   ManagedValue base,
-                                   CanType baseFormalType,
-                                   bool isSuper, VarDecl *property,
-                                   SubstitutionList substitutions,
-                                   AccessSemantics semantics, Type propTy,
-                                   SGFContext C,
-                                   bool isGuaranteedValid = false);
+  /// Produce a singular RValue for a load from the specified property.
+  ///
+  /// This is designed to work with RValue ManagedValue bases that are either +0
+  /// or +1.
+  ///
+  /// \arg isBaseGuaranteed This should /only/ be set to true if we know that
+  /// the base value will stay alive as long as the returned RValue implying
+  /// that it is safe to load/use values as +0.
+  RValue emitRValueForStorageLoad(SILLocation loc,
+                                  ManagedValue base,
+                                  CanType baseFormalType,
+                                  bool isSuper, AbstractStorageDecl *storage,
+                                  RValue indexes,
+                                  SubstitutionList substitutions,
+                                  AccessSemantics semantics, Type propTy,
+                                  SGFContext C,
+                                  bool isBaseGuaranteed = false);
 
   void emitCaptures(SILLocation loc,
                     AnyFunctionRef TheClosure,
@@ -1080,13 +1128,11 @@ public:
                                 bool isSuper, bool isDirectAccessorUse,
                                 RValue &&optionalSubscripts,
                                 SILValue buffer, SILValue callbackStorage);
-  bool maybeEmitMaterializeForSetThunk(ProtocolConformance *conformance,
+  bool maybeEmitMaterializeForSetThunk(ProtocolConformanceRef conformance,
                                        SILLinkage linkage,
-                                       Type selfInterfaceType,
-                                       Type selfType,
+                                       Type selfInterfaceType, Type selfType,
                                        GenericEnvironment *genericEnv,
-                                       FuncDecl *requirement,
-                                       FuncDecl *witness,
+                                       FuncDecl *requirement, FuncDecl *witness,
                                        SubstitutionList witnessSubs);
   void emitMaterializeForSet(FuncDecl *decl);
 
@@ -1176,22 +1222,40 @@ public:
   SILValue emitConversionFromSemanticValue(SILLocation loc,
                                            SILValue semanticValue,
                                            SILType storageType);
-  
+
+  /// Load an r-value out of the given address. This does not handle
+  /// reabstraction or bridging. If that is needed, use the other emit load
+  /// entry point.
+  ///
+  /// \param rvalueTL - the type lowering for the type-of-rvalue
+  ///   of the address
+  /// \param isAddrGuaranteed - true if the value in this address
+  ///   is guaranteed to be valid for the duration of the current
+  ///   evaluation (see SGFContext::AllowGuaranteedPlusZero)
   ManagedValue emitLoad(SILLocation loc, SILValue addr,
                         const TypeLowering &rvalueTL,
                         SGFContext C, IsTake_t isTake,
-                        bool isGuaranteedValid = false);
+                        bool isAddrGuaranteed = false);
+
+  /// Load an r-value out of the given address handling re-abstraction and
+  /// bridging if required.
+  ///
+  /// \param rvalueTL - the type lowering for the type-of-rvalue
+  ///   of the address
+  /// \param isAddrGuaranteed - true if the value in this address
+  ///   is guaranteed to be valid for the duration of the current
+  ///   evaluation (see SGFContext::AllowGuaranteedPlusZero)
   ManagedValue emitLoad(SILLocation loc, SILValue addr,
                         AbstractionPattern origFormalType,
                         CanType substFormalType,
                         const TypeLowering &rvalueTL,
                         SGFContext C, IsTake_t isTake,
-                        bool isGuaranteedValid = false);
+                        bool isAddrGuaranteed = false);
 
   ManagedValue emitFormalAccessLoad(SILLocation loc, SILValue addr,
                                     const TypeLowering &rvalueTL, SGFContext C,
                                     IsTake_t isTake,
-                                    bool isGuaranteedValid = false);
+                                    bool isAddrGuaranteed = false);
 
   void emitAssignToLValue(SILLocation loc, ArgumentSource &&src, LValue &&dest);
   void emitAssignToLValue(SILLocation loc, RValue &&src, LValue &&dest);
@@ -1209,7 +1273,7 @@ public:
                                    AccessKind accessKind);
 
   RValue emitLoadOfLValue(SILLocation loc, LValue &&src, SGFContext C,
-                          bool isGuaranteedValid = false);
+                          bool isBaseLValueGuaranteed = false);
 
   /// Emit a reference to a method from within another method of the type.
   std::tuple<ManagedValue, SILType>
@@ -1392,11 +1456,13 @@ public:
   ///                     terminated.
   /// \param handleFalse  A callback to invoke in the failure path.  The
   ///                     current BB should be terminated.
-  void emitCheckedCastBranch(
-      SILLocation loc, ConsumableManagedValue src, Type sourceType,
-      CanType targetType, SGFContext C,
-      std::function<void(ManagedValue)> handleTrue,
-      std::function<void(Optional<ManagedValue>)> handleFalse);
+  void
+  emitCheckedCastBranch(SILLocation loc, ConsumableManagedValue src,
+                        Type sourceType, CanType targetType, SGFContext C,
+                        std::function<void(ManagedValue)> handleTrue,
+                        std::function<void(Optional<ManagedValue>)> handleFalse,
+                        ProfileCounter TrueCount = ProfileCounter(),
+                        ProfileCounter FalseCount = ProfileCounter());
 
   /// A form of checked cast branch that uses the old non-ownership preserving
   /// semantics.
@@ -1407,7 +1473,9 @@ public:
   void emitCheckedCastBranchOld(SILLocation loc, Expr *source, Type targetType,
                                 SGFContext ctx,
                                 std::function<void(ManagedValue)> handleTrue,
-                                std::function<void()> handleFalse);
+                                std::function<void()> handleFalse,
+                                ProfileCounter TrueCount = ProfileCounter(),
+                                ProfileCounter FalseCount = ProfileCounter());
 
   /// \brief Emit a conditional checked cast branch, starting from an
   /// expression.  Terminates the current BB.
@@ -1421,10 +1489,13 @@ public:
   ///                     terminated.
   /// \param handleFalse  A callback to invoke in the failure path.  The
   ///                     current BB should be terminated.
-  void emitCheckedCastBranch(
-      SILLocation loc, Expr *src, Type targetType, SGFContext C,
-      std::function<void(ManagedValue)> handleTrue,
-      std::function<void(Optional<ManagedValue>)> handleFalse);
+  void
+  emitCheckedCastBranch(SILLocation loc, Expr *src, Type targetType,
+                        SGFContext C,
+                        std::function<void(ManagedValue)> handleTrue,
+                        std::function<void(Optional<ManagedValue>)> handleFalse,
+                        ProfileCounter TrueCount = ProfileCounter(),
+                        ProfileCounter FalseCount = ProfileCounter());
 
   /// A form of checked cast branch that uses the old non-ownership preserving
   /// semantics.
@@ -1436,7 +1507,9 @@ public:
                                 Type sourceType, CanType targetType,
                                 SGFContext ctx,
                                 std::function<void(ManagedValue)> handleTrue,
-                                std::function<void()> handleFalse);
+                                std::function<void()> handleFalse,
+                                ProfileCounter TrueCount = ProfileCounter(),
+                                ProfileCounter FalseCount = ProfileCounter());
 
   /// Emit the control flow for an optional 'bind' operation, branching to the
   /// active failure destination if the optional value addressed by optionalAddr
@@ -1560,8 +1633,7 @@ public:
   /// Used for emitting SILArguments of bare functions, such as thunks and
   /// open-coded materializeForSet.
   void collectThunkParams(SILLocation loc,
-                          SmallVectorImpl<ManagedValue> &params,
-                          bool allowPlusZero);
+                          SmallVectorImpl<ManagedValue> &params);
 
   /// Build the type of a function transformation thunk.
   CanSILFunctionType buildThunkType(CanSILFunctionType &sourceType,
@@ -1645,6 +1717,8 @@ public:
   /// given address.
   CleanupHandle enterDormantTemporaryCleanup(SILValue temp,
                                              const TypeLowering &tempTL);
+
+  CleanupHandle enterDeallocBoxCleanup(SILValue box);
 
   /// Enter a currently-dormant cleanup to destroy the value in the
   /// given address.
@@ -1743,15 +1817,15 @@ public:
 
 
 /// A utility class for saving and restoring the insertion point.
-class SavedInsertionPoint {
+class SILGenSavedInsertionPoint {
   SILGenFunction &SGF;
   SILBasicBlock *SavedIP;
   FunctionSection SavedSection;
 public:
-  SavedInsertionPoint(SILGenFunction &SGF, SILBasicBlock *newIP,
-                      Optional<FunctionSection> optSection = None)
-    : SGF(SGF), SavedIP(SGF.B.getInsertionBB()),
-      SavedSection(SGF.CurFunctionSection) {
+  SILGenSavedInsertionPoint(SILGenFunction &SGF, SILBasicBlock *newIP,
+                            Optional<FunctionSection> optSection = None)
+      : SGF(SGF), SavedIP(SGF.B.getInsertionBB()),
+        SavedSection(SGF.CurFunctionSection) {
     FunctionSection section = (optSection ? *optSection : SavedSection);
     assert((section != FunctionSection::Postmatter ||
             SGF.StartOfPostmatter != SGF.F.end()) &&
@@ -1762,10 +1836,11 @@ public:
     SGF.CurFunctionSection = section;
   }
 
-  SavedInsertionPoint(const SavedInsertionPoint &) = delete;
-  SavedInsertionPoint &operator=(const SavedInsertionPoint &) = delete;
+  SILGenSavedInsertionPoint(const SILGenSavedInsertionPoint &) = delete;
+  SILGenSavedInsertionPoint &
+  operator=(const SILGenSavedInsertionPoint &) = delete;
 
-  ~SavedInsertionPoint() {
+  ~SILGenSavedInsertionPoint() {
     if (SavedIP) {
       SGF.B.setInsertionPoint(SavedIP);
     } else {

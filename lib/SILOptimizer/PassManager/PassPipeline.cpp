@@ -86,9 +86,9 @@ static void addMandatoryOptPipeline(SILPassPipelinePlan &P,
 
   P.addAllocBoxToStack();
   P.addNoReturnFolding();
-  P.addOwnershipModelEliminator();
   P.addMarkUninitializedFixup();
   P.addDefiniteInitialization();
+  P.addOwnershipModelEliminator();
   P.addMandatoryInlining();
   P.addPredictableMemoryOptimizations();
   P.addDiagnosticConstantPropagation();
@@ -233,6 +233,9 @@ void addSSAPasses(SILPassPipelinePlan &P, OptimizationLevelKind OpLevel) {
   // current function (after optimizing any new callees).
   P.addDevirtualizer();
   P.addGenericSpecializer();
+  // Run devirtualizer after the specializer, because many
+  // class_method/witness_method instructions may use concrete types now.
+  P.addDevirtualizer();
 
   switch (OpLevel) {
   case OptimizationLevelKind::HighLevel:
@@ -240,10 +243,16 @@ void addSSAPasses(SILPassPipelinePlan &P, OptimizationLevelKind OpLevel) {
     P.addEarlyInliner();
     break;
   case OptimizationLevelKind::MidLevel:
-    // Does inline semantics-functions (except "availability"), but not
-    // global-init functions.
     P.addGlobalOpt();
     P.addLetPropertiesOpt();
+    // It is important to serialize before any of the @_semantics
+    // functions are inlined, because otherwise the information about
+    // uses of such functions inside the module is lost,
+    // which reduces the ability of the compiler to optimize clients
+    // importing this module.
+    P.addSerializeSILPass();
+    // Does inline semantics-functions (except "availability"), but not
+    // global-init functions.
     P.addPerfInliner();
     break;
   case OptimizationLevelKind::LowLevel:
@@ -288,6 +297,11 @@ void addSSAPasses(SILPassPipelinePlan &P, OptimizationLevelKind OpLevel) {
     P.addEarlyCodeMotion();
 
   P.addRetainSinking();
+  // Retain sinking does not sink all retains in one round.
+  // Let it run one more time time, because it can be beneficial.
+  // FIXME: Improve the RetainSinking pass to sink more/all
+  // retains in one go.
+  P.addRetainSinking();
   P.addReleaseHoisting();
   P.addARCSequenceOpts();
   P.addRemovePins();
@@ -309,6 +323,9 @@ static void addPerfEarlyModulePassPipeline(SILPassPipelinePlan &P) {
 
   // Cleanup after SILGen: remove trivial copies to temporaries.
   P.addTempRValueOpt();
+
+  // Add the outliner pass (Osize).
+  P.addOutliner();
 }
 
 static void addHighLevelEarlyLoopOptPipeline(SILPassPipelinePlan &P) {
@@ -397,7 +414,6 @@ static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P) {
   P.startPipeline("LateLoopOpt");
 
   // Delete dead code and drop the bodies of shared functions.
-  P.addExternalFunctionDefinitionsElimination();
   P.addDeadFunctionElimination();
 
   // Perform the final lowering transformations.
@@ -520,12 +536,6 @@ SILPassPipelinePlan SILPassPipelinePlan::getOnonePassPipeline() {
   P.addUsePrespecialized();
 
   P.startPipeline("Rest of Onone");
-  // Don't keep external functions from stdlib and other modules.
-  // We don't want that our unoptimized version will be linked instead
-  // of the optimized version from the stdlib.
-  // Here we just convert external definitions to declarations. LLVM will
-  // eventually remove unused declarations.
-  P.addExternalDefsToDecls();
 
   // Has only an effect if the -assume-single-thread option is specified.
   P.addAssumeSingleThreaded();

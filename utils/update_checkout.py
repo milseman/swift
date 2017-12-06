@@ -77,7 +77,7 @@ def get_branch_for_repo(config, repo_name, scheme_name, scheme_map,
                           echo=True, allow_non_zero_exit=True)
             shell.run(["git", "fetch", "origin",
                        "pull/{0}/merge:{1}"
-                       .format(pr_id, repo_branch)], echo=True)
+                       .format(pr_id, repo_branch), "--tags"], echo=True)
     return repo_branch, cross_repo
 
 
@@ -128,7 +128,8 @@ def update_single_repository(args):
             # It's important that we checkout, fetch, and rebase, in order.
             # .git/FETCH_HEAD updates the not-for-merge attributes based on
             # which branch was checked out during the fetch.
-            shell.run(["git", "fetch", "--recurse-submodules=yes"], echo=True)
+            shell.run(["git", "fetch", "--recurse-submodules=yes", "--tags"],
+                      echo=True)
 
             # If we were asked to reset to the specified branch, do the hard
             # reset and return.
@@ -478,6 +479,14 @@ By default, updates your checkouts of Swift, SourceKit, LLDB, and SwiftPM.""")
                                                             skip_history,
                                                             skip_repo_list)
 
+    # Quick check whether somebody is calling update in an empty directory
+    directory_contents = os.listdir(SWIFT_SOURCE_ROOT)
+    if not ('cmark' in directory_contents or 
+            'llvm' in directory_contents or
+            'clang' in directory_contents):
+        print("You don't have all swift sources. "
+              "Call this script with --clone to get them.")
+
     update_results = update_all_repositories(args, config, scheme,
                                              cross_repos_pr)
     fail_count = 0
@@ -485,6 +494,8 @@ By default, updates your checkouts of Swift, SourceKit, LLDB, and SwiftPM.""")
     fail_count += shell.check_parallel_results(update_results, "UPDATE")
     if fail_count > 0:
         print("update-checkout failed, fix errors and try again")
+    else:
+        print("update-checkout succeeded")
     sys.exit(fail_count)
 
 

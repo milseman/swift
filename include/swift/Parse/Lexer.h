@@ -28,10 +28,6 @@
 
 namespace swift {
 
-namespace syntax {
-  struct RawTokenSyntax;
-}
-
   /// Given a pointer to the starting byte of a UTF8 character, validate it and
   /// advance the lexer past it.  This returns the encoded character or ~0U if
   /// the encoding is invalid.
@@ -238,14 +234,24 @@ public:
     return CodeCompletionPtr != nullptr;
   }
 
-  void lex(Token &Result) {
+  /// Lex a token. If \c TriviaRetentionMode is \c WithTrivia, passed pointers
+  /// to trivias are populated.
+  void lex(Token &Result, syntax::Trivia &LeadingTriviaResult,
+           syntax::Trivia &TrailingTriviaResult) {
     Result = NextToken;
-    if (Result.isNot(tok::eof))
+    LeadingTriviaResult = {LeadingTrivia};
+    TrailingTriviaResult = {TrailingTrivia};
+    if (Result.isNot(tok::eof)) {
+      LeadingTrivia.clear();
+      TrailingTrivia.clear();
       lexImpl();
+    }
   }
 
-  /// Lex a full token including leading and trailing trivia.
-  RC<syntax::RawTokenSyntax> fullLex();
+  void lex(Token &Result) {
+    syntax::Trivia LeadingTrivia, TrailingTrivia;
+    lex(Result, LeadingTrivia, TrailingTrivia);
+  }
 
   bool isKeepingComments() const {
     return RetainComments == CommentRetentionMode::ReturnAsTokens;
@@ -411,6 +417,10 @@ public:
       Result.IndentToStrip = 0;
       return Result;
     }
+
+    SourceLoc getEndLoc() {
+      return Loc.getAdvancedLoc(Length);
+    }
   };
   
   /// \brief Compute the bytes that the actual string literal should codegen to.
@@ -532,6 +542,21 @@ private:
   bool tryLexConflictMarker();
 };
   
+/// Given an ordered token \param Array , get the iterator pointing to the first
+/// token that is not before \param Loc .
+template<typename ArrayTy, typename Iterator = typename ArrayTy::iterator>
+Iterator token_lower_bound(ArrayTy &Array, SourceLoc Loc) {
+  return std::lower_bound(Array.begin(), Array.end(), Loc,
+    [](const Token &T, SourceLoc L) {
+      return T.getLoc().getOpaquePointerValue() < L.getOpaquePointerValue();
+  });
+}
+
+/// Given an ordered token array \param AllTokens , get the slice of the array
+/// where front() locates at \param StartLoc and back() locates at \param EndLoc .
+ArrayRef<Token> slice_token_array(ArrayRef<Token> AllTokens, SourceLoc StartLoc,
+                                  SourceLoc EndLoc);
+
 } // end namespace swift
 
 #endif

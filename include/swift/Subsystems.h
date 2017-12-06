@@ -186,7 +186,7 @@ namespace swift {
 
   /// Once type checking is complete, this walks protocol requirements
   /// to resolve default witnesses.
-  void finishTypeChecking(SourceFile &SF);
+  void finishTypeCheckingFile(SourceFile &SF);
 
   /// Now that we have type-checked an entire module, perform any type
   /// checking that requires the full module, e.g., Objective-C method
@@ -252,9 +252,8 @@ namespace swift {
   void serialize(ModuleOrSourceFile DC, const SerializationOptions &options,
                  const SILModule *M = nullptr);
 
-  /// Get the CPU, subtarget feature options, and triple to use when emitting code.
-  std::tuple<llvm::TargetOptions, std::string, std::vector<std::string>,
-             std::string>
+  /// Get the CPU and subtarget feature options to use when emitting code.
+  std::tuple<llvm::TargetOptions, std::string, std::vector<std::string>>
   getIRTargetOptions(IRGenOptions &Opts, ASTContext &Ctx);
 
   /// Turn the given Swift module into either LLVM IR or native code

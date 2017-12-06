@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "swift/AST/IRGenOptions.h"
 #include "swift/IRGen/ValueWitness.h"
 
 #include "Callee.h"
@@ -63,12 +64,6 @@ static llvm::Type *createWitnessType(IRGenModule &IGM, ValueWitness index) {
     return llvm::FunctionType::get(IGM.VoidTy, args, /*isVarArg*/ false);
   }
 
-  // void (*destroyArray)(T *object, size_t n, witness_t *self);
-  case ValueWitness::DestroyArray: {
-    llvm::Type *args[] = { IGM.OpaquePtrTy, IGM.SizeTy, IGM.TypeMetadataPtrTy };
-    return llvm::FunctionType::get(IGM.VoidTy, args, /*isVarArg*/ false);
-  }
-
   // T *(*initializeBufferWithCopyOfBuffer)(B *dest, B *src, M *self);
   // T *(*initializeBufferWithTakeOfBuffer)(B *dest, B *src, M *self);
   case ValueWitness::InitializeBufferWithCopyOfBuffer:
@@ -88,17 +83,6 @@ static llvm::Type *createWitnessType(IRGenModule &IGM, ValueWitness index) {
   case ValueWitness::InitializeWithTake: {
     llvm::Type *ptrTy = IGM.OpaquePtrTy;
     llvm::Type *args[] = { ptrTy, ptrTy, IGM.TypeMetadataPtrTy };
-    return llvm::FunctionType::get(ptrTy, args, /*isVarArg*/ false);
-  }
-      
-  // T *(*initializeArrayWithCopy)(T *dest, T *src, size_t n, M *self);
-  // T *(*initializeArrayWithTakeFrontToBack)(T *dest, T *src, size_t n, M *self);
-  // T *(*initializeArrayWithTakeBackToFront)(T *dest, T *src, size_t n, M *self);
-  case ValueWitness::InitializeArrayWithCopy:
-  case ValueWitness::InitializeArrayWithTakeFrontToBack:
-  case ValueWitness::InitializeArrayWithTakeBackToFront: {
-    llvm::Type *ptrTy = IGM.OpaquePtrTy;
-    llvm::Type *args[] = { ptrTy, ptrTy, IGM.SizeTy, IGM.TypeMetadataPtrTy };
     return llvm::FunctionType::get(ptrTy, args, /*isVarArg*/ false);
   }
       
@@ -158,6 +142,30 @@ static llvm::Type *createWitnessType(IRGenModule &IGM, ValueWitness index) {
     return llvm::FunctionType::get(voidTy, args, /*isVarArg*/ false);
   }
 
+  /// int (*getEnumTagSinglePayload)(const T* enum, UINT_TYPE emptyCases,
+  ///                                M *self)
+  case ValueWitness::GetEnumTagSinglePayload: {
+    llvm::Type *ptrTy = IGM.OpaquePtrTy;
+    llvm::Type *indexTy = IGM.Int32Ty;
+    llvm::Type *metaTy = IGM.TypeMetadataPtrTy;
+
+    llvm::Type *args[] = { ptrTy, indexTy, metaTy };
+    return llvm::FunctionType::get(indexTy, args, false);
+  }
+
+  /// void (*storeEnumTagSinglePayload)(T* enum, INT_TYPE whichCase,
+  ///                                   UINT_TYPE emptyCases,
+  ///                                   M *self)
+  case ValueWitness::StoreEnumTagSinglePayload: {
+    llvm::Type *voidTy = IGM.VoidTy;
+    llvm::Type *ptrTy = IGM.OpaquePtrTy;
+    llvm::Type *indexTy = IGM.Int32Ty;
+    llvm::Type *metaTy = IGM.TypeMetadataPtrTy;
+
+    llvm::Type *args[] = { ptrTy, indexTy, indexTy, metaTy };
+    return llvm::FunctionType::get(voidTy, args, false);
+  }
+
   case ValueWitness::Size:
   case ValueWitness::Flags:
   case ValueWitness::Stride:
@@ -165,6 +173,7 @@ static llvm::Type *createWitnessType(IRGenModule &IGM, ValueWitness index) {
     // Non-function witnesses all have type size_t.
     return IGM.SizeTy;
   }
+
   llvm_unreachable("bad value witness!");
 }
 
@@ -181,23 +190,26 @@ static llvm::AttributeList getValueWitnessAttrs(IRGenModule &IGM,
   switch (index) {
   // These have two arguments, but they can alias.
   case ValueWitness::AssignWithCopy:
-  case ValueWitness::InitializeArrayWithTakeFrontToBack:
-  case ValueWitness::InitializeArrayWithTakeBackToFront:
     return attrs;
 
   // These have one argument.
   case ValueWitness::Destroy:
-  case ValueWitness::DestroyArray:
   case ValueWitness::DestructiveInjectEnumTag:
   case ValueWitness::DestructiveProjectEnumData:
   case ValueWitness::GetEnumTag:
   case ValueWitness::GetExtraInhabitantIndex:
   case ValueWitness::StoreExtraInhabitant:
+  case ValueWitness::StoreEnumTagSinglePayload:
     return attrs.addAttribute(ctx, 1, llvm::Attribute::NoAlias);
+
+  case ValueWitness::GetEnumTagSinglePayload:
+    return attrs
+        .addAttribute(ctx, llvm::AttributeList::FunctionIndex,
+                      llvm::Attribute::ReadOnly)
+        .addAttribute(ctx, 1, llvm::Attribute::NoAlias);
 
   // These have two arguments and they don't alias each other.
   case ValueWitness::AssignWithTake:
-  case ValueWitness::InitializeArrayWithCopy:
   case ValueWitness::InitializeBufferWithCopyOfBuffer:
   case ValueWitness::InitializeBufferWithTakeOfBuffer:
   case ValueWitness::InitializeWithCopy:
@@ -254,14 +266,6 @@ static StringRef getValueWitnessLabel(ValueWitness index) {
     return "flags";
   case ValueWitness::Stride:
     return "stride";
-  case ValueWitness::DestroyArray:
-    return "destroyArray";
-  case ValueWitness::InitializeArrayWithCopy:
-    return "initializeArrayWithCopy";
-  case ValueWitness::InitializeArrayWithTakeFrontToBack:
-    return "initializeArrayWithTakeFrontToBack";
-  case ValueWitness::InitializeArrayWithTakeBackToFront:
-    return "initializeArrayWithTakeBackToFront";
   case ValueWitness::StoreExtraInhabitant:
     return "storeExtraInhabitant";
   case ValueWitness::GetExtraInhabitantIndex:
@@ -274,6 +278,10 @@ static StringRef getValueWitnessLabel(ValueWitness index) {
     return "destructiveProjectEnumData";
   case ValueWitness::DestructiveInjectEnumTag:
     return "destructiveInjectEnumTag";
+  case ValueWitness::GetEnumTagSinglePayload:
+    return "getEnumTagSinglePayload";
+  case ValueWitness::StoreEnumTagSinglePayload:
+    return "storeEnumTagSinglePayload";
   }
   llvm_unreachable("bad value witness index");
 }
@@ -476,12 +484,28 @@ void irgen::emitInitializeArrayWithCopyCall(IRGenFunction &IGF,
                                             Address destObject,
                                             Address srcObject,
                                             llvm::Value *count) {
-  llvm::Value *metadata;
-  auto copyFn = IGF.emitValueWitnessFunctionRef(T, metadata,
-                                       ValueWitness::InitializeArrayWithCopy);
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayInitWithCopyFn(),
+                         {dest, src, count, metadata});
+}
 
-  IGF.Builder.CreateCall(copyFn,
-      {destObject.getAddress(), srcObject.getAddress(), count, metadata});
+/// Emit a call to do an 'initializeArrayWithTakeNoAlias' operation.
+void irgen::emitInitializeArrayWithTakeNoAliasCall(IRGenFunction &IGF,
+                                                   SILType T,
+                                                   Address destObject,
+                                                   Address srcObject,
+                                                   llvm::Value *count) {
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayInitWithTakeNoAliasFn(),
+                         {dest, src, count, metadata});
 }
 
 /// Emit a call to do an 'initializeArrayWithTakeFrontToBack' operation.
@@ -490,11 +514,13 @@ void irgen::emitInitializeArrayWithTakeFrontToBackCall(IRGenFunction &IGF,
                                             Address destObject,
                                             Address srcObject,
                                             llvm::Value *count) {
-  llvm::Value *metadata;
-  auto copyFn = IGF.emitValueWitnessFunctionRef(T, metadata,
-                            ValueWitness::InitializeArrayWithTakeFrontToBack);
-  IGF.Builder.CreateCall(copyFn,
-      {destObject.getAddress(), srcObject.getAddress(), count, metadata});
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayInitWithTakeFrontToBackFn(),
+                         {dest, src, count, metadata});
 }
 
 /// Emit a call to do an 'initializeArrayWithTakeBackToFront' operation.
@@ -503,11 +529,13 @@ void irgen::emitInitializeArrayWithTakeBackToFrontCall(IRGenFunction &IGF,
                                             Address destObject,
                                             Address srcObject,
                                             llvm::Value *count) {
-  llvm::Value *metadata;
-  auto copyFn = IGF.emitValueWitnessFunctionRef(T, metadata,
-                             ValueWitness::InitializeArrayWithTakeBackToFront);
-  IGF.Builder.CreateCall(copyFn,
-      {destObject.getAddress(), srcObject.getAddress(), count, metadata});
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayInitWithTakeBackToFrontFn(),
+                         {dest, src, count, metadata});
 }
 
 /// Emit a call to do an 'assignWithCopy' operation.
@@ -533,6 +561,49 @@ void irgen::emitAssignWithCopyCall(IRGenFunction &IGF,
       {destObject.getAddress(), srcObject.getAddress(), metadata});
 }
 
+/// Emit a call to do an 'arrayAssignWithCopyNoAlias' operation.
+void irgen::emitAssignArrayWithCopyNoAliasCall(IRGenFunction &IGF, SILType T,
+                                          Address destObject, Address srcObject,
+                                          llvm::Value *count) {
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayAssignWithCopyNoAliasFn(),
+                         {dest, src, count, metadata});
+}
+
+/// Emit a call to do an 'arrayAssignWithCopyFrontToBack' operation.
+void irgen::emitAssignArrayWithCopyFrontToBackCall(IRGenFunction &IGF,
+                                                   SILType T,
+                                                   Address destObject,
+                                                   Address srcObject,
+                                                   llvm::Value *count) {
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayAssignWithCopyFrontToBackFn(),
+                         {dest, src, count, metadata});
+}
+
+/// Emit a call to do an 'arrayAssignWithCopyBackToFront' operation.
+void irgen::emitAssignArrayWithCopyBackToFrontCall(IRGenFunction &IGF,
+                                                   SILType T,
+                                                   Address destObject,
+                                                   Address srcObject,
+                                                   llvm::Value *count) {
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayAssignWithCopyBackToFrontFn(),
+                         {dest, src, count, metadata});
+}
+
 /// Emit a call to do an 'assignWithTake' operation.
 void irgen::emitAssignWithTakeCall(IRGenFunction &IGF,
                                    SILType T,
@@ -545,6 +616,19 @@ void irgen::emitAssignWithTakeCall(IRGenFunction &IGF,
       {destObject.getAddress(), srcObject.getAddress(), metadata});
 }
 
+/// Emit a call to do an 'arrayAssignWithTake' operation.
+void irgen::emitAssignArrayWithTakeCall(IRGenFunction &IGF, SILType T,
+                                        Address destObject, Address srcObject,
+                                        llvm::Value *count) {
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto dest =
+      IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  auto src =
+      IGF.Builder.CreateBitCast(srcObject.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayAssignWithTakeFn(),
+                         {dest, src, count, metadata});
+}
+
 /// Emit a call to do a 'destroyArray' operation.
 void irgen::emitDestroyArrayCall(IRGenFunction &IGF,
                                  SILType T,
@@ -554,10 +638,10 @@ void irgen::emitDestroyArrayCall(IRGenFunction &IGF,
   if (T.getObjectType().isTrivial(IGF.getSILModule()))
     return;
 
-  llvm::Value *metadata;
-  auto fn = IGF.emitValueWitnessFunctionRef(T, metadata,
-                                            ValueWitness::DestroyArray);
-  IGF.Builder.CreateCall(fn, {object.getAddress(), count, metadata});
+  auto metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto obj =
+      IGF.Builder.CreateBitCast(object.getAddress(), IGF.IGM.OpaquePtrTy);
+  IGF.Builder.CreateCall(IGF.IGM.getArrayDestroyFn(), {obj, count, metadata});
 }
 
 /// Emit a call to the 'getExtraInhabitantIndex' operation.
@@ -586,6 +670,107 @@ llvm::Value *irgen::emitStoreExtraInhabitantCall(IRGenFunction &IGF,
   llvm::CallInst *call =
     IGF.Builder.CreateCall(fn, {destObject.getAddress(), index, metadata});
   return call;
+}
+
+/// Emit a trampoline to call the getEnumTagSinglePayload witness. API:
+/// INT_TYPE (const T* enum, UINT_TYPE emptyCases, M *self)
+static llvm::Constant *
+getGetEnumTagSinglePayloadTrampolineFn(IRGenModule &IGM) {
+
+  llvm::Type *argTys[] = {IGM.OpaquePtrTy, IGM.Int32Ty, IGM.TypeMetadataPtrTy};
+
+  llvm::SmallString<40> fnName("__swift_getEnumTagSinglePayload");
+
+  auto func = IGM.getOrCreateHelperFunction(
+      fnName, IGM.Int32Ty, argTys,
+      [&](IRGenFunction &IGF) {
+        auto it = IGF.CurFn->arg_begin();
+        auto *enumAddr = &*(it++);
+        auto *numEmptyCases = &*(it++);
+        auto *metadata = &*(it++);
+        auto &Builder = IGF.Builder;
+        auto witnessFunc = emitLoadOfValueWitnessFunctionFromMetadata(
+            IGF, metadata, ValueWitness::GetEnumTagSinglePayload);
+        auto *result = Builder.CreateCall(witnessFunc,
+                                          {enumAddr, numEmptyCases, metadata});
+        Builder.CreateRet(result);
+      },
+      true /*noinline*/);
+
+  // This function is readonly.
+  cast<llvm::Function>(func)->addFnAttr(llvm::Attribute::ReadOnly);
+  return func;
+}
+
+/// Emit a trampoline to call the storeEnumTagSinglePayload witness. API:
+/// VOID_TYPE (const T* enum, INT_TYPE whichCase, UINT_TYPE emptyCases,
+///            M *self)
+static llvm::Constant *
+getStoreEnumTagSinglePayloadTrampolineFn(IRGenModule &IGM) {
+
+  llvm::Type *argTys[] = {IGM.OpaquePtrTy, IGM.Int32Ty, IGM.Int32Ty,
+                          IGM.TypeMetadataPtrTy};
+
+  llvm::SmallString<40> fnName("__swift_storeEnumTagSinglePayload");
+
+  return IGM.getOrCreateHelperFunction(
+      fnName, IGM.VoidTy, argTys,
+      [&](IRGenFunction &IGF) {
+        auto it = IGF.CurFn->arg_begin();
+        auto *enumAddr = &*(it++);
+        auto *whichCase = &*(it++);
+        auto *numEmptyCases = &*(it++);
+        auto *metadata = &*(it++);
+        auto &Builder = IGF.Builder;
+        auto witnessFunc = emitLoadOfValueWitnessFunctionFromMetadata(
+            IGF, metadata, ValueWitness::StoreEnumTagSinglePayload);
+        Builder.CreateCall(witnessFunc,
+                           {enumAddr, whichCase, numEmptyCases, metadata});
+        Builder.CreateRetVoid();
+      },
+      true /*noinline*/);
+}
+
+llvm::Value *irgen::emitGetEnumTagSinglePayloadCall(IRGenFunction &IGF,
+                                                    SILType T,
+                                                    llvm::Value *numEmptyCases,
+                                                    Address destObject) {
+  if (!IGF.optimizeForSize()) {
+    llvm::Value *metadata;
+    auto fn = IGF.emitValueWitnessFunctionRef(
+        T, metadata, ValueWitness::GetEnumTagSinglePayload);
+    llvm::CallInst *call = IGF.Builder.CreateCall(
+        fn, {destObject.getAddress(), numEmptyCases, metadata});
+    return call;
+  }
+  auto *metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto *func = getGetEnumTagSinglePayloadTrampolineFn(IGF.IGM);
+  auto *result = IGF.Builder.CreateCall(
+      func,
+      {IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy),
+       numEmptyCases, metadata});
+  return result;
+}
+
+llvm::Value *irgen::emitStoreEnumTagSinglePayloadCall(
+    IRGenFunction &IGF, SILType T, llvm::Value *whichCase,
+    llvm::Value *numEmptyCases, Address destObject) {
+  if (!IGF.optimizeForSize()) {
+    llvm::Value *metadata;
+    auto fn = IGF.emitValueWitnessFunctionRef(
+        T, metadata, ValueWitness::StoreEnumTagSinglePayload);
+    llvm::CallInst *call = IGF.Builder.CreateCall(
+        fn, {destObject.getAddress(), whichCase, numEmptyCases, metadata});
+    return call;
+  }
+
+  auto *metadata = IGF.emitTypeMetadataRefForLayout(T);
+  auto *func = getStoreEnumTagSinglePayloadTrampolineFn(IGF.IGM);
+  auto *result = IGF.Builder.CreateCall(
+      func,
+      {IGF.Builder.CreateBitCast(destObject.getAddress(), IGF.IGM.OpaquePtrTy),
+       whichCase, numEmptyCases, metadata});
+  return result;
 }
 
 /// Emit a call to the 'getEnumTag' operation.

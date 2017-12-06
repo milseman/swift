@@ -2,7 +2,6 @@
 // REQUIRES: executable_test
 
 // REQUIRES: objc_interop
-// UNSUPPORTED: CPU=armv7
 
 import Foundation
 
@@ -30,7 +29,7 @@ func stateFromPlistLame(_ plist: Dictionary<String, Any>) -> State? {
 func stateFromPlistCool(_ plist: Dictionary<String, Any>) -> State? {
   switch (plist["name"], plist["population"], plist["abbrev"]) {
   case let (name as String, pop as Int, abbr as String)
-  where abbr.characters.count == 2:
+  where abbr.count == 2:
     return State(name: name,
                  population: pop,
                  abbrev: abbr)
@@ -106,7 +105,7 @@ enum Statistic : CustomReflectable {
 func statisticFromPlist(_ plist: Dictionary<String, Any>) -> Statistic? {
   switch (plist["kind"], plist["name"], plist["population"], plist["abbrev"]) {
   case let ("state" as String, name as String, population as Int, abbrev as String)
-  where abbrev.characters.count == 2:
+  where abbrev.count == 2:
     return Statistic.ForState(State(name: name,
                                     population: population,
                                     abbrev: abbrev))

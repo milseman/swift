@@ -91,6 +91,19 @@ public:
   static const OpaqueArchetypeTypeInfo *create(llvm::Type *type) {
     return new OpaqueArchetypeTypeInfo(type);
   }
+
+  void collectArchetypeMetadata(
+      IRGenFunction &IGF,
+      llvm::MapVector<CanType, llvm::Value *> &typeToMetadataVec,
+      SILType T) const override {
+    auto canType = T.getSwiftRValueType();
+    if (typeToMetadataVec.find(canType) != typeToMetadataVec.end()) {
+      return;
+    }
+    auto *metadata = IGF.emitTypeMetadataRef(canType);
+    assert(metadata && "Expected Type Metadata Ref");
+    typeToMetadataVec.insert(std::make_pair(canType, metadata));
+  }
 };
 
 /// A type implementation for a class archetype, that is, an archetype
@@ -170,8 +183,7 @@ llvm::Value *irgen::emitArchetypeWitnessTableRef(IRGenFunction &IGF,
   // TODO: maybe Sema shouldn't ever do this?
   if (Type classBound = archetype->getSuperclass()) {
     auto conformance =
-      IGF.IGM.getSwiftModule()->lookupConformance(classBound, protocol,
-                                                  nullptr);
+      IGF.IGM.getSwiftModule()->lookupConformance(classBound, protocol);
     if (conformance && conformance->isConcrete()) {
       return emitWitnessTableRef(IGF, archetype, *conformance);
     }
@@ -209,10 +221,10 @@ llvm::Value *irgen::emitArchetypeWitnessTableRef(IRGenFunction &IGF,
   // to this conformance from concrete sources.
 
   auto signature = environment->getGenericSignature()->getCanonicalSignature();
-  auto archetypeDepType = environment->mapTypeOutOfContext(archetype);
+  auto archetypeDepType = archetype->getInterfaceType();
 
-  auto astPath = signature->getConformanceAccessPath(archetypeDepType, protocol,
-                                                     *IGF.IGM.getSwiftModule());
+  auto astPath = signature->getConformanceAccessPath(archetypeDepType,
+                                                     protocol);
 
   auto i = astPath.begin(), e = astPath.end();
   assert(i != e && "empty path!");
@@ -319,7 +331,9 @@ const TypeInfo *TypeConverter::convertArchetypeType(ArchetypeType *archetype) {
   // representation.
   if (layout && layout->isFixedSizeTrivial()) {
     Size size(layout->getTrivialSizeInBytes());
-    Alignment align(layout->getTrivialSizeInBytes());
+    auto layoutAlignment = layout->getAlignmentInBytes();
+    assert(layoutAlignment && "layout constraint alignment should not be 0");
+    Alignment align(layoutAlignment);
     auto spareBits =
       SpareBitVector::getConstant(size.getValueInBits(), false);
     // Get an integer type of the required size.

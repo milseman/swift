@@ -95,6 +95,7 @@ enum class SyntaxStructureKind : uint8_t {
   EnumElement,
   TypeAlias,
   Subscript,
+  AssociatedType,
 
   ForEachStatement,
   WhileStatement,
@@ -110,6 +111,7 @@ enum class SyntaxStructureKind : uint8_t {
   ArrayExpression,
   DictionaryExpression,
   ObjectLiteralExpression,
+  TupleExpression
 };
 
 enum class SyntaxStructureElementKind : uint8_t {

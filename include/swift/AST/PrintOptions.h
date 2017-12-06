@@ -233,8 +233,9 @@ struct PrintOptions {
   bool PrintUserInaccessibleAttrs = true;
 
   /// List of attribute kinds that should not be printed.
-  std::vector<AnyAttrKind> ExcludeAttrList =
-      { DAK_Transparent, DAK_Effects, DAK_FixedLayout };
+  std::vector<AnyAttrKind> ExcludeAttrList = {DAK_Transparent, DAK_Effects,
+                                              DAK_FixedLayout,
+                                              DAK_ImplicitlyUnwrappedOptional};
 
   /// List of attribute kinds that should be printed exclusively.
   /// Empty means allow all.
@@ -250,15 +251,15 @@ struct PrintOptions {
   /// Whether to print 'override' keyword on overridden decls.
   bool PrintOverrideKeyword = true;
 
-  /// Whether to print accessibility information on all value decls.
-  bool PrintAccessibility = false;
+  /// Whether to print access control information on all value decls.
+  bool PrintAccess = false;
 
-  /// If \c PrintAccessibility is true, this determines whether to print
+  /// If \c PrintAccess is true, this determines whether to print
   /// 'internal' keyword.
-  bool PrintInternalAccessibilityKeyword = true;
+  bool PrintInternalAccessKeyword = true;
 
   /// Print all decls that have at least this level of access.
-  Accessibility AccessibilityFilter = Accessibility::Private;
+  AccessLevel AccessFilter = AccessLevel::Private;
 
   /// Print IfConfigDecls.
   bool PrintIfConfig = true;
@@ -377,7 +378,7 @@ struct PrintOptions {
   /// Retrieve the set of options suitable for diagnostics printing.
   static PrintOptions printForDiagnostics() {
     PrintOptions result = printVerbose();
-    result.PrintAccessibility = true;
+    result.PrintAccess = true;
     result.Indent = 4;
     result.FullyQualifiedTypesIfAmbiguous = true;
     result.SynthesizeSugarOnTypes = true;
@@ -385,9 +386,10 @@ struct PrintOptions {
     result.PrintImplicitAttrs = false;
     result.ExcludeAttrList.push_back(DAK_Exported);
     result.ExcludeAttrList.push_back(DAK_Inline);
+    result.ExcludeAttrList.push_back(DAK_Optimize);
     result.ExcludeAttrList.push_back(DAK_Rethrows);
     result.PrintOverrideKeyword = false;
-    result.AccessibilityFilter = Accessibility::Public;
+    result.AccessFilter = AccessLevel::Public;
     result.PrintIfConfig = false;
     result.ShouldQualifyNestedDeclarations =
         QualifyNestedDeclarations::TypesOnly;
@@ -429,7 +431,7 @@ struct PrintOptions {
   /// Retrieve the print options that are suitable to print the testable interface.
   static PrintOptions printTestableInterface() {
     PrintOptions result = printInterface();
-    result.AccessibilityFilter = Accessibility::Internal;
+    result.AccessFilter = AccessLevel::Internal;
     return result;
   }
 
@@ -437,7 +439,7 @@ struct PrintOptions {
   /// swift file.
   static PrintOptions printSwiftFileInterface() {
     PrintOptions result = printInterface();
-    result.AccessibilityFilter = Accessibility::Internal;
+    result.AccessFilter = AccessLevel::Internal;
     result.EmptyLineBetweenMembers = true;
     return result;
   }
@@ -473,7 +475,7 @@ struct PrintOptions {
     result.ExcludeAttrList.push_back(DAK_FixedLayout);
     result.PrintStorageRepresentationAttrs = true;
     result.AbstractAccessors = false;
-    result.PrintAccessibility = true;
+    result.PrintAccess = true;
     result.SkipEmptyExtensionDecls = false;
     result.SkipMissingMemberPlaceholders = false;
     return result;

@@ -567,11 +567,6 @@ public:
   ///
   bool isAvailableExternally(IRGenModule &IGM) const;
 
-  /// Returns true if this function or global variable may be inlined into
-  /// another module.
-  ///
-  bool isFragile(ForDefinition_t isDefinition) const;
-
   const ValueDecl *getDecl() const {
     assert(isDeclKind(getKind()));
     return reinterpret_cast<ValueDecl*>(Pointer);
@@ -580,16 +575,6 @@ public:
   SILFunction *getSILFunction() const {
     assert(getKind() == Kind::SILFunction);
     return reinterpret_cast<SILFunction*>(Pointer);
-  }
-
-  /// Returns true if this function is only serialized, but not necessarily
-  /// code-gen'd. These are fragile transparent functions.
-  bool isSILOnly() const {
-    if (getKind() != Kind::SILFunction)
-      return false;
-
-    SILFunction *F = getSILFunction();
-    return F->isTransparent() && F->isDefinition() && F->isSerialized();
   }
 
   SILGlobalVariable *getSILGlobalVariable() const {
@@ -686,8 +671,6 @@ public:
   static LinkInfo get(const UniversalLinkageInfo &linkInfo,
                       StringRef name,
                       SILLinkage linkage,
-                      bool isFragile,
-                      bool isSILOnly,
                       ForDefinition_t isDefinition,
                       bool isWeakImported);
 

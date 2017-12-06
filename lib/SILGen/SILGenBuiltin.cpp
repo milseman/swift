@@ -368,16 +368,6 @@ static ManagedValue emitBuiltinCastToNativeObject(SILGenFunction &SGF,
 }
 
 
-/// Specialized emitter for Builtin.castToUnknownObject.
-static ManagedValue emitBuiltinCastToUnknownObject(SILGenFunction &SGF,
-                                         SILLocation loc,
-                                         SubstitutionList substitutions,
-                                         ArrayRef<ManagedValue> args,
-                                         SGFContext C) {
-  return emitCastToReferenceType(SGF, loc, substitutions, args, C,
-                        SILType::getUnknownObjectType(SGF.F.getASTContext()));
-}
-
 static ManagedValue emitCastFromReferenceType(SILGenFunction &SGF,
                                          SILLocation loc,
                                          SubstitutionList substitutions,
@@ -413,15 +403,6 @@ static ManagedValue emitCastFromReferenceType(SILGenFunction &SGF,
 
 /// Specialized emitter for Builtin.castFromNativeObject.
 static ManagedValue emitBuiltinCastFromNativeObject(SILGenFunction &SGF,
-                                         SILLocation loc,
-                                         SubstitutionList substitutions,
-                                         ArrayRef<ManagedValue> args,
-                                         SGFContext C) {
-  return emitCastFromReferenceType(SGF, loc, substitutions, args, C);
-}
-
-/// Specialized emitter for Builtin.castFromUnknownObject.
-static ManagedValue emitBuiltinCastFromUnknownObject(SILGenFunction &SGF,
                                          SILLocation loc,
                                          SubstitutionList substitutions,
                                          ArrayRef<ManagedValue> args,
@@ -737,11 +718,10 @@ static ManagedValue emitBuiltinCastReferenceFromBridgeObject(
     SILValue result = SILUndef::get(destType, SGF.SGM.M);
     return ManagedValue::forUnmanaged(result);
   }
-  
-  SILValue result = SGF.B.createBridgeObjectToRef(loc, args[0].forward(SGF),
-                                                  destType);
-  return SGF.emitManagedRValueWithCleanup(result);
+
+  return SGF.B.createBridgeObjectToRef(loc, args[0], destType);
 }
+
 static ManagedValue emitBuiltinCastBitPatternFromBridgeObject(
                                                   SILGenFunction &SGF,
                                                   SILLocation loc,
@@ -971,6 +951,7 @@ SpecializedEmitter::forDecl(SILGenModule &SGM, SILDeclRef function) {
   case BuiltinValueKind::Id:
 #define BUILTIN_SIL_OPERATION(Id, Name, Overload)
 #define BUILTIN_SANITIZER_OPERATION(Id, Name, Attrs)
+#define BUILTIN_TYPE_CHECKER_OPERATION(Id, Name)
 #define BUILTIN_TYPE_TRAIT_OPERATION(Id, Name)
 #include "swift/AST/Builtins.def"
   case BuiltinValueKind::None:
@@ -991,7 +972,12 @@ SpecializedEmitter::forDecl(SILGenModule &SGM, SILDeclRef function) {
   case BuiltinValueKind::Id:                                                \
     llvm_unreachable("Sanitizer builtin called directly?");
 
-  // Lower away type trait builtins when they're trivially solvable.
+#define BUILTIN_TYPE_CHECKER_OPERATION(Id, Name)                               \
+  case BuiltinValueKind::Id:                                                   \
+    llvm_unreachable(                                                          \
+        "Compile-time type checker operation should not make it to SIL!");
+
+    // Lower away type trait builtins when they're trivially solvable.
 #define BUILTIN_TYPE_TRAIT_OPERATION(Id, Name)                              \
   case BuiltinValueKind::Id:                                                \
     return SpecializedEmitter(&emitBuiltinTypeTrait<&TypeBase::Name,        \

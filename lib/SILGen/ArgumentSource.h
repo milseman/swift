@@ -88,7 +88,8 @@ class ArgumentSource {
   static StorageMembers::Index getStorageIndexForKind(Kind kind) {
     switch (kind) {
     case Kind::Invalid: return StorageMembers::indexOf<void>();
-    case Kind::RValue: return StorageMembers::indexOf<RValueStorage>();
+    case Kind::RValue:
+      return StorageMembers::indexOf<RValueStorage>();
     case Kind::LValue: return StorageMembers::indexOf<LValueStorage>();
     case Kind::Expr: return StorageMembers::indexOf<Expr*>();
     case Kind::Tuple: return StorageMembers::indexOf<TupleStorage>();
@@ -193,7 +194,8 @@ public:
   bool hasLValueType() const & {
     switch (StoredKind) {
     case Kind::Invalid: llvm_unreachable("argument source is invalid");
-    case Kind::RValue: return false;
+    case Kind::RValue:
+      return false;
     case Kind::LValue: return true;
     case Kind::Expr: return asKnownExpr()->isSemanticallyInOutExpr();
     case Kind::Tuple: return false;
@@ -224,9 +226,10 @@ public:
 
   /// Given that this source is storing an RValue, extract and clear
   /// that value.
-  RValue &&asKnownRValue() && {
+  RValue &&asKnownRValue(SILGenFunction &SGF) && {
     return std::move(Storage.get<RValueStorage>(StoredKind).Value);
   }
+
   SILLocation getKnownRValueLocation() const & {
     return Storage.get<RValueStorage>(StoredKind).Loc;
   }
@@ -268,10 +271,6 @@ public:
     return result;
   }
 
-  /// Force this source to become an r-value, then return an unmoved
-  /// handle to that r-value.
-  RValue &forceAndPeekRValue(SILGenFunction &SGF) &;
-
   /// Return an unowned handle to the r-value stored in this source. Undefined
   /// if this ArgumentSource is not an rvalue.
   RValue &peekRValue() &;
@@ -289,6 +288,10 @@ public:
   void forwardInto(SILGenFunction &SGF, Initialization *dest) &&;
   void forwardInto(SILGenFunction &SGF, AbstractionPattern origFormalType,
                    Initialization *dest, const TypeLowering &destTL) &&;
+
+  /// If we have an rvalue, borrow the rvalue into a new ArgumentSource and
+  /// return the ArgumentSource. Otherwise, assert.
+  ArgumentSource borrow(SILGenFunction &SGF) const &;
 
   ManagedValue materialize(SILGenFunction &SGF) &&;
 
@@ -311,6 +314,9 @@ public:
   void dump(raw_ostream &os, unsigned indent = 0) const;
 
 private:
+  /// Private helper constructor for delayed borrowed rvalues.
+  ArgumentSource(SILLocation loc, RValue &&rv, Kind kind);
+
   // Make the non-move accessors private to make it more difficult
   // to accidentally re-emit values.
   const RValue &asKnownRValue() const & {

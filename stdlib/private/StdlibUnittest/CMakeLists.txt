@@ -4,9 +4,6 @@ set(swift_stdlib_unittest_compile_flags
 if (SWIFT_RUNTIME_ENABLE_LEAK_CHECKER)
   list(APPEND swift_stdlib_unittest_compile_flags "-DSWIFT_RUNTIME_ENABLE_LEAK_CHECKER")
 endif()
-if(SWIFT_SERIALIZE_STDLIB_UNITTEST)
-  list(APPEND swift_stdlib_unittest_compile_flags "-Xfrontend" "-sil-serialize-all")
-endif()
 
 is_build_type_optimized("${SWIFT_STDLIB_BUILD_TYPE}" IS_BUILD_TYPE_OPTIMIZED)
 if (NOT IS_BUILD_TYPE_OPTIMIZED)
@@ -44,6 +41,7 @@ add_swift_library(swiftStdlibUnittest ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STD
   SWIFT_MODULE_DEPENDS_LINUX Glibc
   SWIFT_MODULE_DEPENDS_FREEBSD Glibc
   SWIFT_MODULE_DEPENDS_CYGWIN Glibc
+  SWIFT_MODULE_DEPENDS_HAIKU Glibc
   SWIFT_COMPILE_FLAGS ${swift_stdlib_unittest_compile_flags}
   TARGET_SDKS ALL_POSIX_PLATFORMS
   INSTALL_IN_COMPONENT stdlib-experimental)

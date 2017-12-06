@@ -276,7 +276,7 @@ class Employee: Person { }
 
 class Manager: Person { }
 
-let router = Company(
+let routerPeople = Company(
   routes: [
     { () -> Employee.Type in
       _ = ()
@@ -302,10 +302,8 @@ protocol Pear : Fruit {}
 
 struct Beef : Pear {}
 
-let router = Company(
+let routerFruit = Company(
   routes: [
-    // FIXME: implement join() for existentials
-    // expected-error@+1 {{cannot convert value of type '() -> Tomato.Type' to expected element type '() -> _'}}
     { () -> Tomato.Type in
       _ = ()
       return Chicken.self

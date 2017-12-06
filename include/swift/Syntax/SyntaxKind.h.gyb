@@ -47,6 +47,22 @@ enum class SyntaxKind {
 
 void dumpSyntaxKind(llvm::raw_ostream &os, const SyntaxKind kind);
 
+/// Whether this kind is a syntax collection.
+bool isCollectionKind(SyntaxKind Kind);
+
+bool isDeclKind(SyntaxKind Kind);
+
+bool isTypeKind(SyntaxKind Kind);
+
+bool isStmtKind(SyntaxKind Kind);
+
+bool isExprKind(SyntaxKind Kind);
+
+bool isPatternKind(SyntaxKind Kind);
+
+bool isTokenKind(SyntaxKind Kind);
+
+bool isUnknownKind(SyntaxKind Kind);
 } // end namespace syntax
 
 namespace json {

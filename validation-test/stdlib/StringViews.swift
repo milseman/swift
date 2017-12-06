@@ -36,7 +36,9 @@ let replacementCharacter = Character(replacementScalar)
 // Unicode scalars that must be represented with a surrogate pair in
 // UTF16, grapheme clusters composed of multiple Unicode scalars, and
 // invalid UTF16 that should be replaced with replacement characters.
-let winter = String("🏂☃❅❆❄︎⛄️❄️"._core + [0xD83C, 0x0020, 0xDF67, 0xD83C])
+let winterUTF16 = Array("🏂☃❅❆❄︎⛄️❄️".utf16) + [0xD83C, 0x0020, 0xDF67, 0xD83C]
+var winter = ""
+winter._guts.append(contentsOf: winterUTF16)
 let winterInvalidUTF8: [UTF8.CodeUnit] = replacementUTF8 + ([0x20] as [UTF8.CodeUnit]) + replacementUTF8 + replacementUTF8
 let winterUTF8: [UTF8.CodeUnit] = [
   0xf0, 0x9f, 0x8f, 0x82, 0xe2, 0x98, 0x83, 0xe2, 0x9d, 0x85, 0xe2,
@@ -215,6 +217,13 @@ tests.test("index-mapping/utf16-to-utf8/\(id)") {
   expectEqual(
     summer.utf8.endIndex,
     mapIndex(summer.utf16.endIndex, summer.utf8)!)
+}
+
+tests.test("index-mapping/utf8-to-utf8/\(id)") {
+  // should always succeed
+  for i in winter.utf8.indices {
+    expectEqual(i, mapIndex(i, winter.utf8)!)      
+  }
 }
 }
 checkToUTF8("legacy") { $0.samePosition(in: $1) }

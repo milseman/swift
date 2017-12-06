@@ -30,6 +30,7 @@
 namespace swift {
 namespace Lowering {
 
+class ArgumentSource;
 class Initialization;
 class Scope;
 class SILGenFunction;
@@ -69,13 +70,19 @@ class TypeLowering;
 /// require considering resilience, a job we want to delegate to IRGen.
 class RValue {
   friend class swift::Lowering::Scope;
+  friend class swift::Lowering::ArgumentSource;
 
   std::vector<ManagedValue> values;
   CanType type;
   unsigned elementsToBeAdded;
   
-  /// Flag value used to mark an rvalue as invalid, because it was
-  /// consumed or it was default-initialized.
+  /// \brief Flag value used to mark an rvalue as invalid.
+  ///
+  /// The reasons why this can be true is:
+  ///
+  /// 1. The RValue was consumed.
+  /// 2. The RValue was default-initialized.
+  /// 3. The RValue was emitted into an SGFContext initialization.
   enum : unsigned {
     Null = ~0U,
     Used = Null - 1,
@@ -177,6 +184,14 @@ public:
   /// been added.
   explicit RValue(CanType type);
 
+  /// Return true if the rvalue was null-initialized. The intention is so one
+  /// can trampoline RValue results using if statements, i.e.:
+  ///
+  /// if (RValue rv = foo()) {
+  ///   return rv;
+  /// }
+  operator bool() const & { return isComplete() || isInContext(); }
+
   /// True if the rvalue has been completely initialized by adding all its
   /// elements.
   bool isComplete() const & { return elementsToBeAdded == 0; }
@@ -218,22 +233,6 @@ public:
   /// Get the rvalue as a single unmanaged value, imploding tuples if necessary.
   /// The values must not require any cleanups.
   SILValue getUnmanagedSingleValue(SILGenFunction &SGF, SILLocation l) const &;
-  
-  /// Peek at the single scalar value backing this rvalue without consuming it.
-  /// The rvalue must not be of a tuple type.
-  SILValue peekScalarValue() const & {
-    assert(!isa<TupleType>(type) && "peekScalarValue of a tuple rvalue");
-    assert(values.size() == 1 && "exploded scalar value?!");
-    return values[0].getValue();
-  }
-
-  /// Peek at the single ManagedValue backing this rvalue without consuming it
-  /// and return true if the value is not at +1.
-  bool peekIsPlusZeroRValueOrTrivial() const & {
-    assert(!isa<TupleType>(type) && "peekScalarValue of a tuple rvalue");
-    assert(values.size() == 1 && "exploded scalar value?!");
-    return values[0].isPlusZeroRValueOrTrivial();
-  }
 
   ManagedValue getScalarValue() && {
     assert(!isa<TupleType>(type) && "getScalarValue of a tuple rvalue");
@@ -304,6 +303,14 @@ public:
   /// Return the type lowering of RValue::getType().
   const Lowering::TypeLowering &getTypeLowering(SILGenFunction &SGF) const &;
 
+  /// Return the lowered SILType that would be used to implode the given RValue
+  /// into 1 tuple value.
+  ///
+  /// This means that if any sub-objects are address only, an address type will
+  /// be returned. Otherwise, an object will be returned. So this is a
+  /// convenient way to determine if an RValue needs an address.
+  SILType getLoweredImplodedTupleType(SILGenFunction &SGF) const &;
+
   /// Rewrite the type of this r-value.
   void rewriteType(CanType newType) & {
 #ifndef NDEBUG
@@ -340,6 +347,10 @@ public:
   
   /// Emit an equivalent value with independent ownership.
   RValue copy(SILGenFunction &SGF, SILLocation loc) const &;
+
+  /// If this RValue is a +0 value, copy the RValue and return. Otherwise,
+  /// return std::move(*this);
+  RValue ensurePlusOne(SILGenFunction &SGF, SILLocation loc) &&;
 
   /// Borrow all subvalues of the rvalue.
   RValue borrow(SILGenFunction &SGF, SILLocation loc) const &;

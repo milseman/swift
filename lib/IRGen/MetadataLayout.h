@@ -120,7 +120,6 @@ public:
 class NominalMetadataLayout : public MetadataLayout {
 protected:
   StoredOffset GenericRequirements;
-  StoredOffset Parent;
 
   NominalMetadataLayout(Kind kind) : MetadataLayout(kind) {}
 
@@ -133,8 +132,6 @@ public:
   Size getStaticGenericRequirementsOffset() const;
 
   Offset getGenericRequirementsOffset(IRGenFunction &IGF) const;
-
-  Offset getParentOffset(IRGenFunction &IGF) const;
 
   static bool classof(const MetadataLayout *layout) {
     return true; // No non-nominal metadata for now.
@@ -153,6 +150,9 @@ public:
   };
 
 private:
+  StoredOffset InstanceSize;
+  StoredOffset InstanceAlignMask;
+
   struct StoredMethodInfo {
     StoredOffset TheOffset;
     StoredMethodInfo(StoredOffset offset) : TheOffset(offset) {}
@@ -161,6 +161,9 @@ private:
 
   /// Field offsets for various fields.
   llvm::DenseMap<VarDecl*, StoredOffset> FieldOffsets;
+
+  /// The start of the vtable.
+  StoredOffset VTableOffset;
 
   /// The start of the field-offset vector.
   StoredOffset FieldOffsetVector;
@@ -181,6 +184,21 @@ private:
   ClassMetadataLayout(IRGenModule &IGM, ClassDecl *theClass);
 
 public:
+  Size getInstanceSizeOffset() const;
+
+  Size getInstanceAlignMaskOffset() const;
+
+  /// Should only be used when emitting the nominal type descriptor.
+  Size getStaticVTableOffset() const;
+
+  /// Returns the start of the vtable in the class metadata.
+  Offset getVTableOffset(IRGenFunction &IGF) const;
+
+  /// Returns the size of the vtable, in words.
+  unsigned getVTableSize() const {
+    return MethodInfos.size();
+  }
+
   MethodInfo getMethodInfo(IRGenFunction &IGF, SILDeclRef method) const;
 
   /// Assuming that the given method is at a static offset in the metadata,
@@ -265,11 +283,6 @@ public:
     return layout->getKind() == Kind::Struct;
   }
 };
-
-/// Emit the address of the 'parent' slot in the given nominal-type metadata.
-Address emitAddressOfParentMetadataSlot(IRGenFunction &IGF,
-                                        llvm::Value *metadata,
-                                        NominalTypeDecl *decl);
 
 /// Emit the address of the field-offset slot in the given class metadata.
 Address emitAddressOfClassFieldOffset(IRGenFunction &IGF,

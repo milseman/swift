@@ -54,7 +54,7 @@ template<> void ProtocolConformanceRecord::dump() const {
       printf("%s direct type ",
              kind == TypeMetadataRecordKind::UniqueDirectType
              ? "unique" : "nonunique");
-      if (auto &ntd = getDirectType()->getNominalTypeDescriptor()) {
+      if (const auto *ntd = getDirectType()->getNominalTypeDescriptor()) {
         printf("%s", ntd->Name.get());
       } else {
         printf("<structural type>");
@@ -91,28 +91,31 @@ template<> void ProtocolConformanceRecord::dump() const {
 /// Take the type reference inside a protocol conformance record and fetch the
 /// canonical metadata pointer for the type it refers to.
 /// Returns nil for universal or generic type references.
-template<> const Metadata *ProtocolConformanceRecord::getCanonicalTypeMetadata()
-const {
+template <>
+const Metadata *ProtocolConformanceRecord::getCanonicalTypeMetadata() const {
   switch (getTypeKind()) {
   case TypeMetadataRecordKind::UniqueDirectType:
     // Already unique.
     return getDirectType();
-  case TypeMetadataRecordKind::NonuniqueDirectType:
+  case TypeMetadataRecordKind::NonuniqueDirectType: {
     // Ask the runtime for the unique metadata record we've canonized.
-    return swift_getForeignTypeMetadata((ForeignTypeMetadata*)getDirectType());
+    const ForeignTypeMetadata *FMD =
+        static_cast<const ForeignTypeMetadata *>(getDirectType());
+    return swift_getForeignTypeMetadata(const_cast<ForeignTypeMetadata *>(FMD));
+  }
   case TypeMetadataRecordKind::UniqueIndirectClass:
     // The class may be ObjC, in which case we need to instantiate its Swift
     // metadata. The class additionally may be weak-linked, so we have to check
     // for null.
     if (auto *ClassMetadata = *getIndirectClass())
-      return swift_getObjCClassMetadata(ClassMetadata);
+      return getMetadataForClass(ClassMetadata);
     return nullptr;
       
   case TypeMetadataRecordKind::UniqueDirectClass:
     // The class may be ObjC, in which case we need to instantiate its Swift
     // metadata.
     if (auto *ClassMetadata = getDirectClass())
-      return swift_getObjCClassMetadata(ClassMetadata);
+      return getMetadataForClass(ClassMetadata);
     return nullptr;
       
   case TypeMetadataRecordKind::UniqueNominalTypeDescriptor:
@@ -133,7 +136,8 @@ const {
     return getStaticWitnessTable();
 
   case ProtocolConformanceReferenceKind::WitnessTableAccessor:
-    return getWitnessTableAccessor()(type);
+    // FIXME: this needs information about conditional conformances.
+    return getWitnessTableAccessor()(type, nullptr, 0);
   }
 
   swift_runtime_unreachable(
@@ -269,8 +273,8 @@ _registerProtocolConformances(ConformanceState &C,
 
 void swift::addImageProtocolConformanceBlockCallback(const void *conformances,
                                                    uintptr_t conformancesSize) {
-  assert(conformancesSize % sizeof(ProtocolConformanceRecord) == 0
-         && "weird-sized conformances section?!");
+  assert(conformancesSize % sizeof(ProtocolConformanceRecord) == 0 &&
+         "conformances section not a multiple of ProtocolConformanceRecord");
 
   // If we have a section, enqueue the conformances for lookup.
   auto conformanceBytes = reinterpret_cast<const char *>(conformances);
@@ -376,7 +380,7 @@ recur:
     // For generic and resilient types, nondependent conformances
     // are keyed by the nominal type descriptor rather than the
     // metadata, so try that.
-    const auto description = type->getNominalTypeDescriptor().get();
+    const auto *description = type->getNominalTypeDescriptor();
 
     // Hash and lookup the type-protocol pair in the cache.
     if (auto *Value = C.findCached(description, protocol)) {
@@ -391,7 +395,7 @@ recur:
   // If the type is a class, try its superclass.
   if (const ClassMetadata *classType = type->getClassObject()) {
     if (classHasSuperclass(classType)) {
-      type = swift_getObjCClassMetadata(classType->SuperClass);
+      type = getMetadataForClass(classType->SuperClass);
       goto recur;
     }
   }
@@ -423,14 +427,14 @@ bool isRelatedType(const Metadata *type, const void *candidate,
 
     // If the type is resilient or generic, see if there's a witness table
     // keyed off the nominal type descriptor.
-    const auto description = type->getNominalTypeDescriptor().get();
+    const auto *description = type->getNominalTypeDescriptor();
     if (description == candidate && !candidateIsMetadata)
       return true;
 
     // If the type is a class, try its superclass.
     if (const ClassMetadata *classType = type->getClassObject()) {
       if (classHasSuperclass(classType)) {
-        type = swift_getObjCClassMetadata(classType->SuperClass);
+        type = getMetadataForClass(classType->SuperClass);
         continue;
       }
     }

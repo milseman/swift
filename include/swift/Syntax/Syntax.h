@@ -54,7 +54,6 @@ const auto NoParent = llvm::None;
 /// their children.
 class Syntax {
   friend struct SyntaxFactory;
-  friend class LegacyASTTransformer;
   friend class swift::SyntaxASTMap;
 
 protected:
@@ -127,6 +126,9 @@ public:
   /// if it has one, otherwise 0.
   CursorIndex getIndexInParent() const;
 
+  /// Returns true if this syntax node represents a token.
+  bool isToken() const;
+
   /// Returns true if this syntax node represents a statement.
   bool isStmt() const;
 
@@ -153,7 +155,7 @@ public:
   bool isPresent() const;
 
   /// Print the syntax node with full fidelity to the given output stream.
-  void print(llvm::raw_ostream &OS) const;
+  void print(llvm::raw_ostream &OS, SyntaxPrintOptions Opts = SyntaxPrintOptions()) const;
 
   /// Print a debug representation of the syntax node to the given output stream
   /// and indentation level.
@@ -166,6 +168,10 @@ public:
     return Root == Other.Root && Data == Other.Data;
   }
 
+  static bool classof(const Syntax *S) {
+    // Trivially true.
+    return true;
+  }
   // TODO: hasSameStructureAs ?
 };
 

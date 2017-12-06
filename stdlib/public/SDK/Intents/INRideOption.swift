@@ -19,14 +19,14 @@ import Foundation
 // <rdar://problem/29447066>
 // Compiler incorrectly handles combinations of availability declarations on
 // independent axes.
-internal protocol _INRideOptionMeteredFare {
+public protocol _INRideOptionMeteredFare {
   var __usesMeteredFare: NSNumber? { get set }
 }
 
 extension _INRideOptionMeteredFare {
   @available(swift, obsoleted: 4)
   @nonobjc
-  public final var usesMeteredFare: NSNumber? {
+  public var usesMeteredFare: NSNumber? {
     get {
       return __usesMeteredFare
     }

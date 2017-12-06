@@ -31,7 +31,7 @@ fileprivate class filePrivateClass {
 }
 
 @_versioned extension S {}
-// expected-error@-1 {{@_versioned cannot be applied to this declaration}}
+// expected-error@-1 {{'@_versioned' attribute cannot be applied to this declaration}}
 
 @_versioned
 protocol VersionedProtocol {
@@ -44,4 +44,24 @@ protocol VersionedProtocol {
 
   @_versioned func versionedRequirement() -> T
   // expected-error@-1 {{'@_versioned' attribute cannot be used in protocols}}
+}
+
+// Derived conformances had issues with @_versioned - rdar://problem/34342955
+@_versioned
+internal enum EqEnum {
+  case foo
+}
+
+@_versioned
+internal enum RawEnum : Int {
+  case foo = 0
+}
+
+@_inlineable
+public func usesEqEnum() -> Bool {
+  _ = (EqEnum.foo == .foo)
+  _ = EqEnum.foo.hashValue
+
+  _ = RawEnum.foo.rawValue
+  _ = RawEnum(rawValue: 0)
 }

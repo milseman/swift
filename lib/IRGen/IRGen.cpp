@@ -15,11 +15,10 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "irgen"
-#include "swift/Subsystems.h"
+#include "IRGenModule.h"
 #include "swift/AST/DiagnosticsIRGen.h"
 #include "swift/AST/IRGenOptions.h"
 #include "swift/AST/LinkLibrary.h"
-#include "swift/SIL/SILModule.h"
 #include "swift/Basic/Defer.h"
 #include "swift/Basic/Dwarf.h"
 #include "swift/Basic/Platform.h"
@@ -29,49 +28,56 @@
 #include "swift/ClangImporter/ClangImporter.h"
 #include "swift/IRGen/IRGenPublic.h"
 #include "swift/IRGen/IRGenSILPasses.h"
-#include "swift/LLVMPasses/PassesFwd.h"
 #include "swift/LLVMPasses/Passes.h"
-#include "swift/SILOptimizer/PassManager/Passes.h"
+#include "swift/LLVMPasses/PassesFwd.h"
+#include "swift/SIL/SILModule.h"
 #include "swift/SILOptimizer/PassManager/PassManager.h"
 #include "swift/SILOptimizer/PassManager/PassPipeline.h"
+#include "swift/SILOptimizer/PassManager/Passes.h"
+#include "swift/Subsystems.h"
 #include "clang/Basic/TargetInfo.h"
-#include "llvm/Bitcode/BitcodeWriterPass.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/CodeGen/BasicTTIImpl.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRPrintingPasses.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/MC/SubtargetFeature.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/TargetRegistry.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/MD5.h"
-#include "llvm/ADT/StringSet.h"
-#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Support/Mutex.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
-#include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/ObjCARC.h"
-#include "llvm/Object/ObjectFile.h"
-#include "IRGenModule.h"
 
 #include <thread>
 
 using namespace swift;
 using namespace irgen;
 using namespace llvm;
+
+static cl::opt<bool> DisableObjCARCContract(
+    "disable-objc-arc-contract", cl::Hidden,
+    cl::desc("Disable running objc arc contract for testing purposes"));
 
 namespace {
 // We need this to access IRGenOptions from extension functions
@@ -120,8 +126,7 @@ static void addSanitizerCoveragePass(const PassManagerBuilder &Builder,
       BuilderWrapper.IRGOpts.SanitizeCoverage));
 }
 
-std::tuple<llvm::TargetOptions, std::string, std::vector<std::string>,
-           std::string>
+std::tuple<llvm::TargetOptions, std::string, std::vector<std::string>>
 swift::getIRTargetOptions(IRGenOptions &Opts, ASTContext &Ctx) {
   // Things that maybe we should collect from the command line:
   //   - relocation model
@@ -135,7 +140,7 @@ swift::getIRTargetOptions(IRGenOptions &Opts, ASTContext &Ctx) {
 
   auto *Clang = static_cast<ClangImporter *>(Ctx.getClangModuleLoader());
   clang::TargetOptions &ClangOpts = Clang->getTargetInfo().getTargetOpts();
-  return std::make_tuple(TargetOpts, ClangOpts.CPU, ClangOpts.Features, ClangOpts.Triple);
+  return std::make_tuple(TargetOpts, ClangOpts.CPU, ClangOpts.Features);
 }
 
 void setModuleFlags(IRGenModule &IGM) {
@@ -153,7 +158,7 @@ void swift::performLLVMOptimizations(IRGenOptions &Opts, llvm::Module *Module,
   // Set up a pipeline.
   PassManagerBuilderWrapper PMBuilder(Opts);
 
-  if (Opts.Optimize && !Opts.DisableLLVMOptzns) {
+  if (Opts.shouldOptimize() && !Opts.DisableLLVMOptzns) {
     PMBuilder.OptLevel = 2; // -Os
     PMBuilder.SizeLevel = 1; // -Os
     PMBuilder.Inliner = llvm::createFunctionInliningPass(200);
@@ -269,7 +274,7 @@ private:
   llvm::MD5 Hash;
 
   void write_impl(const char *Ptr, size_t Size) override {
-    Hash.update(ArrayRef<uint8_t>((uint8_t *)Ptr, Size));
+    Hash.update(ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(Ptr), Size));
     Pos += Size;
   }
 
@@ -336,12 +341,16 @@ static bool needsRecompile(StringRef OutputFilename, ArrayRef<uint8_t> HashData,
     if (SectionName == HashSectionName) {
       StringRef SectionData;
       Section.getContents(SectionData);
-      ArrayRef<uint8_t> PrevHashData((uint8_t *)SectionData.data(),
-                                     SectionData.size());
+      ArrayRef<uint8_t> PrevHashData(
+          reinterpret_cast<const uint8_t *>(SectionData.data()),
+          SectionData.size());
       DEBUG(if (PrevHashData.size() == sizeof(MD5::MD5Result)) {
         if (DiagMutex) DiagMutex->lock();
         SmallString<32> HashStr;
-        MD5::stringifyResult(*(MD5::MD5Result *)PrevHashData.data(), HashStr);
+        MD5::stringifyResult(
+            *reinterpret_cast<MD5::MD5Result *>(
+                const_cast<unsigned char *>(PrevHashData.data())),
+            HashStr);
         llvm::dbgs() << OutputFilename << ": prev MD5=" << HashStr <<
           (HashData == PrevHashData ? " skipping\n" : " recompiling\n");
         if (DiagMutex) DiagMutex->unlock();
@@ -353,6 +362,25 @@ static bool needsRecompile(StringRef OutputFilename, ArrayRef<uint8_t> HashData,
     }
   }
   return true;
+}
+
+static void countStatsPostIRGen(UnifiedStatsReporter &Stats,
+                                const llvm::Module& Module) {
+  auto &C = Stats.getFrontendCounters();
+  // FIXME: calculate these in constant time if possible.
+  C.NumIRGlobals += Module.getGlobalList().size();
+  C.NumIRFunctions += Module.getFunctionList().size();
+  C.NumIRAliases += Module.getAliasList().size();
+  C.NumIRIFuncs += Module.getIFuncList().size();
+  C.NumIRNamedMetaData += Module.getNamedMDList().size();
+  C.NumIRValueSymbols += Module.getValueSymbolTable().size();
+  C.NumIRComdatSymbols += Module.getComdatSymbolTable().size();
+  for (auto const &Func : Module) {
+    for (auto const &BB : Func) {
+      C.NumIRBasicBlocks++;
+      C.NumIRInsts += BB.size();
+    }
+  }
 }
 
 /// Run the LLVM passes. In multi-threaded compilation this will be done for
@@ -423,6 +451,13 @@ bool swift::performLLVM(IRGenOptions &Opts, DiagnosticEngine *Diags,
 
   legacy::PassManager EmitPasses;
 
+  // Make sure we do ARC contraction under optimization.  We don't
+  // rely on any other LLVM ARC transformations, but we do need ARC
+  // contraction to add the objc_retainAutoreleasedReturnValue
+  // assembly markers and remove clang.arc.used.
+  if (Opts.shouldOptimize() && !DisableObjCARCContract)
+    EmitPasses.add(createObjCARCContractPass());
+
   // Set up the final emission passes.
   switch (Opts.OutputKind) {
   case IRGenOutputKind::Module:
@@ -443,13 +478,6 @@ bool swift::performLLVM(IRGenOptions &Opts, DiagnosticEngine *Diags,
     EmitPasses.add(createTargetTransformInfoWrapperPass(
         TargetMachine->getTargetIRAnalysis()));
 
-    // Make sure we do ARC contraction under optimization.  We don't
-    // rely on any other LLVM ARC transformations, but we do need ARC
-    // contraction to add the objc_retainAutoreleasedReturnValue
-    // assembly markers.
-    if (Opts.Optimize)
-      EmitPasses.add(createObjCARCContractPass());
-
     bool fail = TargetMachine->addPassesToEmitFile(EmitPasses, *RawOS,
                                                    FileType, !Opts.Verify);
     if (fail) {
@@ -466,6 +494,14 @@ bool swift::performLLVM(IRGenOptions &Opts, DiagnosticEngine *Diags,
   }
   }
 
+  if (Stats) {
+    if (DiagMutex)
+      DiagMutex->lock();
+    countStatsPostIRGen(*Stats, *Module);
+    if (DiagMutex)
+      DiagMutex->unlock();
+  }
+
   EmitPasses.run(*Module);
 
   if (Stats && RawOS.hasValue()) {
@@ -480,50 +516,41 @@ bool swift::performLLVM(IRGenOptions &Opts, DiagnosticEngine *Diags,
 
 std::unique_ptr<llvm::TargetMachine>
 swift::createTargetMachine(IRGenOptions &Opts, ASTContext &Ctx) {
-  CodeGenOpt::Level OptLevel = Opts.Optimize ? CodeGenOpt::Default // -Os
-                                             : CodeGenOpt::None;
+  const llvm::Triple &Triple = Ctx.LangOpts.Target;
+  std::string Error;
+  const Target *Target = TargetRegistry::lookupTarget(Triple.str(), Error);
+  if (!Target) {
+    Ctx.Diags.diagnose(SourceLoc(), diag::no_llvm_target, Triple.str(), Error);
+    return nullptr;
+  }
+
+  CodeGenOpt::Level OptLevel = (Opts.shouldOptimize() ?
+                                  CodeGenOpt::Default // -Os
+                                  : CodeGenOpt::None);
 
   // Set up TargetOptions and create the target features string.
   TargetOptions TargetOpts;
   std::string CPU;
-  std::string EffectiveClangTriple;
   std::vector<std::string> targetFeaturesArray;
-  std::tie(TargetOpts, CPU, targetFeaturesArray, EffectiveClangTriple)
+  std::tie(TargetOpts, CPU, targetFeaturesArray)
     = getIRTargetOptions(Opts, Ctx);
-  const llvm::Triple &EffectiveTriple = llvm::Triple(EffectiveClangTriple);
   std::string targetFeatures;
   if (!targetFeaturesArray.empty()) {
     llvm::SubtargetFeatures features;
     for (const std::string &feature : targetFeaturesArray)
-      features.AddFeature(feature);
+      if (!shouldRemoveTargetFeature(feature)) {
+        features.AddFeature(feature);
+      }
     targetFeatures = features.getString();
   }
 
-  std::string Error;
-  const Target *Target =
-      TargetRegistry::lookupTarget(EffectiveTriple.str(), Error);
-  if (!Target) {
-    Ctx.Diags.diagnose(SourceLoc(), diag::no_llvm_target, EffectiveTriple.str(),
-                       Error);
-    return nullptr;
-  }
-
-
   // Create a target machine.
-  auto cmodel = CodeModel::Default;
-
-  // On Windows 64 bit, dlls are loaded above the max address for 32 bits.
-  // This means that a default CodeModel causes generated code to segfault
-  // when run.
-  if (EffectiveTriple.isArch64Bit() && EffectiveTriple.isOSWindows())
-    cmodel = CodeModel::Large;
-
   llvm::TargetMachine *TargetMachine =
-      Target->createTargetMachine(EffectiveTriple.str(), CPU, targetFeatures,
-                                  TargetOpts, Reloc::PIC_, cmodel, OptLevel);
+      Target->createTargetMachine(Triple.str(), CPU, targetFeatures, TargetOpts,
+                                  Reloc::PIC_, CodeModel::Default, OptLevel);
   if (!TargetMachine) {
     Ctx.Diags.diagnose(SourceLoc(), diag::no_llvm_target,
-                       EffectiveTriple.str(), "no LLVM target machine");
+                       Triple.str(), "no LLVM target machine");
     return nullptr;
   }
   return std::unique_ptr<llvm::TargetMachine>(TargetMachine);
@@ -567,7 +594,8 @@ static void embedBitcode(llvm::Module *M, const IRGenOptions &Opts)
   if (Opts.EmbedMode == IRGenEmbedMode::EmbedBitcode)
     llvm::WriteBitcodeToFile(M, OS);
 
-  ArrayRef<uint8_t> ModuleData((uint8_t*)OS.str().data(), OS.str().size());
+  ArrayRef<uint8_t> ModuleData(
+      reinterpret_cast<const uint8_t *>(OS.str().data()), OS.str().size());
   llvm::Constant *ModuleConstant =
     llvm::ConstantDataArray::get(M->getContext(), ModuleData);
   llvm::GlobalVariable *GV = new llvm::GlobalVariable(*M,
@@ -587,8 +615,9 @@ static void embedBitcode(llvm::Module *M, const IRGenOptions &Opts)
   }
 
   // Embed command-line options.
-  ArrayRef<uint8_t> CmdData((uint8_t*)Opts.CmdArgs.data(),
-                            Opts.CmdArgs.size());
+  ArrayRef<uint8_t>
+      CmdData(reinterpret_cast<const uint8_t *>(Opts.CmdArgs.data()),
+              Opts.CmdArgs.size());
   llvm::Constant *CmdConstant =
     llvm::ConstantDataArray::get(M->getContext(), CmdData);
   GV = new llvm::GlobalVariable(*M, CmdConstant->getType(), true,
@@ -656,7 +685,7 @@ void swift::irgen::deleteIRGenModule(
 /// IRGenModule.
 static void runIRGenPreparePasses(SILModule &Module,
                                   irgen::IRGenModule &IRModule) {
-  SILPassManager PM(&Module, &IRModule);
+  SILPassManager PM(&Module, &IRModule, "irgen", /*isMandatoryPipeline=*/ true);
   bool largeLoadable = Module.getOptions().EnableLargeLoadableTypes;
 #define PASS(ID, Tag, Name)
 #define IRGEN_PASS(ID, Tag, Name)                                              \
@@ -791,7 +820,7 @@ static std::unique_ptr<llvm::Module> performIRGeneration(IRGenOptions &Opts,
     if (performLLVM(Opts, &IGM.Context.Diags, nullptr, IGM.ModuleHash,
                     IGM.getModule(), IGM.TargetMachine.get(),
                     IGM.Context.LangOpts.EffectiveLanguageVersion,
-                    IGM.OutputFilename))
+                    IGM.OutputFilename, IGM.Context.Stats))
       return nullptr;
   }
 
@@ -811,7 +840,7 @@ static void ThreadEntryPoint(IRGenerator *irgen,
     performLLVM(irgen->Opts, &IGM->Context.Diags, DiagMutex, IGM->ModuleHash,
                 IGM->getModule(), IGM->TargetMachine.get(),
                 IGM->Context.LangOpts.EffectiveLanguageVersion,
-                IGM->OutputFilename);
+                IGM->OutputFilename, IGM->Context.Stats);
     if (IGM->Context.Diags.hadAnyError())
       return;
   }

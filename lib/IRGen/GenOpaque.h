@@ -29,6 +29,7 @@ namespace irgen {
   class IRGenFunction;
   class IRGenModule;
   enum class ValueWitness : unsigned;
+  class StackAddress;
   class WitnessIndex;
 
   /// Return the size of a fixed buffer.
@@ -95,6 +96,12 @@ namespace irgen {
                                           llvm::Value *metadata, Address dest,
                                           Address src);
 
+  /// Emit a call to do an 'initializeArrayWithTakeNoAlias' operation.
+  void emitInitializeArrayWithTakeNoAliasCall(IRGenFunction &IGF, SILType T,
+                                              Address destObject,
+                                              Address srcObject,
+                                              llvm::Value *count);
+
   /// Emit a call to do an 'initializeArrayWithTakeFrontToBack' operation.
   void emitInitializeArrayWithTakeFrontToBackCall(IRGenFunction &IGF,
                                                   SILType T,
@@ -119,11 +126,33 @@ namespace irgen {
                               Address destObject,
                               Address srcObject);
 
+  /// Emit a call to do an 'assignArrayWithCopyNoAlias' operation.
+  void emitAssignArrayWithCopyNoAliasCall(IRGenFunction &IGF, SILType T,
+                                          Address destObject, Address srcObject,
+                                          llvm::Value *count);
+
+  /// Emit a call to do an 'assignArrayWithCopyFrontToBack' operation.
+  void emitAssignArrayWithCopyFrontToBackCall(IRGenFunction &IGF, SILType T,
+                                              Address destObject,
+                                              Address srcObject,
+                                              llvm::Value *count);
+
+  /// Emit a call to do an 'assignArrayWithCopyBackToFront' operation.
+  void emitAssignArrayWithCopyBackToFrontCall(IRGenFunction &IGF, SILType T,
+                                              Address destObject,
+                                              Address srcObject,
+                                              llvm::Value *count);
+
   /// Emit a call to do an 'assignWithTake' operation.
   void emitAssignWithTakeCall(IRGenFunction &IGF,
                               SILType T,
                               Address destObject,
                               Address srcObject);
+
+  /// Emit a call to do an 'assignArrayWithTake' operation.
+  void emitAssignArrayWithTakeCall(IRGenFunction &IGF, SILType T,
+                                   Address destObject, Address srcObject,
+                                   llvm::Value *count);
 
   /// Emit a call to do a 'destroy' operation.
   void emitDestroyCall(IRGenFunction &IGF,
@@ -151,6 +180,17 @@ namespace irgen {
                                             SILType T,
                                             llvm::Value *index,
                                             Address destObject);
+
+  /// Emit a call to the 'getEnumTagSinglePayload' operation.
+  llvm::Value *emitGetEnumTagSinglePayloadCall(IRGenFunction &IGF, SILType T,
+                                               llvm::Value *numEmptyCases,
+                                               Address destObject);
+
+  /// Emit a call to the 'storeEnumTagSinglePayload' operation.
+  llvm::Value *emitStoreEnumTagSinglePayloadCall(IRGenFunction &IGF, SILType T,
+                                                 llvm::Value *whichCase,
+                                                 llvm::Value *numEmptyCases,
+                                                 Address destObject);
 
   /// Emit a call to the 'getEnumTag' operation.
   llvm::Value *emitGetEnumTagCall(IRGenFunction &IGF,

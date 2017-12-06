@@ -80,6 +80,8 @@ Type swift::getBuiltinType(ASTContext &Context, StringRef Name) {
     return Context.TheUnknownObjectType;
   if (Name == "BridgeObject")
     return Context.TheBridgeObjectType;
+  if (Name == "SILToken")
+    return Context.TheSILTokenType;
   if (Name == "UnsafeValueBuffer")
     return Context.TheUnsafeValueBufferType;
   
@@ -163,6 +165,7 @@ getBuiltinFunction(Identifier Id, ArrayRef<Type> argTypes, Type ResType,
                                       Identifier(), argType,
                                       DC);
     PD->setInterfaceType(argType);
+    PD->setValidationStarted();
     PD->setImplicit();
     params.push_back(PD);
   }
@@ -180,8 +183,9 @@ getBuiltinFunction(Identifier Id, ArrayRef<Type> argTypes, Type ResType,
                              paramList,
                              TypeLoc::withoutLoc(ResType), DC);
   FD->setInterfaceType(FnType);
+  FD->setValidationStarted();
   FD->setImplicit();
-  FD->setAccessibility(Accessibility::Public);
+  FD->setAccess(AccessLevel::Public);
   return FD;
 }
 
@@ -226,6 +230,7 @@ getBuiltinGenericFunction(Identifier Id,
                                       Identifier(),
                                       paramType->getInOutObjectType(), DC);
     PD->setInterfaceType(paramIfaceType->getInOutObjectType());
+    PD->setValidationStarted();
     PD->setImplicit();
     params.push_back(PD);
   }
@@ -244,9 +249,10 @@ getBuiltinGenericFunction(Identifier Id,
                                TypeLoc::withoutLoc(ResBodyType), DC);
     
   func->setInterfaceType(InterfaceType);
+  func->setValidationStarted();
   func->setGenericEnvironment(Env);
   func->setImplicit();
-  func->setAccessibility(Accessibility::Public);
+  func->setAccess(AccessLevel::Public);
 
   return func;
 }
@@ -485,14 +491,14 @@ namespace {
       TheGenericParamList = getGenericParams(ctx, numGenericParams,
                                              GenericTypeParams);
 
-      GenericSignatureBuilder Builder(ctx,
-                               LookUpConformanceInModule(ctx.TheBuiltinModule));
+      GenericSignatureBuilder Builder(ctx);
       for (auto gp : GenericTypeParams) {
         Builder.addGenericParameter(gp);
       }
 
-      auto GenericSig = Builder.computeGenericSignature(SourceLoc());
-      GenericEnv = GenericSig->createGenericEnvironment(*ctx.TheBuiltinModule);
+      auto GenericSig =
+        std::move(Builder).computeGenericSignature(SourceLoc());
+      GenericEnv = GenericSig->createGenericEnvironment();
     }
 
     template <class G>
@@ -817,16 +823,12 @@ static ValueDecl *getNativeObjectCast(ASTContext &Context, Identifier Id,
   if (BV == BuiltinValueKind::BridgeToRawPointer ||
       BV == BuiltinValueKind::BridgeFromRawPointer)
     BuiltinTy = Context.TheRawPointerType;
-  else if (BV == BuiltinValueKind::CastToUnknownObject ||
-           BV == BuiltinValueKind::CastFromUnknownObject)
-    BuiltinTy = Context.TheUnknownObjectType;
   else
     BuiltinTy = Context.TheNativeObjectType;
 
   BuiltinGenericSignatureBuilder builder(Context);
   if (BV == BuiltinValueKind::CastToNativeObject ||
       BV == BuiltinValueKind::UnsafeCastToNativeObject ||
-      BV == BuiltinValueKind::CastToUnknownObject ||
       BV == BuiltinValueKind::BridgeToRawPointer) {
     builder.addParameter(makeGenericParam());
     builder.setResult(makeConcrete(BuiltinTy));
@@ -941,6 +943,34 @@ static ValueDecl *getAddressOfOperation(ASTContext &Context, Identifier Id) {
   BuiltinGenericSignatureBuilder builder(Context);
   builder.addInOutParameter(makeGenericParam());
   builder.setResult(makeConcrete(Context.TheRawPointerType));
+  return builder.build(Id);
+}
+
+static ValueDecl *getTypeJoinOperation(ASTContext &Context, Identifier Id) {
+  // <T,U,V> (T.Type, U.Type) -> V.Type
+  BuiltinGenericSignatureBuilder builder(Context, 3);
+  builder.addParameter(makeMetatype(makeGenericParam(0)));
+  builder.addParameter(makeMetatype(makeGenericParam(1)));
+  builder.setResult(makeMetatype(makeGenericParam(2)));
+  return builder.build(Id);
+}
+
+static ValueDecl *getTypeJoinInoutOperation(ASTContext &Context,
+                                            Identifier Id) {
+  // <T,U,V> (inout T, U.Type) -> V.Type
+  BuiltinGenericSignatureBuilder builder(Context, 3);
+  builder.addInOutParameter(makeGenericParam(0));
+  builder.addParameter(makeMetatype(makeGenericParam(1)));
+  builder.setResult(makeMetatype(makeGenericParam(2)));
+  return builder.build(Id);
+}
+
+static ValueDecl *getTypeJoinMetaOperation(ASTContext &Context, Identifier Id) {
+  // <T,U,V> (T.Type, U.Type) -> V.Type
+  BuiltinGenericSignatureBuilder builder(Context, 3);
+  builder.addParameter(makeMetatype(makeGenericParam(0)));
+  builder.addParameter(makeMetatype(makeGenericParam(1)));
+  builder.setResult(makeMetatype(makeGenericParam(2)));
   return builder.build(Id);
 }
 
@@ -1123,6 +1153,7 @@ static const OverloadedBuiltinKind OverloadedBuiltinKinds[] = {
    OverloadedBuiltinKind::overload,
 #define BUILTIN_SANITIZER_OPERATION(id, name, attrs) \
   OverloadedBuiltinKind::None,
+#define BUILTIN_TYPE_CHECKER_OPERATION(id, name) OverloadedBuiltinKind::Special,
 #define BUILTIN_TYPE_TRAIT_OPERATION(id, name) \
    OverloadedBuiltinKind::Special,
 #define BUILTIN_RUNTIME_CALL(id, attrs, name) \
@@ -1649,8 +1680,13 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
     return getDestroyArrayOperation(Context, Id);
       
   case BuiltinValueKind::CopyArray:
+  case BuiltinValueKind::TakeArrayNoAlias:
   case BuiltinValueKind::TakeArrayFrontToBack:
   case BuiltinValueKind::TakeArrayBackToFront:
+  case BuiltinValueKind::AssignCopyArrayNoAlias:
+  case BuiltinValueKind::AssignCopyArrayFrontToBack:
+  case BuiltinValueKind::AssignCopyArrayBackToFront:
+  case BuiltinValueKind::AssignTakeArray:
     if (!Types.empty()) return nullptr;
     return getTransferArrayOperation(Context, Id);
 
@@ -1692,8 +1728,6 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
   case BuiltinValueKind::CastToNativeObject:
   case BuiltinValueKind::UnsafeCastToNativeObject:
   case BuiltinValueKind::CastFromNativeObject:
-  case BuiltinValueKind::CastToUnknownObject:
-  case BuiltinValueKind::CastFromUnknownObject:
   case BuiltinValueKind::BridgeToRawPointer:
   case BuiltinValueKind::BridgeFromRawPointer:
     if (!Types.empty()) return nullptr;
@@ -1796,6 +1830,15 @@ ValueDecl *swift::getBuiltinValueDecl(ASTContext &Context, Identifier Id) {
     return getBuiltinFunction(Id,
                               {},
                               TupleType::getEmpty(Context));
+
+  case BuiltinValueKind::TypeJoin:
+    return getTypeJoinOperation(Context, Id);
+
+  case BuiltinValueKind::TypeJoinInout:
+    return getTypeJoinInoutOperation(Context, Id);
+
+  case BuiltinValueKind::TypeJoinMeta:
+    return getTypeJoinMetaOperation(Context, Id);
   }
 
   llvm_unreachable("bad builtin value!");

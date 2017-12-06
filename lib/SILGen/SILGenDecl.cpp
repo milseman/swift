@@ -10,9 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SILGen.h"
 #include "Initialization.h"
 #include "RValue.h"
+#include "SILGen.h"
 #include "SILGenDynamicCast.h"
 #include "Scope.h"
 #include "SwitchCaseFullExpr.h"
@@ -21,6 +21,7 @@
 #include "swift/AST/Module.h"
 #include "swift/AST/NameLookup.h"
 #include "swift/AST/ProtocolConformance.h"
+#include "swift/Basic/ProfileCounter.h"
 #include "swift/SIL/FormalLinkage.h"
 #include "swift/SIL/PrettyStackTrace.h"
 #include "swift/SIL/SILArgument.h"
@@ -386,7 +387,7 @@ public:
 
     // The variable may have its lifetime extended by a closure, heap-allocate
     // it using a box.
-    SILInstruction *allocBox =
+    SILValue allocBox =
         SGF.B.createAllocBox(decl, boxType, {decl->isLet(), ArgNo});
 
     // Mark the memory as uninitialized, so DI will track it for us.
@@ -908,12 +909,13 @@ copyOrInitValueInto(SILGenFunction &SGF, SILLocation loc,
   // Try to perform the cast to the destination type, producing an optional that
   // indicates whether we succeeded.
   auto destType = OptionalType::get(pattern->getCastTypeLoc().getType());
-  
-  value = emitConditionalCheckedCast(SGF, loc, value, pattern->getType(),
-                                     destType, pattern->getCastKind(),
-                                     SGFContext())
-            .getAsSingleValue(SGF, loc);
-  
+
+  value =
+      emitConditionalCheckedCast(SGF, loc, value, pattern->getType(), destType,
+                                 pattern->getCastKind(), SGFContext(),
+                                 ProfileCounter(), ProfileCounter())
+          .getAsSingleValue(SGF, loc);
+
   // Now that we have our result as an optional, we can use an enum projection
   // to do all the work.
   EnumElementPatternInitialization::
@@ -1123,7 +1125,7 @@ void SILGenFunction::emitPatternBinding(PatternBindingDecl *PBD,
   // the initialization. Otherwise, mark it uninitialized for DI to resolve.
   if (auto *Init = entry.getInit()) {
     FullExpr Scope(Cleanups, CleanupLocation(Init));
-    emitExprInto(Init, initialization.get());
+    emitExprInto(Init, initialization.get(), SILLocation(PBD));
   } else {
     initialization->finishUninitialized(*this);
   }
@@ -1184,8 +1186,10 @@ SILValue SILGenFunction::emitOSVersionRangeCheck(SILLocation loc,
 /// specified JumpDest.  The insertion point is left in the block where the
 /// condition has matched and any bound variables are in scope.
 ///
-void SILGenFunction::emitStmtCondition(StmtCondition Cond,
-                                       JumpDest FailDest, SILLocation loc) {
+void SILGenFunction::emitStmtCondition(StmtCondition Cond, JumpDest FailDest,
+                                       SILLocation loc,
+                                       ProfileCounter NumTrueTaken,
+                                       ProfileCounter NumFalseTaken) {
 
   assert(B.hasValidInsertionPoint() &&
          "emitting condition at unreachable point");
@@ -1240,8 +1244,9 @@ void SILGenFunction::emitStmtCondition(StmtCondition Cond,
     // on success we fall through to a new block.
     SILBasicBlock *ContBB = createBasicBlock();
     auto FailBB = Cleanups.emitBlockForCleanups(FailDest, loc);
-    B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB, FailBB);
-    
+    B.createCondBranch(booleanTestLoc, booleanTestValue, ContBB, FailBB,
+                       NumTrueTaken, NumFalseTaken);
+
     // Finally, emit the continue block and keep emitting the rest of the
     // condition.
     B.emitBlock(ContBB);
@@ -1484,7 +1489,7 @@ struct FormalAccessReleaseValueCleanup : Cleanup {
 ManagedValue
 SILGenFunction::emitFormalAccessManagedBufferWithCleanup(SILLocation loc,
                                                          SILValue addr) {
-  assert(InWritebackScope && "Must be in formal evaluation scope");
+  assert(InFormalEvaluationScope && "Must be in formal evaluation scope");
   auto &lowering = getTypeLowering(addr->getType());
   if (lowering.isTrivial())
     return ManagedValue::forUnmanaged(addr);
@@ -1499,7 +1504,7 @@ SILGenFunction::emitFormalAccessManagedBufferWithCleanup(SILLocation loc,
 ManagedValue
 SILGenFunction::emitFormalAccessManagedRValueWithCleanup(SILLocation loc,
                                                          SILValue value) {
-  assert(InWritebackScope && "Must be in formal evaluation scope");
+  assert(InFormalEvaluationScope && "Must be in formal evaluation scope");
   auto &lowering = getTypeLowering(value->getType());
   if (lowering.isTrivial())
     return ManagedValue::forUnmanaged(value);
@@ -1513,7 +1518,7 @@ SILGenFunction::emitFormalAccessManagedRValueWithCleanup(SILLocation loc,
 
 CleanupHandle SILGenFunction::enterDormantFormalAccessTemporaryCleanup(
     SILValue addr, SILLocation loc, const TypeLowering &tempTL) {
-  assert(InWritebackScope && "Must be in formal evaluation scope");
+  assert(InFormalEvaluationScope && "Must be in formal evaluation scope");
   if (tempTL.isTrivial())
     return CleanupHandle::invalid();
 

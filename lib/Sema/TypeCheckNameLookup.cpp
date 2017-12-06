@@ -106,9 +106,9 @@ namespace {
       ConformanceCheckOptions conformanceOptions;
       if (Options.contains(NameLookupFlags::KnownPrivate))
         conformanceOptions |= ConformanceCheckFlags::InExpression;
+      conformanceOptions |= ConformanceCheckFlags::SkipConditionalRequirements;
 
       DeclContext *foundDC = found->getDeclContext();
-      auto foundProto = foundDC->getAsProtocolOrProtocolExtensionContext();
 
       auto addResult = [&](ValueDecl *result) {
         if (Known.insert({{result, baseDC}, false}).second) {
@@ -122,6 +122,7 @@ namespace {
       if (!Options.contains(NameLookupFlags::ProtocolMembers) ||
           !isa<ProtocolDecl>(foundDC) ||
           isa<GenericTypeParamDecl>(found) ||
+          isa<TypeAliasDecl>(found) ||
           (isa<FuncDecl>(found) && cast<FuncDecl>(found)->isOperator())) {
         addResult(found);
         return;
@@ -145,13 +146,20 @@ namespace {
       // pull out the superclass instead, and use that below.
       if (foundInType->isExistentialType()) {
         auto layout = foundInType->getExistentialLayout();
-        if (layout.superclass)
+        if (layout.superclass) {
           conformingType = layout.superclass;
+        } else {
+          // Non-subclass existential: don't need to look for further
+          // conformance or witness.
+          addResult(found);
+          return;
+        }
       }
 
       // Dig out the protocol conformance.
+      auto *foundProto = cast<ProtocolDecl>(foundDC);
       auto conformance = TC.conformsToProtocol(conformingType, foundProto, DC,
-                                                 conformanceOptions);
+                                               conformanceOptions);
       if (!conformance) {
         // If there's no conformance, we have an existential
         // and we found a member from one of the protocols, and
@@ -199,7 +207,7 @@ LookupResult TypeChecker::lookupUnqualified(DeclContext *dc, DeclName name,
       loc,
       /*IsTypeLookup=*/false,
       options.contains(NameLookupFlags::ProtocolMembers),
-      options.contains(NameLookupFlags::IgnoreAccessibility));
+      options.contains(NameLookupFlags::IgnoreAccessControl));
 
   LookupResult result;
   LookupResultBuilder builder(*this, result, dc, options,
@@ -235,7 +243,7 @@ TypeChecker::lookupUnqualifiedType(DeclContext *dc, DeclName name,
         loc,
         /*IsTypeLookup=*/true,
         /*AllowProtocolMembers=*/false,
-        options.contains(NameLookupFlags::IgnoreAccessibility));
+        options.contains(NameLookupFlags::IgnoreAccessControl));
 
     if (!lookup.Results.empty() ||
         !options.contains(NameLookupFlags::ProtocolMembers)) {
@@ -255,7 +263,7 @@ TypeChecker::lookupUnqualifiedType(DeclContext *dc, DeclName name,
         loc,
         /*IsTypeLookup=*/true,
         /*AllowProtocolMembers=*/true,
-        options.contains(NameLookupFlags::IgnoreAccessibility));
+        options.contains(NameLookupFlags::IgnoreAccessControl));
 
     return LookupResult(lookup.Results);
   }
@@ -272,8 +280,8 @@ LookupResult TypeChecker::lookupMember(DeclContext *dc,
     subOptions |= NL_KnownNonCascadingDependency;
   if (options.contains(NameLookupFlags::DynamicLookup))
     subOptions |= NL_DynamicLookup;
-  if (options.contains(NameLookupFlags::IgnoreAccessibility))
-    subOptions |= NL_IgnoreAccessibility;
+  if (options.contains(NameLookupFlags::IgnoreAccessControl))
+    subOptions |= NL_IgnoreAccessControl;
 
   if (options.contains(NameLookupFlags::ProtocolMembers))
     subOptions |= NL_ProtocolMembers;
@@ -346,8 +354,8 @@ LookupTypeResult TypeChecker::lookupMemberType(DeclContext *dc,
     subOptions |= NL_KnownNonCascadingDependency;
   if (options.contains(NameLookupFlags::ProtocolMembers))
     subOptions |= NL_ProtocolMembers;
-  if (options.contains(NameLookupFlags::IgnoreAccessibility))
-    subOptions |= NL_IgnoreAccessibility;
+  if (options.contains(NameLookupFlags::IgnoreAccessControl))
+    subOptions |= NL_IgnoreAccessControl;
 
   if (!dc->lookupQualified(type, name, subOptions, this, decls))
     return result;
@@ -387,7 +395,10 @@ LookupTypeResult TypeChecker::lookupMemberType(DeclContext *dc,
         }
       }
 
-      if (isa<TypeAliasDecl>(typeDecl)) {
+      // FIXME: This is a hack, we should be able to remove this entire 'if'
+      // statement once we learn how to deal with the circularity here.
+      if (isa<TypeAliasDecl>(typeDecl) &&
+          isa<ProtocolDecl>(typeDecl->getDeclContext())) {
         if (!type->is<ArchetypeType>() &&
             !type->isTypeParameter() &&
             memberType->hasTypeParameter() &&
@@ -420,6 +431,7 @@ LookupTypeResult TypeChecker::lookupMemberType(DeclContext *dc,
     ConformanceCheckOptions conformanceOptions;
     if (options.contains(NameLookupFlags::KnownPrivate))
       conformanceOptions |= ConformanceCheckFlags::InExpression;
+    conformanceOptions |= ConformanceCheckFlags::SkipConditionalRequirements;
 
     for (AssociatedTypeDecl *assocType : inferredAssociatedTypes) {
       // If the type does not actually conform to the protocol, skip this

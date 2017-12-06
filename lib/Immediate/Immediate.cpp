@@ -195,12 +195,11 @@ bool swift::immediate::linkLLVMModules(llvm::Module *Module,
                             /*, llvm::Linker::LinkerMode LinkerMode */)
 {
   llvm::LLVMContext &Ctx = SubModule->getContext();
-  auto OldHandler = Ctx.getDiagnosticHandler();
+  auto OldHandler = Ctx.getDiagnosticHandlerCallBack();
   void *OldDiagnosticContext = Ctx.getDiagnosticContext();
-  Ctx.setDiagnosticHandler(linkerDiagnosticHandler, nullptr);
+  Ctx.setDiagnosticHandlerCallBack(linkerDiagnosticHandler, nullptr);
   bool Failed = llvm::Linker::linkModules(*Module, std::move(SubModule));
-  Ctx.setDiagnosticHandler(OldHandler, OldDiagnosticContext);
-
+  Ctx.setDiagnosticHandlerCallBack(OldHandler, OldDiagnosticContext);
   return !Failed;
 }
 
@@ -360,9 +359,8 @@ int swift::RunImmediately(CompilerInstance &CI, const ProcessCmdLine &CmdLine,
   std::string ErrorMsg;
   llvm::TargetOptions TargetOpt;
   std::string CPU;
-  std::string Triple;
   std::vector<std::string> Features;
-  std::tie(TargetOpt, CPU, Features, Triple)
+  std::tie(TargetOpt, CPU, Features)
     = getIRTargetOptions(IRGenOpts, swiftModule->getASTContext());
   builder.setRelocationModel(llvm::Reloc::PIC_);
   builder.setTargetOptions(TargetOpt);

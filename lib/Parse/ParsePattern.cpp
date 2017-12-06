@@ -19,10 +19,15 @@
 #include "swift/AST/ASTWalker.h"
 #include "swift/AST/Initializer.h"
 #include "swift/Basic/StringExtras.h"
+#include "swift/Syntax/SyntaxFactory.h"
+#include "swift/Syntax/TokenSyntax.h"
+#include "swift/Syntax/SyntaxParsingContext.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/SaveAndRestore.h"
+
 using namespace swift;
+using namespace swift::syntax;
 
 /// \brief Determine the kind of a default argument given a parsed
 /// expression that has not yet been type-checked.
@@ -162,6 +167,7 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
   return parseList(tok::r_paren, leftParenLoc, rightParenLoc,
                       /*AllowSepAfterLast=*/false,
                       diag::expected_rparen_parameter,
+                      SyntaxKind::Unknown,
                       [&]() -> ParserStatus {
     ParsedParameter param;
     ParserStatus status;
@@ -182,15 +188,18 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
     
     // ('inout' | 'let' | 'var' | '__shared' | '__owned')?
     bool hasSpecifier = false;
-    while (Tok.isAny(tok::kw_inout, tok::kw_let, tok::kw_var,
-                     tok::kw___shared, tok::kw___owned)) {
+    while (Tok.isAny(tok::kw_inout, tok::kw_let, tok::kw_var) ||
+           (Tok.is(tok::identifier) &&
+            (Tok.getRawText().equals("__shared") ||
+             Tok.getRawText().equals("__owned")))) {
       if (!hasSpecifier) {
         if (Tok.is(tok::kw_inout)) {
           // This case is handled later when mapping to ParamDecls for
           // better fixits.
           param.SpecifierKind = VarDecl::Specifier::InOut;
           param.SpecifierLoc = consumeToken();
-        } else if (Tok.is(tok::kw___shared)) {
+        } else if (Tok.is(tok::identifier) &&
+                   Tok.getRawText().equals("__shared")) {
           // This case is handled later when mapping to ParamDecls for
           // better fixits.
           param.SpecifierKind = VarDecl::Specifier::Shared;
@@ -216,15 +225,17 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
         param.FirstNameLoc = consumeToken();
       } else {
         assert(Tok.canBeArgumentLabel() && "startsParameterName() lied");
+        Tok.setKind(tok::identifier);
         param.FirstName = Context.getIdentifier(Tok.getText());
         param.FirstNameLoc = consumeToken();
       }
 
       // identifier-or-none? for the second name
       if (Tok.canBeArgumentLabel()) {
-        if (!Tok.is(tok::kw__))
+        if (!Tok.is(tok::kw__)) {
           param.SecondName = Context.getIdentifier(Tok.getText());
-
+          Tok.setKind(tok::identifier);
+        }
         param.SecondNameLoc = consumeToken();
       }
 
@@ -291,6 +302,8 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
         diagnose(Tok, diag::expected_parameter_name);
         param.isInvalid = true;
         param.FirstNameLoc = Tok.getLoc();
+        TokReceiver->registerTokenKindChange(param.FirstNameLoc,
+                                             tok::identifier);
         status.setIsParseError();
       }
     }
@@ -788,7 +801,8 @@ ParserResult<Pattern> Parser::parseTypedPattern() {
                                             /*isExprBasic=*/false,
                                             lParenLoc, args, argLabels,
                                             argLabelLocs, rParenLoc,
-                                            trailingClosure);
+                                            trailingClosure,
+                                            SyntaxKind::Unknown);
         if (status.isSuccess()) {
           backtrack.cancelBacktrack();
           
@@ -940,6 +954,7 @@ ParserResult<Pattern> Parser::parsePatternTuple() {
     parseList(tok::r_paren, LPLoc, RPLoc,
               /*AllowSepAfterLast=*/false,
               diag::expected_rparen_tuple_pattern_list,
+              SyntaxKind::Unknown,
               [&] () -> ParserStatus {
     // Parse the pattern tuple element.
     ParserStatus EltStatus;

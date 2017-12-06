@@ -15,7 +15,7 @@ import Builtin
 
 sil @allocate_object : $@convention(thin) () -> @owned Builtin.NativeObject
 
-public protocol AnyObject : class {}
+typealias AnyObject = Builtin.AnyObject
 
 public protocol Error {}
 
@@ -92,6 +92,8 @@ class RefWithInt {
   init()
 }
 
+struct EmptyStruct {}
+
 ////////////////
 // Test Cases //
 ////////////////
@@ -106,7 +108,7 @@ bb0(%0 : @guaranteed $Builtin.NativeObject):
 sil @store_borrow_result : $@convention(thin) (@guaranteed Builtin.NativeObject) -> () {
 bb0(%0 : @guaranteed $Builtin.NativeObject):
   %1 = alloc_stack $Builtin.NativeObject
-  %2 = store_borrow %0 to %1 : $*Builtin.NativeObject
+  store_borrow %0 to %1 : $*Builtin.NativeObject
   dealloc_stack %1 : $*Builtin.NativeObject
   %9999 = tuple()
   return %9999 : $()
@@ -300,6 +302,20 @@ bb0(%0 : @owned $Ref):
   return %9999 : $()
 }
 
+sil @unsafeGuaranteedTest2 : $@convention(thin) (@owned Ref) -> () {
+bb0(%0 : @owned $Ref):
+  %1 = begin_borrow %0 : $Ref
+  %2 = builtin "unsafeGuaranteed"(%1 : $Ref) : $(Ref, Builtin.Int8)
+  %3 = begin_borrow %2 : $(Ref, Builtin.Int8)
+  %4 = tuple_extract %3 : $(Ref, Builtin.Int8), 1
+  end_borrow %3 from %2 : $(Ref, Builtin.Int8), $(Ref, Builtin.Int8)
+  builtin "unsafeGuaranteedEnd"(%4 : $Builtin.Int8) : $()
+  end_borrow %1 from %0 : $Ref, $Ref
+  destroy_value %0 : $Ref
+  %9999 = tuple()
+  return %9999 : $()
+}
+
 sil @unchecked_enum_data_propagates_ownership : $@convention(thin) (@owned Optional<Builtin.NativeObject>) -> @owned Builtin.NativeObject {
 bb0(%0 : @owned $Optional<Builtin.NativeObject>):
   %1 = begin_borrow %0 : $Optional<Builtin.NativeObject>
@@ -324,10 +340,10 @@ bb0:
   %011 = begin_borrow %01 : $RefWithInt
   %11 = alloc_stack $Builtin.UnsafeValueBuffer
   %21 = ref_element_addr %011 : $RefWithInt, #RefWithInt.value
-  %31 = begin_unpaired_access [modify] [dynamic] %21 : $*Builtin.Int32, %11 : $*Builtin.UnsafeValueBuffer
-  %41 = end_unpaired_access [dynamic] %11 : $*Builtin.UnsafeValueBuffer
-  %51 = begin_unpaired_access [read] [dynamic] %21 : $*Builtin.Int32, %11 : $*Builtin.UnsafeValueBuffer
-  %61 = end_unpaired_access [dynamic] %11 : $*Builtin.UnsafeValueBuffer
+  begin_unpaired_access [modify] [dynamic] %21 : $*Builtin.Int32, %11 : $*Builtin.UnsafeValueBuffer
+  end_unpaired_access [dynamic] %11 : $*Builtin.UnsafeValueBuffer
+  begin_unpaired_access [read] [dynamic] %21 : $*Builtin.Int32, %11 : $*Builtin.UnsafeValueBuffer
+  end_unpaired_access [dynamic] %11 : $*Builtin.UnsafeValueBuffer
   end_borrow %011 from %01 : $RefWithInt, $RefWithInt
   dealloc_stack %11 : $*Builtin.UnsafeValueBuffer
   destroy_value %01 : $RefWithInt
@@ -918,6 +934,34 @@ bb0(%0 : @owned $Builtin.NativeObject, %1 : @guaranteed $RefWithInt):
   return %9999 : $()
 }
 
+sil @test_destructure_struct_tuple : $@convention(thin) (@owned (Builtin.NativeObject, Builtin.Int32), @owned NonTrivialStructWithTrivialField) -> @owned (Builtin.NativeObject, Builtin.Int32, Builtin.NativeObject, Builtin.Int32) {
+bb0(%0 : @owned $(Builtin.NativeObject, Builtin.Int32), %1 : @owned $NonTrivialStructWithTrivialField):
+  // First test guaranteed
+  %2 = begin_borrow %0 : $(Builtin.NativeObject, Builtin.Int32)
+  (%3, %4) = destructure_tuple %2 : $(Builtin.NativeObject, Builtin.Int32)
+  end_borrow %2 from %0 : $(Builtin.NativeObject, Builtin.Int32), $(Builtin.NativeObject, Builtin.Int32)
+
+  %5 = begin_borrow %1 : $NonTrivialStructWithTrivialField
+  (%6, %7) = destructure_struct %5 : $NonTrivialStructWithTrivialField
+  end_borrow %5 from %1 : $NonTrivialStructWithTrivialField, $NonTrivialStructWithTrivialField
+
+  // Then test destructive.
+  (%8, %9) = destructure_tuple %0 : $(Builtin.NativeObject, Builtin.Int32)
+  (%10, %11) = destructure_struct %1 : $NonTrivialStructWithTrivialField
+  %12 = tuple(%8 : $Builtin.NativeObject, %9 : $Builtin.Int32, %10 : $Builtin.NativeObject, %11 : $Builtin.Int32)
+  return %12 : $(Builtin.NativeObject, Builtin.Int32, Builtin.NativeObject, Builtin.Int32)
+}
+
+sil @test_empty_destructure : $@convention(thin) () -> () {
+bb0:
+  %0 = struct $EmptyStruct()
+  () = destructure_struct %0 : $EmptyStruct
+  %1 = tuple()
+  () = destructure_tuple %1 : $()
+  return %1 : $()
+}
+
+
 //////////////////////////
 // Dependent Type Tests //
 //////////////////////////
@@ -929,8 +973,8 @@ bb0(%0 : @owned $SwiftKlassP):
   %1 = begin_borrow %0 : $SwiftKlassP
   %2 = open_existential_ref %1 : $SwiftKlassP to $@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP
   %cast = unchecked_ref_cast %2 : $@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP to $Builtin.NativeObject
-  %3 = witness_method $@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP, #SwiftKlassP.foo!1, %2 : $@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP : $@convention(witness_method) <τ_0_0 where τ_0_0 : SwiftKlassP> (@guaranteed τ_0_0) -> ()
-  apply %3<@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP>(%2) : $@convention(witness_method) <τ_0_0 where τ_0_0 : SwiftKlassP> (@guaranteed τ_0_0) -> ()
+  %3 = witness_method $@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP, #SwiftKlassP.foo!1, %2 : $@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP : $@convention(witness_method: SwiftKlassP) <τ_0_0 where τ_0_0 : SwiftKlassP> (@guaranteed τ_0_0) -> ()
+  apply %3<@opened("3B64717A-E2B3-11E6-9646-985AEB89C610") SwiftKlassP>(%2) : $@convention(witness_method: SwiftKlassP) <τ_0_0 where τ_0_0 : SwiftKlassP> (@guaranteed τ_0_0) -> ()
   end_borrow %1 from %0 : $SwiftKlassP, $SwiftKlassP
   destroy_value %0 : $SwiftKlassP
   %9999 = tuple()

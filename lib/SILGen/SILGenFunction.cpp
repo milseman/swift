@@ -31,7 +31,7 @@ using namespace Lowering;
 
 SILGenFunction::SILGenFunction(SILGenModule &SGM, SILFunction &F)
     : SGM(SGM), F(F), silConv(SGM.M), StartOfPostmatter(F.end()),
-      B(*this), OpenedArchetypesTracker(F),
+      B(*this), OpenedArchetypesTracker(&F),
       CurrentSILLoc(F.getLocation()), Cleanups(*this) {
   B.setInsertionPoint(createBasicBlock());
   B.setCurrentDebugScope(F.getDebugScope());
@@ -137,11 +137,12 @@ SILGenFunction::emitSiblingMethodRef(SILLocation loc,
   // If the method is dynamic, access it through runtime-hookable virtual
   // dispatch (viz. objc_msgSend for now).
   if (methodConstant.hasDecl()
-      && methodConstant.getDecl()->isDynamic())
+      && methodConstant.getDecl()->isDynamic()) {
     methodValue = emitDynamicMethodRef(loc, methodConstant,
-                                     SGM.Types.getConstantInfo(methodConstant));
-  else
+                           SGM.Types.getConstantInfo(methodConstant).SILFnType);
+  } else {
     methodValue = emitGlobalFunctionRef(loc, methodConstant);
+  }
 
   SILType methodTy = methodValue->getType();
 
@@ -172,9 +173,6 @@ void SILGenFunction::emitCaptures(SILLocation loc,
     canGuarantee = true;
     break;
   }
-  // TODO: Or we always retain them when guaranteed contexts aren't enabled.
-  if (!SGM.M.getOptions().EnableGuaranteedClosureContexts)
-    canGuarantee = false;
   
   for (auto capture : captureInfo.getCaptures()) {
     if (capture.isDynamicSelfMetadata()) {
@@ -209,7 +207,7 @@ void SILGenFunction::emitCaptures(SILLocation loc,
         // Our 'let' binding can guarantee the lifetime for the callee,
         // if we don't need to do anything more to it.
         if (canGuarantee && !var->getType()->is<ReferenceStorageType>()) {
-          auto guaranteed = ManagedValue::forUnmanaged(Val);
+          auto guaranteed = ManagedValue::forUnmanaged(Val).borrow(*this, loc);
           capturedArgs.push_back(guaranteed);
           break;
         }
@@ -255,7 +253,8 @@ void SILGenFunction::emitCaptures(SILLocation loc,
       if (vl.box) {
         // We can guarantee our own box to the callee.
         if (canGuarantee) {
-          capturedArgs.push_back(ManagedValue::forUnmanaged(vl.box));
+          capturedArgs.push_back(
+              ManagedValue::forUnmanaged(vl.box).borrow(*this, loc));
         } else {
           capturedArgs.push_back(emitManagedRetain(loc, vl.box));
         }
@@ -281,7 +280,11 @@ void SILGenFunction::emitCaptures(SILLocation loc,
         ProjectBoxInst *boxAddress = B.createProjectBox(loc, allocBox, 0);
         B.createCopyAddr(loc, vl.value, boxAddress, IsNotTake,
                          IsInitialization);
-        capturedArgs.push_back(emitManagedRValueWithCleanup(allocBox));
+        if (canGuarantee)
+          capturedArgs.push_back(
+              emitManagedRValueWithCleanup(allocBox).borrow(*this, loc));
+        else
+          capturedArgs.push_back(emitManagedRValueWithCleanup(allocBox));
       }
 
       break;
@@ -356,11 +359,12 @@ SILGenFunction::emitClosureValue(SILLocation loc, SILDeclRef constant,
   for (auto capture : capturedArgs)
     forwardedArgs.push_back(capture.forward(*this));
 
-  SILType closureTy =
-    SILGenBuilder::getPartialApplyResultType(functionRef->getType(),
-                                             capturedArgs.size(), SGM.M,
-                                             subs,
-                                             ParameterConvention::Direct_Owned);
+  auto calleeConvention = ParameterConvention::Direct_Guaranteed;
+
+  SILType closureTy = SILGenBuilder::getPartialApplyResultType(
+      functionRef->getType(), capturedArgs.size(), SGM.M, subs,
+      calleeConvention);
+
   auto toClosure =
     B.createPartialApply(loc, functionRef, functionTy,
                          subs, forwardedArgs, closureTy);
@@ -397,7 +401,7 @@ void SILGenFunction::emitFunction(FuncDecl *fd) {
 void SILGenFunction::emitClosure(AbstractClosureExpr *ace) {
   MagicFunctionName = SILGenModule::getMagicFunctionName(ace);
 
-  auto resultIfaceTy = ace->mapTypeOutOfContext(ace->getResultType());
+  auto resultIfaceTy = ace->getResultType()->mapTypeOutOfContext();
   emitProlog(ace, ace->getParameters(), resultIfaceTy,
              ace->isBodyThrowing());
   prepareEpilog(ace->getResultType(), ace->isBodyThrowing(),
@@ -466,9 +470,11 @@ void SILGenFunction::emitArtificialTopLevel(ClassDecl *mainClass) {
                   SILFunctionType::ExtInfo()
                     .withRepresentation(SILFunctionType::Representation::
                                         CFunctionPointer),
+                  SILCoroutineKind::None,
                   ParameterConvention::Direct_Unowned,
                   SILParameterInfo(anyObjectMetaTy,
                                    ParameterConvention::Direct_Unowned),
+                  /*yields*/ {},
                   SILResultInfo(OptNSStringTy,
                                 ResultConvention::Autoreleased),
                   /*error result*/ None,
@@ -568,8 +574,10 @@ void SILGenFunction::emitArtificialTopLevel(ClassDecl *mainClass) {
                     // Should be C calling convention, but NSApplicationMain
                     // has an overlay to fix the type of argv.
                     .withRepresentation(SILFunctionType::Representation::Thin),
+                  SILCoroutineKind::None,
                   ParameterConvention::Direct_Unowned,
                   argTypes,
+                  /*yields*/ {},
                   SILResultInfo(argc->getType().getSwiftRValueType(),
                                 ResultConvention::Unowned),
                   /*error result*/ None,
@@ -605,7 +613,7 @@ void SILGenFunction::emitGeneratorFunction(SILDeclRef function, Expr *value) {
   Loc.markAutoGenerated();
 
   auto *dc = function.getDecl()->getInnermostDeclContext();
-  auto interfaceType = dc->mapTypeOutOfContext(value->getType());
+  auto interfaceType = value->getType()->mapTypeOutOfContext();
   emitProlog({}, interfaceType, dc, false);
   prepareEpilog(value->getType(), false, CleanupLocation::get(Loc));
   emitReturnExpr(Loc, value);

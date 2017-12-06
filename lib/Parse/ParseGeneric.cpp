@@ -18,6 +18,9 @@
 #include "swift/AST/DiagnosticsParse.h"
 #include "swift/Parse/CodeCompletionCallbacks.h"
 #include "swift/Parse/Lexer.h"
+#include "swift/Syntax/SyntaxBuilders.h"
+#include "swift/Syntax/SyntaxNodes.h"
+#include "swift/Syntax/SyntaxParsingContext.h"
 using namespace swift;
 
 /// parseGenericParameters - Parse a sequence of generic parameters, e.g.,
@@ -72,11 +75,10 @@ Parser::parseGenericParameters(SourceLoc LAngleLoc) {
       ParserResult<TypeRepr> Ty;
       
       if (Tok.isAny(tok::identifier, tok::code_complete, tok::kw_protocol, tok::kw_Any)) {
-        Ty = parseTypeForInheritance(diag::expected_identifier_for_type,
-                                     diag::expected_ident_type_in_inheritance);
+        Ty = parseType();
       } else if (Tok.is(tok::kw_class)) {
         diagnose(Tok, diag::unexpected_class_constraint);
-        diagnose(Tok, diag::suggest_anyobject, Name)
+        diagnose(Tok, diag::suggest_anyobject)
           .fixItReplace(Tok.getLoc(), "AnyObject");
         consumeToken();
         Invalid = true;
@@ -92,7 +94,7 @@ Parser::parseGenericParameters(SourceLoc LAngleLoc) {
         Inherited.push_back(Ty.get());
     }
 
-    // We always create generic type parameters with a depth of zero.
+    // We always create generic type parameters with an invalid depth.
     // Semantic analysis fills in the depth when it processes the generic
     // parameter list.
     auto Param = new (Context) GenericTypeParamDecl(
@@ -249,7 +251,10 @@ ParserStatus Parser::parseGenericWhereClause(
   FirstTypeInComplete = false;
   do {
     // Parse the leading type-identifier.
-    ParserResult<TypeRepr> FirstType = parseTypeIdentifier();
+    auto FirstTypeResult = parseTypeIdentifier();
+    if (FirstTypeResult.hasSyntax())
+      SyntaxContext->addSyntax(FirstTypeResult.getSyntax());
+    ParserResult<TypeRepr> FirstType = FirstTypeResult.getASTResult();
 
     if (FirstType.hasCodeCompletion()) {
       Status.setHasCodeCompletion();
@@ -289,9 +294,7 @@ ParserStatus Parser::parseGenericWhereClause(
         }
       } else {
         // Parse the protocol or composition.
-        ParserResult<TypeRepr> Protocol =
-            parseTypeForInheritance(diag::expected_identifier_for_type,
-                                    diag::expected_ident_type_in_inheritance);
+        ParserResult<TypeRepr> Protocol = parseType();
 
         if (Protocol.isNull()) {
           Status.setIsParseError();
@@ -357,10 +360,6 @@ parseFreestandingGenericWhereClause(GenericParamList *&genericParams,
       addToScope(pd);
   
   SmallVector<RequirementRepr, 4> Requirements;
-  if (genericParams)
-    Requirements.append(genericParams->getRequirements().begin(),
-                        genericParams->getRequirements().end());
-  
   SourceLoc WhereLoc;
   bool FirstTypeInComplete;
   auto result = parseGenericWhereClause(WhereLoc, Requirements,
@@ -371,11 +370,7 @@ parseFreestandingGenericWhereClause(GenericParamList *&genericParams,
   if (!genericParams)
     diagnose(WhereLoc, diag::where_without_generic_params, unsigned(kind));
   else
-    genericParams = GenericParamList::create(Context,
-                                             genericParams->getLAngleLoc(),
-                                             genericParams->getParams(),
-                                             WhereLoc, Requirements,
-                                             genericParams->getRAngleLoc());
+    genericParams->addTrailingWhereClause(Context, WhereLoc, Requirements);
   return ParserStatus();
 }
 

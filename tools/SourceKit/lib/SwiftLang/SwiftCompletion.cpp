@@ -144,7 +144,7 @@ static bool swiftCodeCompleteImpl(SwiftLangSupport &Lang,
   if (Failed) {
     return false;
   }
-  if (Invocation.getInputFilenames().empty()) {
+  if (!Invocation.getFrontendOptions().Inputs.haveInputFilenames()) {
     Error = "no input filenames specified";
     return false;
   }
@@ -1084,6 +1084,9 @@ static void transformAndForwardResults(
     SwiftCodeCompletionConsumer swiftConsumer([&](
         MutableArrayRef<CodeCompletionResult *> results,
         SwiftCompletionInfo &info) {
+      auto *context = info.completionContext;
+      if (!context || context->CodeCompletionKind != CompletionKind::PostfixExpr)
+        return;
       auto topResults = filterInnerResults(results, options.addInnerResults,
                                            options.addInnerOperators, hasDot,
                                            hasQDot, hasInit, rules);

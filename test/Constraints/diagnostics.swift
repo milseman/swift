@@ -97,7 +97,7 @@ func f8<T:P2>(_ n: T, _ f: @escaping (T) -> T) {}
 f8(3, f4) // expected-error {{in argument type '(Int) -> Int', 'Int' does not conform to expected type 'P2'}}
 typealias Tup = (Int, Double)
 func f9(_ x: Tup) -> Tup { return x }
-f8((1,2.0), f9) // expected-error {{in argument type '(Tup) -> Tup' (aka '(Int, Double) -> (Int, Double)'), 'Tup' (aka '(Int, Double)') does not conform to expected type 'P2'}}
+f8((1,2.0), f9) // expected-error {{in argument type '(Tup) -> Tup' (aka '((Int, Double)) -> (Int, Double)'), 'Tup' (aka '(Int, Double)') does not conform to expected type 'P2'}}
 
 // <rdar://problem/19658691> QoI: Incorrect diagnostic for calling nonexistent members on literals
 1.doesntExist(0)  // expected-error {{value of type 'Int' has no member 'doesntExist'}}
@@ -139,7 +139,7 @@ func ***~(_: Int, _: String) { }
 i ***~ i // expected-error{{cannot convert value of type 'Int' to expected argument type 'String'}}
 
 @available(*, unavailable, message: "call the 'map()' method on the sequence")
-public func myMap<C : Collection, T>(
+public func myMap<C : Collection, T>( // expected-note {{'myMap' has been explicitly marked unavailable here}}
   _ source: C, _ transform: (C.Iterator.Element) -> T
 ) -> [T] {
   fatalError("unavailable function can't be called")
@@ -151,10 +151,8 @@ public func myMap<T, U>(_ x: T?, _ f: (T) -> U) -> U? {
 }
 
 // <rdar://problem/20142523>
-// FIXME: poor diagnostic, to be fixed in 20142462. For now, we just want to
-// make sure that it doesn't crash.
 func rdar20142523() {
-  myMap(0..<10, { x in // expected-error{{ambiguous reference to member '..<'}}
+  myMap(0..<10, { x in // expected-error{{'myMap' is unavailable: call the 'map()' method on the sequence}}
     ()
     return x
   })
@@ -163,7 +161,7 @@ func rdar20142523() {
 // <rdar://problem/21080030> Bad diagnostic for invalid method call in boolean expression: (_, ExpressibleByIntegerLiteral)' is not convertible to 'ExpressibleByIntegerLiteral
 func rdar21080030() {
   var s = "Hello"
-  if s.characters.count() == 0 {} // expected-error{{cannot call value of non-function type 'String.CharacterView.IndexDistance'}}{{24-26=}}
+  if s.count() == 0 {} // expected-error{{cannot call value of non-function type 'String.IndexDistance' (aka 'Int')}}{{13-15=}}
 }
 
 // <rdar://problem/21248136> QoI: problem with return type inference mis-diagnosed as invalid arguments
@@ -198,7 +196,7 @@ func r17020197(_ x : Int?, y : Int) {
 
 // <rdar://problem/20714480> QoI: Boolean expr not treated as Bool type when function return type is different
 func validateSaveButton(_ text: String) {
-  return (text.characters.count > 0) ? true : false  // expected-error {{unexpected non-void return value in void function}}
+  return (text.count > 0) ? true : false  // expected-error {{unexpected non-void return value in void function}}
 }
 
 // <rdar://problem/20201968> QoI: poor diagnostic when calling a class method via a metatype
@@ -760,7 +758,7 @@ func read<T : BinaryInteger>() -> T? {
 
 func f23213302() {
   var s = Set<Int>()
-  s.subtractInPlace(1) // expected-error {{cannot convert value of type 'Int' to expected argument type 'Set<Int>'}}
+  s.subtract(1) // expected-error {{cannot convert value of type 'Int' to expected argument type 'Set<Int>'}}
 }
 
 // <rdar://problem/24202058> QoI: Return of call to overloaded function in void-return context
@@ -1101,4 +1099,21 @@ func rdar17170728() {
     $0 && $1 ? $0! + $1! : ($0 ? $0! : ($1 ? $1! : nil))
     // expected-error@-1 {{type of expression is ambiguous without more context}}
   }
+}
+
+// https://bugs.swift.org/browse/SR-5934 - failure to emit diagnostic for bad
+// generic constraints
+func elephant<T, U>(_: T) where T : Collection, T.Element == U, T.Element : Hashable {}
+// expected-note@-1 {{in call to function 'elephant'}}
+
+func platypus<T>(a: [T]) {
+    _ = elephant(a) // expected-error {{generic parameter 'U' could not be inferred}}
+}
+
+// Another case of the above.
+func badTypes() {
+  let sequence:AnySequence<[Int]> = AnySequence() { AnyIterator() { [3] }}
+  let array = [Int](sequence)
+  // expected-error@-1 {{type of expression is ambiguous without more context}}
+  // FIXME: terrible diagnostic
 }

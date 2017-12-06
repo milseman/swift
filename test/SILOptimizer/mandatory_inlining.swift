@@ -1,4 +1,4 @@
-// RUN: %target-swift-frontend -primary-file %s -emit-sil -o - -verify | %FileCheck %s
+// RUN: %target-swift-frontend -enable-sil-ownership -sil-verify-all -primary-file %s -emit-sil -o - -verify | %FileCheck %s
 
 // These tests are deliberately shallow, because I do not want to depend on the
 // specifics of SIL generation, which might change for reasons unrelated to this
@@ -133,13 +133,11 @@ func call_let_auto_closure(_ x: @autoclosure () -> Bool) -> Bool {
   return x()
 }
 
-// CHECK: sil hidden @{{.*}}test_let_auto_closure_with_value_capture
+// CHECK-LABEL: sil hidden @{{.*}}test_let_auto_closure_with_value_capture
 // CHECK: bb0(%0 : $Bool):
 // CHECK-NEXT: debug_value %0 : $Bool
-// CHECK-NEXT: br bb1
-// CHECK: bb1:
 // CHECK-NEXT: return %0 : $Bool
-
+// CHECK-LABEL: // end sil function '{{.*}}test_let_auto_closure_with_value_capture
 func test_let_auto_closure_with_value_capture(_ x: Bool) -> Bool {
   return call_let_auto_closure(x)
 }

@@ -17,6 +17,8 @@
 #ifndef SWIFT_SIL_SILFUNCTION_H
 #define SWIFT_SIL_SILFUNCTION_H
 
+#include "swift/AST/ResilienceExpansion.h"
+#include "swift/Basic/ProfileCounter.h"
 #include "swift/SIL/SILBasicBlock.h"
 #include "swift/SIL/SILDebugScope.h"
 #include "swift/SIL/SILLinkage.h"
@@ -159,10 +161,19 @@ private:
   /// The linkage of the function.
   unsigned Linkage : NumSILLinkageBits;
 
-  /// This flag indicates if a function can be eliminated by dead function
-  /// elimination. If it is unset, DFE will preserve the function and make
-  /// it public.
+  /// Set if the function may be referenced from C code and should thus be
+  /// preserved and exported more widely than its Swift linkage and usage
+  /// would indicate.
+  unsigned HasCReferences : 1;
+
+  /// Set if the function should be preserved and changed to public linkage
+  /// during dead function elimination. This is used for some generic
+  /// pre-specialization.
   unsigned KeepAsPublic : 1;
+
+  /// If != OptimizationMode::NotSet, the optimization mode specified with an
+  /// function attribute.
+  OptimizationMode OptMode;
 
   /// This is the number of uses of this SILFunction inside the SIL.
   /// It does not include references from debug scopes.
@@ -179,6 +190,10 @@ private:
 
   /// The function's effects attribute.
   EffectsKind EffectsKindAttr;
+
+  /// Has value if there's a profile for this function
+  /// Contains Function Entry Count
+  ProfileCounter EntryCount;
 
   /// True if this function is inlined at least once. This means that the
   /// debug info keeps a pointer to this function.
@@ -204,9 +219,9 @@ private:
               CanSILFunctionType loweredType, GenericEnvironment *genericEnv,
               Optional<SILLocation> loc, IsBare_t isBareSILFunction,
               IsTransparent_t isTrans, IsSerialized_t isSerialized,
-              IsThunk_t isThunk, SubclassScope classSubclassScope,
-              Inline_t inlineStrategy, EffectsKind E,
-              SILFunction *insertBefore,
+              ProfileCounter entryCount, IsThunk_t isThunk,
+              SubclassScope classSubclassScope, Inline_t inlineStrategy,
+              EffectsKind E, SILFunction *insertBefore,
               const SILDebugScope *debugScope);
 
   static SILFunction *
@@ -214,7 +229,7 @@ private:
          CanSILFunctionType loweredType, GenericEnvironment *genericEnv,
          Optional<SILLocation> loc, IsBare_t isBareSILFunction,
          IsTransparent_t isTrans, IsSerialized_t isSerialized,
-         IsThunk_t isThunk = IsNotThunk,
+         ProfileCounter entryCount, IsThunk_t isThunk = IsNotThunk,
          SubclassScope classSubclassScope = SubclassScope::NotApplicable,
          Inline_t inlineStrategy = InlineDefault,
          EffectsKind EffectsKindAttr = EffectsKind::Unspecified,
@@ -235,6 +250,8 @@ public:
   SILFunctionConventions getConventions() const {
     return SILFunctionConventions(LoweredType, getModule());
   }
+
+  ProfileCounter getEntryCount() const { return EntryCount; }
 
   bool isNoReturnFunction() const;
 
@@ -301,10 +318,6 @@ public:
   /// Returns true if this function has qualified ownership instructions in it.
   bool hasQualifiedOwnership() const { return HasQualifiedOwnership; }
 
-  /// Returns true if this function has unqualified ownership instructions in
-  /// it.
-  bool hasUnqualifiedOwnership() const { return !HasQualifiedOwnership; }
-
   /// Sets the HasQualifiedOwnership flag to false. This signals to SIL that no
   /// ownership instructions should be in this function any more.
   void setUnqualifiedOwnership() {
@@ -314,6 +327,12 @@ public:
   /// Returns the calling convention used by this entry point.
   SILFunctionTypeRepresentation getRepresentation() const {
     return getLoweredFunctionType()->getRepresentation();
+  }
+
+  ResilienceExpansion getResilienceExpansion() const {
+    return (isSerialized()
+            ? ResilienceExpansion::Minimal
+            : ResilienceExpansion::Maximal);
   }
 
   /// Returns true if this function has a calling convention that has a self
@@ -394,7 +413,7 @@ public:
   }
 
   /// Helper method which returns true if the linkage of the SILFunction
-  /// indicates that the objects definition might be required outside the
+  /// indicates that the object's definition might be required outside the
   /// current SILModule.
   bool isPossiblyUsedExternally() const;
 
@@ -402,6 +421,10 @@ public:
   /// is a (private or internal) vtable method which can be referenced by
   /// vtables of derived classes outside the compilation unit.
   bool isExternallyUsedSymbol() const;
+
+  /// Return whether this function may be referenced by C code.
+  bool hasCReferences() const { return HasCReferences; }
+  void setHasCReferences(bool value) { HasCReferences = value; }
 
   /// Get the DeclContext of this function. (Debug info only).
   DeclContext *getDeclContext() const {
@@ -456,9 +479,25 @@ public:
 
   void addSpecializeAttr(SILSpecializeAttr *Attr);
 
+
+  /// Get this function's optimization mode or OptimizationMode::NotSet if it is
+  /// not set for this specific function.
+  OptimizationMode getOptimizationMode() const { return OptMode; }
+
+  /// Returns the optimization mode for the function. If no mode is set for the
+  /// function, returns the global mode, i.e. the mode of the module's options.
+  OptimizationMode getEffectiveOptimizationMode() const;
+
+  void setOptimizationMode(OptimizationMode mode) { OptMode = mode; }
+
   /// \returns True if the function is optimizable (i.e. not marked as no-opt),
   ///          or is raw SIL (so that the mandatory passes still run).
   bool shouldOptimize() const;
+
+  /// Returns true if this function should be optimized for size.
+  bool optimizeForSize() const {
+    return getEffectiveOptimizationMode() == OptimizationMode::ForSize;
+  }
 
   /// Returns true if this is a function that should have its ownership
   /// verified.
@@ -604,10 +643,6 @@ public:
   /// therefore be dependent, to a type based on the context archetypes of this
   /// SILFunction.
   SILType mapTypeIntoContext(SILType type) const;
-
-  /// Map the given type, which is based on a contextual SILFunctionType and may
-  /// therefore contain context archetypes, to an interface type.
-  Type mapTypeOutOfContext(Type type) const;
 
   /// Converts the given function definition to a declaration.
   void convertToDeclaration();
@@ -776,9 +811,12 @@ public:
   /// '@function_mangled_name'.
   void printName(raw_ostream &OS) const;
 
-  /// Assigns consecutive numbers to all SILValues in the function.
-  void numberValues(llvm::DenseMap<const ValueBase*,
-                    unsigned> &ValueToNumberMap) const;
+  /// Assigns consecutive numbers to all the SILNodes in the function.
+  /// For instructions, both the instruction node and the value nodes of
+  /// any results will be assigned numbers; the instruction node will
+  /// be numbered the same as the first result, if there are any results.
+  void numberValues(llvm::DenseMap<const SILNode*, unsigned> &nodeToNumberMap)
+    const;
 
   ASTContext &getASTContext() const;
 

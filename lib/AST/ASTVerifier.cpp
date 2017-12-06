@@ -103,9 +103,9 @@ std::pair<bool, Expr *> dispatchVisitPreExprHelper(
         is_apply_expr<typename std::remove_pointer<Kind>::type>::value,
         Kind>::type node) {
   if (V.shouldVerify(node)) {
-    // Whitelist any inout_to_pointer or array_to_pointer that we see in
+    // Record any inout_to_pointer or array_to_pointer that we see in
     // the proper position.
-    V.updateExprToPointerWhitelist(node, node->getArg());
+    V.maybeRecordValidPointerConversion(node, node->getArg());
     return {true, node};
   }
   V.cleanup(node);
@@ -119,9 +119,9 @@ std::pair<bool, Expr *> dispatchVisitPreExprHelper(
         is_autoclosure_expr<typename std::remove_pointer<Kind>::type>::value,
         Kind>::type node) {
   if (V.shouldVerify(node)) {
-    // Whitelist any inout_to_pointer or array_to_pointer that we see in
+    // Record any inout_to_pointer or array_to_pointer that we see in
     // the proper position.
-    V.updateExprToPointerWhitelist(node, node->getSingleExpressionBody());
+    V.maybeRecordValidPointerConversion(node, node->getSingleExpressionBody());
     return {true, node};
   }
   V.cleanup(node);
@@ -170,11 +170,11 @@ struct LazyGenericEnvironment {
     if (isLazy()) return true;
 
     if (auto genericEnv = storage.dyn_cast<GenericEnvironment *>())
-      return genericEnv->containsPrimaryArchetype(archetype);
+      return archetype->getGenericEnvironment() == genericEnv;
 
     if (auto dc = storage.dyn_cast<DeclContext *>()) {
       if (auto genericEnv = dc->getGenericEnvironmentOfContext())
-        return genericEnv->containsPrimaryArchetype(archetype);
+        return archetype->getGenericEnvironment() == genericEnv;
     }
 
     return false;
@@ -219,8 +219,8 @@ class Verifier : public ASTWalker {
   ///
   /// Any other inout to pointer expr that we see is invalid and the verifier
   /// will assert.
-  llvm::DenseSet<InOutToPointerExpr *> WhitelistedInOutToPointerExpr;
-  llvm::DenseSet<ArrayToPointerExpr *> WhitelistedArrayToPointerExpr;
+  llvm::DenseSet<InOutToPointerExpr *> ValidInOutToPointerExprs;
+  llvm::DenseSet<ArrayToPointerExpr *> ValidArrayToPointerExprs;
 
   /// A key into ClosureDiscriminators is a combination of a
   /// ("canonicalized") local DeclContext* and a flag for whether to
@@ -828,15 +828,15 @@ public:
       if (D->hasInterfaceType())
         verifyChecked(D->getInterfaceType());
 
-      if (D->hasAccessibility()) {
+      if (D->hasAccess()) {
         PrettyStackTraceDecl debugStack("verifying access", D);
         if (D->getFormalAccessScope().isPublic() &&
-            D->getFormalAccess() < Accessibility::Public) {
+            D->getFormalAccess() < AccessLevel::Public) {
           Out << "non-public decl has no formal access scope\n";
           D->dump(Out);
           abort();
         }
-        if (D->getEffectiveAccess() == Accessibility::Private) {
+        if (D->getEffectiveAccess() == AccessLevel::Private) {
           Out << "effective access should use 'fileprivate' for 'private'\n";
           D->dump(Out);
           abort();
@@ -924,6 +924,8 @@ public:
       verifyCheckedBase(S);
     }
     void verifyChecked(DeferStmt *S) {
+      auto FT = S->getTempDecl()->getInterfaceType()->castTo<AnyFunctionType>();
+      assert(FT->isNoEscape() && "Defer statements must not escape");
       verifyCheckedBase(S);
     }
 
@@ -1277,8 +1279,8 @@ public:
       PrettyStackTraceExpr debugStack(Ctx,
                                       "verifying InOutToPointer", E);
 
-      if (!WhitelistedInOutToPointerExpr.count(E)) {
-        Out << "Unwhitelisted InOutToPointerExpr?!\n";
+      if (!ValidInOutToPointerExprs.count(E)) {
+        Out << "InOutToPointerExpr in unexpected position!\n";
         E->print(Out);
         Out << "\n";
         abort();
@@ -1310,7 +1312,7 @@ public:
       PrettyStackTraceExpr debugStack(Ctx,
                                       "verifying ArrayToPointer", E);
 
-      if (!WhitelistedArrayToPointerExpr.count(E)) {
+      if (!ValidArrayToPointerExprs.count(E)) {
         Out << "ArrayToPointer in invalid position?!\n";
         E->print(Out);
         Out << "\n";
@@ -1450,7 +1452,7 @@ public:
       verifyCheckedBase(E);
     }
 
-    void updateExprToPointerWhitelist(Expr *Base, Expr *Arg) {
+    void maybeRecordValidPointerConversion(Expr *Base, Expr *Arg) {
       auto handleSubExpr = [&](Expr *origSubExpr) {
         auto subExpr = origSubExpr;
         unsigned optionalDepth = 0;
@@ -1486,16 +1488,16 @@ public:
           break;
         }
 
-        // Whitelist inout-to-pointer conversions.
+        // Record inout-to-pointer conversions.
         if (auto *inOutToPtr = dyn_cast<InOutToPointerExpr>(subExpr)) {
-          WhitelistedInOutToPointerExpr.insert(inOutToPtr);
+          ValidInOutToPointerExprs.insert(inOutToPtr);
           checkIsBindOptional(inOutToPtr->getSubExpr());
           return;
         }
 
-        // Whitelist array-to-pointer conversions.
+        // Record array-to-pointer conversions.
         if (auto *arrayToPtr = dyn_cast<ArrayToPointerExpr>(subExpr)) {
-          WhitelistedArrayToPointerExpr.insert(arrayToPtr);
+          ValidArrayToPointerExprs.insert(arrayToPtr);
           checkIsBindOptional(arrayToPtr->getSubExpr());
           return;
         }
@@ -1978,6 +1980,108 @@ public:
         abort();
       }
     }
+  
+    void verifyChecked(KeyPathApplicationExpr *E) {
+      PrettyStackTraceExpr debugStack(
+        Ctx, "verifying KeyPathApplicationExpr", E);
+      
+      auto baseTy = E->getBase()->getType();
+      auto keyPathTy = E->getKeyPath()->getType();
+      auto resultTy = E->getType();
+      
+      if (auto nom = keyPathTy->getAs<NominalType>()) {
+        if (nom->getDecl() == Ctx.getAnyKeyPathDecl()) {
+          // AnyKeyPath application is <T> rvalue T -> rvalue Any?
+          if (baseTy->is<LValueType>()) {
+            Out << "AnyKeyPath application base is not an rvalue\n";
+            abort();
+          }
+          auto resultObjTy = resultTy->getOptionalObjectType();
+          if (!resultObjTy || !resultObjTy->isAny()) {
+            Out << "AnyKeyPath application result must be Any?\n";
+            abort();
+          }
+          return;
+        }
+      } else if (auto bgt = keyPathTy->getAs<BoundGenericType>()) {
+        if (bgt->getDecl() == Ctx.getPartialKeyPathDecl()) {
+          // PartialKeyPath<T> application is rvalue T -> rvalue Any
+          if (!baseTy->isEqual(bgt->getGenericArgs()[0])) {
+            Out << "PartialKeyPath application base doesn't match type\n";
+            abort();
+          }
+          if (!resultTy->isAny()) {
+            Out << "PartialKeyPath application result must be Any?\n";
+            abort();
+          }
+          return;
+        } else if (bgt->getDecl() == Ctx.getKeyPathDecl()) {
+          // KeyPath<T, U> application is rvalue T -> rvalue U
+          if (!baseTy->isEqual(bgt->getGenericArgs()[0])) {
+            Out << "KeyPath application base doesn't match type\n";
+            abort();
+          }
+          if (!resultTy->isEqual(bgt->getGenericArgs()[1])) {
+            Out << "KeyPath application result doesn't match type\n";
+            abort();
+          }
+          return;
+        } else if (bgt->getDecl() == Ctx.getWritableKeyPathDecl()) {
+          // WritableKeyPath<T, U> application is
+          //    lvalue T -> lvalue U
+          // or rvalue T -> rvalue U
+          if (baseTy->is<LValueType>()) {
+            if (!resultTy->is<LValueType>()) {
+              Out << "WritableKeyPath base and result don't match lvalue-ness\n";
+              abort();
+            }
+            baseTy = baseTy->getRValueType();
+            resultTy = resultTy->getRValueType();
+          }
+          
+          if (!baseTy->isEqual(bgt->getGenericArgs()[0])) {
+            Out << "WritableKeyPath application base doesn't match type\n";
+            abort();
+          }
+          if (!resultTy->isEqual(bgt->getGenericArgs()[1])) {
+            Out << "WritableKeyPath application result doesn't match type\n";
+            abort();
+          }
+          return;
+        } else if (bgt->getDecl() == Ctx.getReferenceWritableKeyPathDecl()) {
+          // ReferenceWritableKeyPath<T, U> application is
+          //    rvalue T -> lvalue U
+          // or lvalue T -> lvalue U
+          // or rvalue T -> rvalue U
+          if (baseTy->is<LValueType>()) {
+            if (!resultTy->is<LValueType>()) {
+              Out << "ReferenceWritableKeyPath base and result don't "
+                     "match lvalue-ness\n";
+              abort();
+            }
+            baseTy = baseTy->getRValueType();
+            resultTy = resultTy->getRValueType();
+          } else {
+            resultTy = resultTy->getRValueType();
+          }
+
+          if (!baseTy->isEqual(bgt->getGenericArgs()[0])) {
+            Out << "ReferenceWritableKeyPath application base doesn't "
+                   "match type\n";
+            abort();
+          }
+          if (!resultTy->isEqual(bgt->getGenericArgs()[1])) {
+            Out << "ReferenceWritableKeyPath application result doesn't "
+                   "match type\n";
+            abort();
+          }
+          return;
+        }
+      }
+      
+      Out << "invalid key path type\n";
+      abort();
+    }
 
     static bool hasEnclosingFunctionContext(DeclContext *dc) {
       switch (dc->getContextKind()) {
@@ -2002,10 +2106,10 @@ public:
     }
 
     void verifyChecked(ValueDecl *VD) {
-      if (!VD->hasAccessibility() && !VD->getDeclContext()->isLocalContext() &&
+      if (!VD->hasAccess() && !VD->getDeclContext()->isLocalContext() &&
           !isa<GenericTypeParamDecl>(VD) && !isa<ParamDecl>(VD)) {
         dumpRef(VD);
-        Out << " does not have accessibility";
+        Out << " does not have access";
         abort();
       }
 
@@ -2034,13 +2138,51 @@ public:
     }
 
     void verifyChecked(AbstractStorageDecl *ASD) {
-      if (ASD->hasAccessibility() && ASD->isSettable(nullptr)) {
-        auto setterAccess = ASD->getSetterAccessibility();
+      if (ASD->hasAccess() && ASD->isSettable(nullptr)) {
+        auto setterAccess = ASD->getSetterFormalAccess();
         if (ASD->getSetter() &&
             ASD->getSetter()->getFormalAccess() != setterAccess) {
-          Out << "AbstractStorageDecl's setter accessibility is out of sync"
-                 " with the accessibility actually on the setter";
+          Out << "AbstractStorageDecl's setter access is out of sync"
+                 " with the access actually on the setter";
           abort();
+        }
+      }
+
+      if (auto getter = ASD->getGetter()) {
+        if (getter->isMutating() != ASD->isGetterMutating()) {
+          Out << "AbstractStorageDecl::isGetterMutating is out of sync"
+                 " with whether the getter is actually mutating";
+          abort();
+        }
+      }
+      if (auto setter = ASD->getSetter()) {
+        if (setter->isMutating() != ASD->isSetterMutating()) {
+          Out << "AbstractStorageDecl::isSetterMutating is out of sync"
+                 " with whether the setter is actually mutating";
+          abort();
+        }
+      }
+      if (auto materializeForSet = ASD->getMaterializeForSetFunc()) {
+        if (materializeForSet->isMutating() != ASD->isSetterMutating()) {
+          Out << "AbstractStorageDecl::isSetterMutating is out of sync"
+                 " with whether materializeForSet is mutating";
+          abort();
+        }
+      }
+      if (ASD->hasAddressors()) {
+        if (auto addressor = ASD->getAddressor()) {
+          if (addressor->isMutating() != ASD->isGetterMutating()) {
+            Out << "AbstractStorageDecl::isGetterMutating is out of sync"
+                   " with whether immutable addressor is mutating";
+            abort();
+          }
+        }
+        if (auto addressor = ASD->getMutableAddressor()) {
+          if (addressor->isMutating() != ASD->isSetterMutating()) {
+            Out << "AbstractStorageDecl::isSetterMutating is out of sync"
+                   " with whether mutable addressor is mutating";
+            abort();
+          }
         }
       }
 
@@ -2057,10 +2199,17 @@ public:
                  "Storage overrides but setter does not");
         if (ASD->getMaterializeForSetFunc() &&
             baseASD->getMaterializeForSetFunc() &&
-            baseASD->isSetterAccessibleFrom(ASD->getDeclContext()))
-          assert(ASD->getMaterializeForSetFunc()->getOverriddenDecl() ==
-                 baseASD->getMaterializeForSetFunc() &&
-                 "Storage override but materializeForSet does not");
+            baseASD->isSetterAccessibleFrom(ASD->getDeclContext())) {
+          if (baseASD->getMaterializeForSetFunc()->hasForcedStaticDispatch()) {
+            assert(ASD->getMaterializeForSetFunc()->getOverriddenDecl() == nullptr
+                   && "Forced static dispatch materializeForSet should not be "
+                   "overridden");
+          } else {
+            assert(ASD->getMaterializeForSetFunc()->getOverriddenDecl() ==
+                   baseASD->getMaterializeForSetFunc() &&
+                   "Storage override but materializeForSet does not");
+          }
+        }
       } else {
         if (ASD->getGetter())
           assert(!ASD->getGetter()->getOverriddenDecl() &&
@@ -2155,13 +2304,24 @@ public:
         if (!var->getDeclContext()->contextHasLazyGenericEnvironment()) {
           paramType = var->getDeclContext()->mapTypeIntoContext(paramType);
           if (!paramType->isEqual(typeForAccessors)) {
-            Out << "property and setter param have mismatched types: '";
-            typeForAccessors.print(Out);
-            Out << "' vs. '";
-            paramType.print(Out);
-            Out << "'\n";
+            Out << "property and setter param have mismatched types:\n";
+            typeForAccessors.dump(Out, 2);
+            Out << "vs.\n";
+            paramType.dump(Out, 2);
             abort();
           }
+        }
+      }
+
+      if (var->getAttrs().hasAttribute<ImplicitlyUnwrappedOptionalAttr>()) {
+        auto varTy = var->getInterfaceType()->getReferenceStorageReferent();
+
+        // FIXME: Update to look for plain Optional once
+        // ImplicitlyUnwrappedOptional is removed
+        if (!varTy->getAnyOptionalObjectType()) {
+          Out << "implicitly unwrapped optional attribute should only be set on VarDecl "
+                 "with optional type\n";
+          abort();
         }
       }
 
@@ -2262,7 +2422,7 @@ public:
 
       // If the conformance is lazily resolved, don't check it; that can cause
       // massive deserialization at a point where the compiler cannot handle it.
-      if (normal->isLazilyResolved()) return;
+      if (normal->isLazilyLoaded()) return;
 
       // Translate the owning declaration into a DeclContext.
       auto *nominal = dyn_cast<NominalTypeDecl>(decl);
@@ -2736,6 +2896,24 @@ public:
         const ParamDecl *selfParam = FD->getImplicitSelfDecl();
         if (selfParam && selfParam->getInterfaceType()->is<InOutType>()) {
           Out << "non-mutating function has inout 'self'\n";
+          abort();
+        }
+      }
+
+      if (FD->getAttrs().hasAttribute<ImplicitlyUnwrappedOptionalAttr>()) {
+        if (!FD->getInterfaceType() ||
+            !FD->getInterfaceType()->is<AnyFunctionType>()) {
+          Out << "Expected FuncDecl to have a function type!\n";
+          abort();
+        }
+
+        auto resultTy = FD->getResultInterfaceType();
+
+        // FIXME: Update to look for plain Optional once
+        // ImplicitlyUnwrappedOptional is removed
+        if (!resultTy->getAnyOptionalObjectType()) {
+          Out << "implicitly unwrapped optional attribute should only be set "
+                 "on functions with optional return types\n";
           abort();
         }
       }
@@ -3248,13 +3426,6 @@ void swift::verify(SourceFile &SF) {
 
 bool swift::shouldVerify(const Decl *D, const ASTContext &Context) {
 #if !(defined(NDEBUG) || defined(SWIFT_DISABLE_AST_VERIFIER))
-  unsigned ProcessCount = Context.LangOpts.ASTVerifierProcessCount;
-  unsigned ProcessId = Context.LangOpts.ASTVerifierProcessId;
-  if (ProcessCount == 1) {
-    // No parallelism, verify all declarations.
-    return true;
-  }
-
   if (const auto *ED = dyn_cast<ExtensionDecl>(D)) {
     return shouldVerify(ED->getExtendedType()->getAnyNominal(), Context);
   }
@@ -3265,8 +3436,7 @@ bool swift::shouldVerify(const Decl *D, const ASTContext &Context) {
     return true;
   }
 
-  size_t Hash = llvm::hash_value(VD->getBaseName().userFacingName());
-  return Hash % ProcessCount == ProcessId;
+  return true;
 #else
   return false;
 #endif

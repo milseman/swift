@@ -17,7 +17,6 @@
 
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Mutex.h"
-#include "llvm/Support/TargetSelect.h"
 #include <chrono>
 #include <xpc/xpc.h>
 #include <dispatch/dispatch.h>
@@ -251,11 +250,6 @@ static void handleInterruptedConnection(xpc_object_t event, xpc_connection_t con
 void sourcekitd::initialize() {
   initializeTracing();
 
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllAsmPrinters();
-  llvm::InitializeAllAsmParsers();
-
   assert(!GlobalConn);
   GlobalConn = xpc_connection_create(SOURCEKIT_XPCSERVICE_IDENTIFIER, nullptr);
 
@@ -415,6 +409,10 @@ static void updateSemanticEditorDelay() {
   using namespace std::chrono;
   using TimePoint = time_point<system_clock, nanoseconds>;
 
+  // This minimum is chosen to keep us from being throttled by XPC.
+  static const size_t MinDelaySeconds = 10;
+  static const size_t MaxDelaySeconds = 20;
+
   // Clear any previous setting.
   SemanticEditorDelaySecondsNum = 0;
 
@@ -423,16 +421,13 @@ static void updateSemanticEditorDelay() {
   TimePoint PrevTime = gPrevCrashTime;
   TimePoint CurrTime = system_clock::now();
   gPrevCrashTime = CurrTime;
-  if (PrevTime == TimePoint()) {
-    // First time that it crashed.
-    return;
-  }
 
   auto Diff = duration_cast<seconds>(CurrTime - PrevTime);
+  size_t Delay = Diff.count()*2 + 1;
   if (Diff.count() > 30)
-    return; // treat this as more likely unrelated to the previous crash.
+    Delay = 0; // Treat this as more likely unrelated to the previous crash.
+  Delay = std::min(std::max(Delay, MinDelaySeconds), MaxDelaySeconds);
 
-  size_t Delay = std::min(size_t(20), size_t(Diff.count()*2 + 1));
   LOG_WARN_FUNC("disabling semantic editor for " << Delay << " seconds");
   SemanticEditorDelaySecondsNum = Delay;
 

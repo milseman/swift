@@ -24,10 +24,6 @@
 
 namespace swift {
 
-namespace syntax {
-  class LegacyASTTransformer;
-}
-
 /// The top-level container and manager for semantic analysis.
 ///
 /// Eventually, this should contain cached semantic information such as
@@ -35,7 +31,6 @@ namespace syntax {
 /// a mapping from lib/AST nodes to lib/Syntax nodes while we integrate
 /// the infrastructure into the compiler.
 class SyntaxASTMap final {
-  friend class LegacyASTTransformer;
   llvm::DenseMap<RC<syntax::SyntaxData>, ASTNode> SyntaxMap;
 public:
 

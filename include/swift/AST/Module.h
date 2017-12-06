@@ -71,6 +71,7 @@ namespace swift {
   class ProtocolDecl;
   struct PrintOptions;
   class ReferencedNameTracker;
+  class Token;
   class TupleType;
   class Type;
   class TypeRefinementContext;
@@ -78,6 +79,12 @@ namespace swift {
   class VarDecl;
   class VisibleDeclConsumer;
   
+namespace syntax {
+  class SourceFileSyntax;
+  class SyntaxParsingContext;
+  class SyntaxParsingContextRoot;
+}
+
 /// Discriminator for file-units.
 enum class FileUnitKind {
   /// For a .swift source file.
@@ -111,13 +118,7 @@ enum class ResilienceStrategy : unsigned {
   /// Non-inlineable function bodies: resilient
   ///
   /// This is the behavior with -enable-resilience.
-  Resilient,
-
-  /// Public nominal types: fragile
-  /// Non-inlineable function bodies: fragile
-  ///
-  /// This is the behavior with -sil-serialize-all.
-  Fragile
+  Resilient
 };
 
 /// The minimum unit of compilation.
@@ -322,13 +323,11 @@ public:
   ///
   /// \param protocol The protocol to which we are computing conformance.
   ///
-  /// \param resolver The lazy resolver.
-  ///
   /// \returns The result of the conformance search, which will be
   /// None if the type does not conform to the protocol or contain a
   /// ProtocolConformanceRef if it does conform.
   Optional<ProtocolConformanceRef>
-  lookupConformance(Type type, ProtocolDecl *protocol, LazyResolver *resolver);
+  lookupConformance(Type type, ProtocolDecl *protocol);
 
   /// Find a member named \p name in \p container that was declared in this
   /// module.
@@ -489,7 +488,7 @@ public:
   }
 
   /// Returns the associated clang module if one exists.
-  const clang::Module *findUnderlyingClangModule();
+  const clang::Module *findUnderlyingClangModule() const;
 
   SourceRange getSourceRange() const { return SourceRange(); }
 
@@ -720,7 +719,9 @@ public:
   }
 
   /// Returns the associated clang module if one exists.
-  virtual const clang::Module *getUnderlyingClangModule() { return nullptr; }
+  virtual const clang::Module *getUnderlyingClangModule() const {
+    return nullptr;
+  }
 
   /// Traverse the decls within this file.
   ///
@@ -770,6 +771,7 @@ class SourceFile final : public FileUnit {
 public:
   class LookupCache;
   class Impl;
+  struct SourceFileSyntaxInfo;
 
   /// The implicit module import that the SourceFile should get.
   enum class ImplicitModuleImportKind {
@@ -888,7 +890,7 @@ public:
   ASTStage_t ASTStage = Parsing;
 
   SourceFile(ModuleDecl &M, SourceFileKind K, Optional<unsigned> bufferID,
-             ImplicitModuleImportKind ModImpKind);
+             ImplicitModuleImportKind ModImpKind, bool KeepSyntaxInfo);
 
   void
   addImports(ArrayRef<std::pair<ModuleDecl::ImportedModule, ImportOptions>> IM);
@@ -1072,6 +1074,23 @@ public:
     getInterfaceHash(str);
     out << str << '\n';
   }
+
+  std::vector<Token> &getTokenVector();
+
+  ArrayRef<Token> getAllTokens() const;
+
+  bool shouldKeepSyntaxInfo() const;
+
+  syntax::SourceFileSyntax getSyntaxRoot() const;
+  void setSyntaxRoot(syntax::SourceFileSyntax &&Root);
+  bool hasSyntaxRoot() const;
+
+private:
+
+  /// If not None, the underlying vector should contain tokens of this source file.
+  Optional<std::vector<Token>> AllCorrectedTokens;
+
+  SourceFileSyntaxInfo &SyntaxInfo;
 };
 
 
@@ -1146,6 +1165,15 @@ public:
   }
 
   virtual bool isSystemModule() const { return false; }
+
+  /// Retrieve the set of generic signatures stored within this module.
+  ///
+  /// \returns \c true if this module file supports retrieving all of the
+  /// generic signatures, \c false otherwise.
+  virtual bool getAllGenericSignatures(
+                 SmallVectorImpl<GenericSignature*> &genericSignatures) {
+    return false;
+  }
 
   static bool classof(const FileUnit *file) {
     return file->getKind() == FileUnitKind::SerializedAST ||

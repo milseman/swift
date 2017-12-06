@@ -142,6 +142,16 @@ namespace {
     }
   };
 
+  static DeclName getDescriptiveName(AbstractFunctionDecl *AFD) {
+    DeclName name = AFD->getFullName();
+    if (!name) {
+      if (auto *method = dyn_cast<FuncDecl>(AFD)) {
+        name = method->getAccessorStorageDecl()->getFullName();
+      }
+    }
+    return name;
+  }
+
   /// Used for debugging which parts of the code are taking a long time to
   /// compile.
   class FunctionBodyTimer {
@@ -162,15 +172,17 @@ namespace {
       unsigned elapsedMS = static_cast<unsigned>(elapsed * 1000);
 
       ASTContext &ctx = Function.getAsDeclContext()->getASTContext();
+      auto *AFD = Function.getAbstractFunctionDecl();
 
       if (ShouldDump) {
         // Round up to the nearest 100th of a millisecond.
         llvm::errs() << llvm::format("%0.2f", ceil(elapsed * 100000) / 100) << "ms\t";
         Function.getLoc().print(llvm::errs(), ctx.SourceMgr);
 
-        if (auto *AFD = Function.getAbstractFunctionDecl()) {
-          llvm::errs() << "\t";
-          AFD->print(llvm::errs(), PrintOptions());
+        if (AFD) {
+          llvm::errs()
+            << "\t" << Decl::getDescriptiveKindName(AFD->getDescriptiveKind())
+            << " " << getDescriptiveName(AFD);
         } else {
           llvm::errs() << "\t(closure)";
         }
@@ -178,15 +190,9 @@ namespace {
       }
 
       if (WarnLimit != 0 && elapsedMS >= WarnLimit) {
-        if (auto *AFD = Function.getAbstractFunctionDecl()) {
-          DeclName name = AFD->getFullName();
-          if (!name) {
-            if (auto *method = dyn_cast<FuncDecl>(AFD)) {
-              name = method->getAccessorStorageDecl()->getFullName();
-            }
-          }
+        if (AFD) {
           ctx.Diags.diagnose(AFD, diag::debug_long_function_body,
-                             AFD->getDescriptiveKind(), name,
+                             AFD->getDescriptiveKind(), getDescriptiveName(AFD),
                              elapsedMS, WarnLimit);
         } else {
           ctx.Diags.diagnose(Function.getLoc(), diag::debug_long_closure_body,
@@ -549,9 +555,9 @@ public:
   
   Stmt *visitForEachStmt(ForEachStmt *S) {
     TypeResolutionOptions options;
-    options |= TR_AllowUnspecifiedTypes;
-    options |= TR_AllowUnboundGenerics;
-    options |= TR_InExpression;
+    options |= TypeResolutionFlags::AllowUnspecifiedTypes;
+    options |= TypeResolutionFlags::AllowUnboundGenerics;
+    options |= TypeResolutionFlags::InExpression;
     
     if (auto *P = TC.resolvePattern(S->getPattern(), DC,
                                     /*isStmtCondition*/false)) {
@@ -613,7 +619,7 @@ public:
                               sequence->getLoc());
       if (!conformance)
         return nullptr;
-      
+
       generatorTy = TC.getWitnessType(sequenceType, sequenceProto,
                                       *conformance,
                                       TC.Context.Id_Iterator,
@@ -636,7 +642,7 @@ public:
       generator = new (TC.Context)
         VarDecl(/*IsStatic*/false, VarDecl::Specifier::Var, /*IsCaptureList*/false,
                 S->getInLoc(), TC.Context.getIdentifier(name), generatorTy, DC);
-      generator->setInterfaceType(DC->mapTypeOutOfContext(generatorTy));
+      generator->setInterfaceType(generatorTy->mapTypeOutOfContext());
       generator->setImplicit();
 
       // Create a pattern binding to initialize the generator.
@@ -664,7 +670,10 @@ public:
                             sequence->getLoc());
     if (!genConformance)
       return nullptr;
-    
+    assert(
+        genConformance->getConditionalRequirements().empty() &&
+        "conditionally conforming to IteratorProtocol not currently supported");
+
     Type elementTy = TC.getWitnessType(generatorTy, generatorProto,
                                        *genConformance, TC.Context.Id_Element,
                                        diag::iterator_protocol_broken);
@@ -847,7 +856,7 @@ public:
           pattern = newPattern;
           // Coerce the pattern to the subject's type.
           if (!subjectType || TC.coercePatternToType(pattern, DC, subjectType,
-                                     TR_InExpression)) {
+                                     TypeResolutionFlags::InExpression)) {
             hadError = true;
 
             // If that failed, mark any variables binding pieces of the pattern
@@ -968,7 +977,8 @@ bool TypeChecker::typeCheckCatchPattern(CatchStmt *S, DeclContext *DC) {
 
     // Coerce the pattern to the exception type.
     if (!exnType ||
-        coercePatternToType(pattern, DC, exnType, TR_InExpression)) {
+        coercePatternToType(pattern, DC, exnType,
+                            TypeResolutionFlags::InExpression)) {
       // If that failed, be sure to give the variables error types
       // before we type-check the guard.  (This will probably kill
       // most of the type-checking, but maybe not.)
@@ -1181,7 +1191,7 @@ void TypeChecker::checkIgnoredExpr(Expr *E) {
     // Other unused constructor calls.
     if (callee && isa<ConstructorDecl>(callee) && !call->isImplicit()) {
       diagnose(fn->getLoc(), diag::expression_unused_init_result,
-               callee->getDeclContext()->getDeclaredTypeOfContext())
+               callee->getDeclContext()->getDeclaredInterfaceType())
         .highlight(call->getArg()->getSourceRange());
       return;
     }
@@ -1279,14 +1289,6 @@ static void checkDefaultArguments(TypeChecker &tc,
                                   ParameterList *params,
                                   unsigned &nextArgIndex,
                                   AbstractFunctionDecl *func) {
-  // In Swift 4 mode, default argument bodies are inlined into the
-  // caller.
-  auto expansion = func->getResilienceExpansion();
-  if (!tc.Context.isSwiftVersion3() &&
-      func->getFormalAccessScope(/*useDC=*/nullptr,
-                                 /*respectVersionedAttr=*/true).isPublic())
-    expansion = ResilienceExpansion::Minimal;
-
   for (auto &param : *params) {
     ++nextArgIndex;
     if (!param->getDefaultValue() || !param->hasType() ||
@@ -1295,9 +1297,6 @@ static void checkDefaultArguments(TypeChecker &tc,
     
     Expr *e = param->getDefaultValue();
     auto initContext = param->getDefaultArgumentInitContext();
-
-    cast<DefaultArgumentInitializer>(initContext)
-        ->changeResilienceExpansion(expansion);
 
     // Type-check the initializer, then flag that we did so.
     auto resultTy = tc.typeCheckExpression(
@@ -1315,6 +1314,24 @@ static void checkDefaultArguments(TypeChecker &tc,
     // we saw there.
     (void)tc.contextualizeInitializer(initContext, e);
   }
+}
+
+/// Check the default arguments that occur within this pattern.
+static void checkDefaultArguments(TypeChecker &tc,
+                                  AbstractFunctionDecl *func) {
+  // In Swift 4 mode, default argument bodies are inlined into the
+  // caller.
+  auto expansion = func->getResilienceExpansion();
+  if (!tc.Context.isSwiftVersion3() &&
+      func->getFormalAccessScope(/*useDC=*/nullptr,
+                                 /*respectVersionedAttr=*/true).isPublic())
+    expansion = ResilienceExpansion::Minimal;
+
+  func->setDefaultArgumentResilienceExpansion(expansion);
+
+  unsigned nextArgIndex = 0;
+  for (auto paramList : func->getParameterLists())
+    checkDefaultArguments(tc, paramList, nextArgIndex, func);
 }
 
 bool TypeChecker::typeCheckAbstractFunctionBodyUntil(AbstractFunctionDecl *AFD,
@@ -1358,10 +1375,7 @@ bool TypeChecker::typeCheckAbstractFunctionBody(AbstractFunctionDecl *AFD) {
 // named function or an anonymous func expression.
 bool TypeChecker::typeCheckFunctionBodyUntil(FuncDecl *FD,
                                              SourceLoc EndTypeCheckLoc) {
-  // Check the default argument definitions.
-  unsigned nextArgIndex = 0;
-  for (auto paramList : FD->getParameterLists())
-    checkDefaultArguments(*this, paramList, nextArgIndex, FD);
+  checkDefaultArguments(*this, FD);
 
   // Clang imported inline functions do not have a Swift body to
   // typecheck.
@@ -1464,10 +1478,7 @@ static bool isKnownEndOfConstructor(ASTNode N) {
 
 bool TypeChecker::typeCheckConstructorBodyUntil(ConstructorDecl *ctor,
                                                 SourceLoc EndTypeCheckLoc) {
-  // Check the default argument definitions.
-  unsigned nextArgIndex = 0;
-  for (auto paramList : ctor->getParameterLists())
-    checkDefaultArguments(*this, paramList, nextArgIndex, ctor);
+  checkDefaultArguments(*this, ctor);
 
   BraceStmt *body = ctor->getBody();
   if (!body)
@@ -1544,9 +1555,15 @@ bool TypeChecker::typeCheckConstructorBodyUntil(ConstructorDecl *ctor,
       diagnose(initExpr->getLoc(), diag::delegation_here);
       ctor->setInitKind(CtorInitializerKind::Convenience);
     }
-  }
 
-  diagnoseResilientConstructor(ctor);
+    // An inlinable constructor in a class must always be delegating.
+    if (!isDelegating && !ClassD->hasFixedLayout() &&
+        ctor->getResilienceExpansion() == ResilienceExpansion::Minimal) {
+      diagnose(ctor, diag::class_designated_init_inlineable_resilient,
+               ClassD->getDeclaredInterfaceType(),
+               static_cast<unsigned>(getFragileFunctionKind(ctor)));
+    }
+  }
 
   // If we want a super.init call...
   if (wantSuperInitCall) {

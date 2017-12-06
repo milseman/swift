@@ -154,7 +154,7 @@ class ObjCPrinter : private DeclVisitor<ObjCPrinter>,
   SmallVector<const FunctionType *, 4> openFunctionTypes;
   const DelayedMemberSet &delayedMembers;
 
-  Accessibility minRequiredAccess;
+  AccessLevel minRequiredAccess;
   bool protocolMembersOptional = false;
 
   Optional<Type> NSCopyingType;
@@ -164,7 +164,7 @@ class ObjCPrinter : private DeclVisitor<ObjCPrinter>,
 
 public:
   explicit ObjCPrinter(ModuleDecl &mod, raw_ostream &out,
-                       DelayedMemberSet &delayed, Accessibility access)
+                       DelayedMemberSet &delayed, AccessLevel access)
     : M(mod), os(out), delayedMembers(delayed), minRequiredAccess(access) {}
 
   void print(const Decl *D) {
@@ -604,6 +604,7 @@ private:
     }
 
     bool skipAvailability = false;
+    bool makeNewUnavailable = false;
     // Swift designated initializers are Objective-C designated initializers.
     if (auto ctor = dyn_cast<ConstructorDecl>(AFD)) {
       if (ctor->hasStubImplementation()
@@ -612,6 +613,9 @@ private:
         // required access
         os << " SWIFT_UNAVAILABLE";
         skipAvailability = true;
+        // If -init is unavailable, then +new should be, too:
+        const bool selectorIsInit = selector.getNumArgs() == 0 && selectorPieces.front().str() == "init";
+        makeNewUnavailable = selectorIsInit;
       } else if (ctor->isDesignatedInit() &&
           !isa<ProtocolDecl>(ctor->getDeclContext())) {
         os << " OBJC_DESIGNATED_INITIALIZER";
@@ -643,6 +647,10 @@ private:
     }
 
     os << ";\n";
+
+    if (makeNewUnavailable) {
+        os << "+ (nonnull instancetype)new SWIFT_UNAVAILABLE;\n";
+    }
   }
 
   void printAbstractFunctionAsFunction(FuncDecl *FD) {
@@ -932,7 +940,7 @@ private:
     ASTContext &ctx = M.getASTContext();
     bool isSettable = VD->isSettable(nullptr);
     if (isSettable && ctx.LangOpts.EnableAccessControl)
-      isSettable = (VD->getSetterAccessibility() >= minRequiredAccess);
+      isSettable = (VD->getSetterFormalAccess() >= minRequiredAccess);
     if (!isSettable)
       os << ", readonly";
 
@@ -1936,13 +1944,12 @@ class ReferencedTypeFinder : public TypeVisitor<ReferencedTypeFinder> {
 
   /// Returns true if \p paramTy has any constraints other than being
   /// class-bound ("conforms to" AnyObject).
-  static bool isConstrained(ModuleDecl &mod,
-                            GenericSignature *sig,
+  static bool isConstrained(GenericSignature *sig,
                             GenericTypeParamType *paramTy) {
-    if (sig->getSuperclassBound(paramTy, mod))
+    if (sig->getSuperclassBound(paramTy))
       return true;
 
-    auto conformsTo = sig->getConformsTo(paramTy, mod);
+    auto conformsTo = sig->getConformsTo(paramTy);
     return conformsTo.size() > 0;
   }
 
@@ -1959,7 +1966,7 @@ class ReferencedTypeFinder : public TypeVisitor<ReferencedTypeFinder> {
     for_each(boundGeneric->getGenericArgs(),
              sig->getInnermostGenericParams(),
              [&](Type argTy, GenericTypeParamType *paramTy) {
-      if (isObjCGeneric && isConstrained(M, sig, paramTy))
+      if (isObjCGeneric && isConstrained(sig, paramTy))
         NeedsDefinition = true;
       visit(argTy);
       NeedsDefinition = false;
@@ -2016,7 +2023,7 @@ class ModuleWriter {
   StringRef bridgingHeader;
   ObjCPrinter printer;
 public:
-  ModuleWriter(ModuleDecl &mod, StringRef header, Accessibility access)
+  ModuleWriter(ModuleDecl &mod, StringRef header, AccessLevel access)
     : M(mod), bridgingHeader(header), printer(M, os, delayedMembers, access) {}
 
   /// Returns true if we added the decl's module to the import set, false if
@@ -2364,21 +2371,6 @@ public:
            "# define __has_warning(x) 0\n"
            "#endif\n"
            "\n"
-           "#if __has_attribute(external_source_symbol)\n"
-           "# define SWIFT_STRINGIFY(str) #str\n"
-           "# define SWIFT_MODULE_NAMESPACE_PUSH(module_name) "
-             "_Pragma(SWIFT_STRINGIFY(clang attribute "
-             "push(__attribute__((external_source_symbol(language=\"Swift\", "
-             "defined_in=module_name, generated_declaration))), "
-             "apply_to=any(function, enum, objc_interface, objc_category, "
-             "objc_protocol))))\n"
-           "# define SWIFT_MODULE_NAMESPACE_POP "
-             "_Pragma(\"clang attribute pop\")\n"
-           "#else\n"
-           "# define SWIFT_MODULE_NAMESPACE_PUSH(module_name)\n"
-           "# define SWIFT_MODULE_NAMESPACE_POP\n"
-           "#endif\n"
-           "\n"
            "#if __has_include(<swift/objc-prologue.h>)\n"
            "# include <swift/objc-prologue.h>\n"
            "#endif\n"
@@ -2393,7 +2385,7 @@ public:
            "# define SWIFT_TYPEDEFS 1\n"
            "# if __has_include(<uchar.h>)\n"
            "#  include <uchar.h>\n"
-           "# elif !defined(__cplusplus) || __cplusplus < 201103L\n"
+           "# elif !defined(__cplusplus)\n"
            "typedef uint_least16_t char16_t;\n"
            "typedef uint_least32_t char32_t;\n"
            "# endif\n"
@@ -2742,9 +2734,20 @@ public:
         "#pragma clang diagnostic ignored \"-Wunknown-pragmas\"\n"
         "#pragma clang diagnostic ignored \"-Wnullability\"\n"
         "\n"
-        "SWIFT_MODULE_NAMESPACE_PUSH(\"" << M.getNameStr() << "\")\n"
+        "#if __has_attribute(external_source_symbol)\n"
+        "# pragma push_macro(\"any\")\n"
+        "# undef any\n"
+        "# pragma clang attribute push("
+          "__attribute__((external_source_symbol(language=\"Swift\", "
+            "defined_in=\"" << M.getNameStr() << "\",generated_declaration))), "
+          "apply_to=any(function,enum,objc_interface,objc_category,"
+             "objc_protocol))\n"
+        "# pragma pop_macro(\"any\")\n"
+        "#endif\n\n"
       << os.str()
-      << "SWIFT_MODULE_NAMESPACE_POP\n"
+      << "#if __has_attribute(external_source_symbol)\n"
+         "# pragma clang attribute pop\n"
+         "#endif\n"
          "#pragma clang diagnostic pop\n";
     return false;
   }
@@ -2753,7 +2756,7 @@ public:
 
 bool swift::printAsObjC(llvm::raw_ostream &os, ModuleDecl *M,
                         StringRef bridgingHeader,
-                        Accessibility minRequiredAccess) {
+                        AccessLevel minRequiredAccess) {
   llvm::PrettyStackTraceString trace("While generating Objective-C header");
   return ModuleWriter(*M, bridgingHeader, minRequiredAccess).writeToStream(os);
 }
