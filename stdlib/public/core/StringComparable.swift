@@ -80,15 +80,11 @@ extension _StringGuts {
   @effects(readonly)
   public
   static func _compareDeterministicUnicodeCollation(
-    _leftUnsafeStringGutsBitPattern leftBits: (UInt, UInt),
-    _rightUnsafeStringGutsBitPattern rightBits: (UInt, UInt)
+    _leftUnsafeStringGutsBitPattern leftBits: (UInt64, UInt64),
+    _rightUnsafeStringGutsBitPattern rightBits: (UInt64, UInt64)
   ) -> Int {
-    let left = _StringGuts(
-      object: _StringObject(rawBits: leftBits.0),
-      otherBits: leftBits.1)
-    let right = _StringGuts(
-      object: _StringObject(rawBits: rightBits.0),
-      otherBits: rightBits.1)
+    let left = _StringGuts(rawBits: leftBits)
+    let right = _StringGuts(rawBits: rightBits)
     return _compareDeterministicUnicodeCollation(
       left, 0..<left.count, to: right, 0..<right.count)
   }
@@ -96,17 +92,13 @@ extension _StringGuts {
   @effects(readonly)
   public
   static func _compareDeterministicUnicodeCollation(
-    _leftUnsafeStringGutsBitPattern leftBits: (UInt, UInt),
+    _leftUnsafeStringGutsBitPattern leftBits: (UInt64, UInt64),
     _ leftRange: Range<Int>,
-    _rightUnsafeStringGutsBitPattern rightBits: (UInt, UInt),
+    _rightUnsafeStringGutsBitPattern rightBits: (UInt64, UInt64),
     _ rightRange: Range<Int>
   ) -> Int {
-    let left = _StringGuts(
-      object: _StringObject(rawBits: leftBits.0),
-      otherBits: leftBits.1)
-    let right = _StringGuts(
-      object: _StringObject(rawBits: rightBits.0),
-      otherBits: rightBits.1)
+    let left = _StringGuts(rawBits: leftBits)
+    let right = _StringGuts(rawBits: rightBits)
     return _compareDeterministicUnicodeCollation(
       left, leftRange, to: right, rightRange)
   }
@@ -232,11 +224,9 @@ extension _StringGuts {
       return result
     }
 #endif
-    let leftBits = (left._object.rawBits, left._otherBits)
-    let rightBits = (right._object.rawBits, right._otherBits)
     return _compareDeterministicUnicodeCollation(
-      _leftUnsafeStringGutsBitPattern: leftBits, leftRange,
-      _rightUnsafeStringGutsBitPattern: rightBits, rightRange)
+      _leftUnsafeStringGutsBitPattern: left.rawBits, leftRange,
+      _rightUnsafeStringGutsBitPattern: right.rawBits, rightRange)
   }
 
   @_inlineable
@@ -259,11 +249,9 @@ extension _StringGuts {
       return result
     }
 #endif
-    let leftBits = (left._object.rawBits, left._otherBits)
-    let rightBits = (right._object.rawBits, right._otherBits)
     return _compareDeterministicUnicodeCollation(
-      _leftUnsafeStringGutsBitPattern: leftBits,
-      _rightUnsafeStringGutsBitPattern: rightBits)
+      _leftUnsafeStringGutsBitPattern: left.rawBits,
+      _rightUnsafeStringGutsBitPattern: right.rawBits)
   }
 }
 

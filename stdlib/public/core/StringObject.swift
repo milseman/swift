@@ -25,6 +25,23 @@ struct _StringObject {
   internal
   var _object: _BuiltinBridgeObject
 
+#if arch(i386) || arch(arm)
+  @_versioned
+  internal
+  var _highBits: UInt
+#endif
+
+#if arch(i386) || arch(arm)
+  @_versioned
+  @_inlineable
+  @inline(__always)
+  internal
+  init(_ object: _BuiltinBridgeObject, _ high: UInt) {
+    self._object = object
+    self._highBits = high
+    _invariantCheck()
+  }
+#else
   @_versioned
   @_inlineable
   @inline(__always)
@@ -33,26 +50,38 @@ struct _StringObject {
     self._object = object
     _invariantCheck()
   }
+#endif
 
   @_versioned
   @_inlineable
   internal
-  var rawBits: UInt {
+  var rawBits: UInt64 {
     @inline(__always)
-    get { return _bitPattern(_object) }
+    get {
+#if arch(i386) || arch(arm)
+      return UInt64(_highBits) &<< 32 | UInt64(_bitPattern(_object))
+#else
+      return UInt64(truncatingIfNeeded: _bitPattern(_object))
+#endif
+    }
   }
 }
 
+// ## _StringObject bit layout
 //
-// Constant bits and masks
-//
-//
-// Bit layout (x86-64 and arm64):
-//
-// _StringObject:
+// x86-64 and arm64: (one 64-bit word)
 // +---+---+---|---+------+----------------------------------------------------+
-// + t | v | o | w | uuuu | payload (54 bits)                                  |
+// + t | v | o | w | uuuu | payload (56 bits)                                  |
 // +---+---+---|---+------+----------------------------------------------------+
+//  msb                                                                     lsb
+//
+// i386 and arm: (two 32-bit words)
+// _highBits                                 _object
+// +------------------------------------+ +------------------------------------+
+// | w | o | uuuu | payload (26 bits)   | + payload (30 bits)          | v | t |
+// +------------------------------------+ +------------------------------------+
+//  msb                              lsb   msb                              lsb
+//
 // where t: is-a-value, i.e. a tag bit that says not to perform ARC
 //       v: sub-variant bit, i.e. set for isCocoa or isSmall
 //       o: is-opaque, i.e. opaque vs contiguously stored strings
@@ -65,17 +94,21 @@ struct _StringObject {
 //   isUnmanaged: the pointer to code units
 //   isSmall: opaque bits used for inline storage // TODO: use them!
 //
-// TODO: 32-bit platforms!
-//
 extension _StringObject {
-  // NOTE: deviating from ObjC tagged pointer bits, as we just want to avoid
-  // swift runtime management, and top bit suffices for that.
   @_versioned
   @_inlineable
   internal
-  static var _isValueBit: UInt {
+  static var _isValueBit: UInt64 {
     @inline(__always)
-    get { return 0x80_00_0000_0000_0000 }
+    get {
+#if arch(i386) || arch(arm)
+      return 0x00_00_0000_0000_0001
+#else
+      // NOTE: deviating from ObjC tagged pointer bits, as we just want to avoid
+      // swift runtime management, and top bit suffices for that.
+      return 0x80_00_0000_0000_0000
+#endif
+    }
   }
 
   // After deciding isValue, which of the two variants (on both sides) are we.
@@ -83,32 +116,50 @@ extension _StringObject {
   @_versioned
   @_inlineable
   internal
-  static var _subVariantBit: UInt {
+  static var _subVariantBit: UInt64 {
     @inline(__always)
-    get { return 0x40_00_0000_0000_0000 }
+    get {
+#if arch(i386) || arch(arm)
+      return 0x00_00_0000_0000_0002
+#else
+      return 0x40_00_0000_0000_0000
+#endif
+    }
   }
 
   @_versioned
   @_inlineable
   internal
-  static var _isOpaqueBit: UInt {
+  static var _isOpaqueBit: UInt64 {
     @inline(__always)
-    get { return 0x20_00_0000_0000_0000 }
+    get {
+#if arch(i386) || arch(arm)
+      return 0x40_00_0000_0000_0000
+#else
+      return 0x20_00_0000_0000_0000
+#endif
+    }
   }
 
   @_versioned
   @_inlineable
   internal
-  static var _twoByteBit: UInt {
+  static var _twoByteBit: UInt64 {
     @inline(__always)
-    get { return 0x10_00_0000_0000_0000 }
+    get {
+#if arch(i386) || arch(arm)
+      return 0x80_00_0000_0000_0000
+#else
+      return 0x10_00_0000_0000_0000
+#endif
+    }
   }
 
-  // Which of the 4 sub-variants are we depends on the top two bits
+  // There are 4 sub-variants depending on the isValue and subVariant bits
   @_versioned
   @_inlineable
   internal
-  static var _variantMask: UInt {
+  static var _variantMask: UInt64 {
     @inline(__always)
     get { return _isValueBit | _subVariantBit }
   }
@@ -116,17 +167,63 @@ extension _StringObject {
   @_versioned
   @_inlineable
   internal
-  static var _payloadMask: UInt {
+  static var _maxPayload: UInt64 {
+    @inline(__always) get { return 0x00FF_FFFF_FFFF_FFFF }
+  }
+
+#if arch(i386) || arch(arm)
+  @_versioned
+  @_inlineable
+  internal
+  static var _payloadMaskLow: UInt {
+    @inline(__always) get { return 0xFFFF_FFFC }
+  }
+  @_versioned
+  @_inlineable
+  internal
+  static var _payloadMaskHigh: UInt {
+    @inline(__always) get { return 0x03FF_FFFF }
+  }
+#endif
+
+  @_versioned
+  @_inlineable
+  internal
+  static var _payloadMask: UInt64 {
     @inline(__always)
-    get { return 0x00FF_FFFF_FFFF_FFFF  }
+    get {
+#if arch(i386) || arch(arm)
+      return UInt64(_payloadMaskHigh) &<< 32 | UInt64(_payloadMaskLow)
+#else
+      return 0x00FF_FFFF_FFFF_FFFF
+#endif
+    }
   }
 
   @_versioned
   @_inlineable
   internal
-  static var _emptyLiteralBitPattern: UInt {
+  static var _payloadShift: Int {
     @inline(__always)
-    get { return _isValueBit | UInt(bitPattern: _emptyStringBase) }
+    get {
+#if arch(i386) || arch(arm)
+      return 2
+#else
+      return 0
+#endif
+    }
+  }
+
+  @_versioned
+  @_inlineable
+  internal
+  static var _emptyLiteralBitPattern: UInt64 {
+    @inline(__always)
+    get {
+      let emptyBits = UInt(bitPattern: _emptyStringBase)
+      return _isValueBit |
+        (UInt64(truncatingIfNeeded: emptyBits) &<< _payloadShift)
+    }
   }
 }
 
@@ -145,9 +242,9 @@ extension _StringObject {
       _sanityCheck(isNative)
       _sanityCheck(
         _usesNativeSwiftReferenceCounting(
-          type(of: Builtin.reinterpretCast(payloadBits) as AnyObject)))
+          type(of: Builtin.reinterpretCast(referenceBits) as AnyObject)))
 
-      return Builtin.reinterpretCast(payloadBits)
+      return Builtin.reinterpretCast(referenceBits)
     }
   }
 
@@ -160,8 +257,8 @@ extension _StringObject {
       _sanityCheck(isCocoa)
       _sanityCheck(
         !_usesNativeSwiftReferenceCounting(
-          type(of: Builtin.reinterpretCast(payloadBits) as AnyObject)))
-      return Builtin.reinterpretCast(payloadBits)
+          type(of: Builtin.reinterpretCast(referenceBits) as AnyObject)))
+      return Builtin.reinterpretCast(referenceBits)
     }
   }
 
@@ -172,8 +269,9 @@ extension _StringObject {
     @inline(__always)
     get {
       _sanityCheck(isUnmanaged)
+      _sanityCheck(payloadBits <= UInt.max)
       return UnsafeRawPointer(
-        bitPattern: payloadBits
+        bitPattern: UInt(truncatingIfNeeded: payloadBits)
       )._unsafelyUnwrappedUnchecked
     }
   }
@@ -186,15 +284,32 @@ extension _StringObject {
   @_versioned
   @_inlineable
   internal
-  var payloadBits: UInt {
+  var referenceBits: UInt {
     @inline(__always)
-    get { return rawBits & _StringObject._payloadMask }
+    get {
+#if arch(i386) || arch(arm)
+      return _bitPattern(_object) & _StringObject._payloadMaskLow
+#else
+      return _bitPattern(_object) & UInt(_StringObject._payloadMask)
+#endif
+    }
+  }
+
+  @_versioned
+  @_inlineable
+  internal
+  var payloadBits: UInt64 {
+    @inline(__always)
+    get {
+      let v = rawBits & _StringObject._payloadMask
+      return v >> _StringObject._payloadShift
+    }
   }
 
   public // @testable
   var owner: AnyObject? { // For testing only
     if _fastPath(isNative || isCocoa) {
-      return Builtin.reinterpretCast(payloadBits)
+      return Builtin.reinterpretCast(referenceBits)
     }
     return nil
   }
@@ -375,8 +490,14 @@ extension _StringObject {
   @inline(__always)
   // TODO: private
   internal
-  init(rawBits: UInt) {
+  init(rawBits: UInt64) {
+#if arch(i386) || arch(arm)
+    self.init(
+      Builtin.reinterpretCast(UInt(truncatingIfNeeded: rawBits)),
+      UInt(truncatingIfNeeded: rawBits &>> 32))
+#else
     self.init(Builtin.reinterpretCast(rawBits))
+#endif
   }
 
   @_versioned
@@ -384,13 +505,14 @@ extension _StringObject {
   @inline(__always)
   internal
   init(
-    _payloadBits: UInt,
+    _payloadBits: UInt64,
     isValue: Bool,
     isSmallOrObjC: Bool, // TODO: better name here?
     isOpaque: Bool,
     isTwoByte: Bool
   ) {
-    var rawBits = _payloadBits
+    _sanityCheck(_payloadBits <= _StringObject._maxPayload)
+    var rawBits = _payloadBits << _StringObject._payloadShift
     if isValue {
       rawBits |= _StringObject._isValueBit
     }
@@ -421,8 +543,10 @@ extension _StringObject {
     isSingleByte: Bool
   ) {
     defer { _fixLifetime(_someObject) }
+    let bits = UInt64(Builtin.reinterpretCast(_someObject) as UInt)
+    _sanityCheck(bits & ~_StringObject._payloadMask == 0)
     self.init(
-      _payloadBits: Builtin.reinterpretCast(_someObject),
+      _payloadBits: bits >> _StringObject._payloadShift,
       isValue: false,
       isSmallOrObjC: isCocoa,
       isOpaque: !isContiguous,
@@ -466,7 +590,7 @@ extension _StringObject {
   @_inlineable
   @inline(__always)
   internal
-  init(smallStringPayload: UInt, isSingleByte: Bool) {
+  init(smallStringPayload: UInt64, isSingleByte: Bool) {
     self.init(
       _payloadBits: smallStringPayload,
       isValue: true,
@@ -483,11 +607,11 @@ extension _StringObject {
     unmanaged: UnsafePointer<CodeUnit>
   ) where CodeUnit : FixedWidthInteger & UnsignedInteger {
     self.init(
-        _payloadBits: Builtin.reinterpretCast(unmanaged),
-        isValue: true,
-        isSmallOrObjC: false,
-        isOpaque: false,
-        isTwoByte: CodeUnit.bitWidth == 16)
+      _payloadBits: UInt64(truncatingIfNeeded: UInt(bitPattern: unmanaged)),
+      isValue: true,
+      isSmallOrObjC: false,
+      isOpaque: false,
+      isTwoByte: CodeUnit.bitWidth == 16)
     _sanityCheck(isSingleByte == (CodeUnit.bitWidth == 8))
   }
 
