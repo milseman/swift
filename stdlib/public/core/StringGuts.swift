@@ -1011,9 +1011,7 @@ extension _StringGuts {
   }
 }
 
-extension _StringGuts : Sequence {
-  public typealias Element = UTF16.CodeUnit
-
+extension _StringGuts {
   @_fixed_layout
   public struct Iterator : IteratorProtocol {
     public typealias Element = UTF16.CodeUnit
