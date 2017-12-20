@@ -157,8 +157,7 @@ extension _StringGuts {
   @inline(__always)
   @_inlineable
   public func _bitwiseEqualTo(_ other: _StringGuts) -> Bool {
-    return self._object.rawBits == other._object.rawBits
-      && self._otherBits == other._otherBits
+    return self.rawBits == other.rawBits
   }
 
   @_inlineable
