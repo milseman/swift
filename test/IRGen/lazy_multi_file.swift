@@ -9,7 +9,7 @@
 class Subclass : LazyContainerClass {
   final var str = "abc"
 
-  // CHECK-LABEL: @_T015lazy_multi_file8SubclassC6getStrSSyF(%T15lazy_multi_file8SubclassC* swiftself) {{.*}} {
+  // CHECK-LABEL: @_T015lazy_multi_file8SubclassC6getStrSSyF({{.*}}%T15lazy_multi_file8SubclassC* swiftself) {{.*}} {
   func getStr() -> String {
     // CHECK: = getelementptr inbounds %T15lazy_multi_file8SubclassC, %T15lazy_multi_file8SubclassC* %0, i32 0, i32 3
     return str
