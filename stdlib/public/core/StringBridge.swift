@@ -48,29 +48,6 @@ func _stdlib_binary_CFStringGetCharactersPtr(
 /// Loading Foundation initializes these function variables
 /// with useful values
 
-/// Produces a `_StringBuffer` from a given subrange of a source
-/// `_CocoaString`, having the given minimum capacity.
-@_versioned // FIXME(sil-serialize-all)
-@inline(never) // Hide the CF dependency
-internal func _cocoaStringToContiguous(
-  source: _CocoaString, range: Range<Int>, minimumCapacity: Int
-) -> _StringBuffer {
-  _sanityCheck(_swift_stdlib_CFStringGetCharactersPtr(source) == nil,
-    "Known contiguously stored strings should already be converted to Swift")
-
-  let startIndex = range.lowerBound
-  let count = range.upperBound - startIndex
-
-  let buffer = _StringBuffer(capacity: max(count, minimumCapacity), 
-                             initialSize: count, elementWidth: 2)
-
-  _swift_stdlib_CFStringGetCharacters(
-    source, _swift_shims_CFRange(location: startIndex, length: count), 
-    buffer.start.assumingMemoryBound(to: _swift_shims_UniChar.self))
-  
-  return buffer
-}
-
 /// Copies the entire contents of a _CocoaString into contiguous
 /// storage of sufficient capacity.
 @_versioned // FIXME(sil-serialize-all)
@@ -191,40 +168,6 @@ func _makeCocoaStringGuts(_ cocoaString: _CocoaString) -> _StringGuts {
     count: _stdlib_binary_CFStringGetLength(immutableCopy),
     isSingleByte: !isUTF16,
     start: start)
-}
-
-@inline(never) // Hide the CF dependency
-internal
-func makeCocoaLegacyStringCore(_cocoaString: AnyObject) -> _LegacyStringCore {
-  if let wrapped = _cocoaString as? _NSContiguousString {
-    return wrapped._core
-  }
-
-  // "copy" it into a value to be sure nobody will modify behind
-  // our backs.  In practice, when value is already immutable, this
-  // just does a retain.
-  let cfImmutableValue
-    = _stdlib_binary_CFStringCreateCopy(_cocoaString) as AnyObject
-
-  let length = _swift_stdlib_CFStringGetLength(cfImmutableValue)
-
-  // Look first for null-terminated ASCII
-  // Note: the code in clownfish appears to guarantee
-  // nul-termination, but I'm waiting for an answer from Chris Kane
-  // about whether we can count on it for all time or not.
-  let nulTerminatedASCII = _swift_stdlib_CFStringGetCStringPtr(
-    cfImmutableValue, kCFStringEncodingASCII)
-
-  // start will hold the base pointer of contiguous storage, if it
-  // is found.
-  let (start, isUTF16) = _getCocoaStringPointer(cfImmutableValue)
-
-  return _LegacyStringCore(
-    baseAddress: UnsafeMutableRawPointer(mutating: start),
-    count: length,
-    elementShift: isUTF16 ? 1 : 0,
-    hasCocoaBuffer: true,
-    owner: cfImmutableValue)
 }
 
 extension String {
@@ -404,11 +347,6 @@ public final class _NSContiguousString : _SwiftNativeNSString, _NSStringCore {
       _fixLifetime(rhs)
     }
     return try body(selfAsPointer, rhsAsPointer)
-  }
-
-  public // @testable
-  var _core: _LegacyStringCore {
-    return _guts._legacyCore
   }
 }
 

@@ -338,14 +338,17 @@ extension _StringGuts {
   @_inlineable
   internal
   var _unmanagedASCIIView: _UnmanagedString<UInt8> {
-    _sanityCheck(_object.isContiguousASCII)
-    if _object.isUnmanaged {
-      return _asUnmanaged()
-    } else if _object.isNative {
-      return _object.nativeStorage(of: UInt8.self).unmanagedView
-    } else {
-      _sanityCheck(_object.isContiguousCocoa)
-      return _asContiguousCocoa(of: UInt8.self)
+    @effects(readonly)
+    get {
+      _sanityCheck(_object.isContiguousASCII)
+      if _object.isUnmanaged {
+        return _asUnmanaged()
+      } else if _object.isNative {
+        return _object.nativeStorage(of: UInt8.self).unmanagedView
+      } else {
+        _sanityCheck(_object.isContiguousCocoa)
+        return _asContiguousCocoa(of: UInt8.self)
+      }
     }
   }
 
@@ -353,15 +356,17 @@ extension _StringGuts {
   @_inlineable
   internal
   var _unmanagedUTF16View: _UnmanagedString<UTF16.CodeUnit> {
-    _sanityCheck(_object.isContiguousUTF16)
-    if _object.isUnmanaged {
-      return _asUnmanaged()
-    } else if _object.isNative {
-      return _object.nativeStorage(of: UTF16.CodeUnit.self).unmanagedView
-    } else if _object.isCocoa {
-      return _asContiguousCocoa(of: UTF16.CodeUnit.self)
-    } else {
-      fatalError("Small strings aren't contiguous")
+    @effects(readonly)
+    get {
+      _sanityCheck(_object.isContiguousUTF16)
+      if _object.isUnmanaged {
+        return _asUnmanaged()
+      } else if _object.isNative {
+        return _object.nativeStorage(of: UTF16.CodeUnit.self).unmanagedView
+      } else {
+        _sanityCheck(_object.isContiguousCocoa)
+        return _asContiguousCocoa(of: UTF16.CodeUnit.self)
+      }
     }
   }
 }
@@ -483,123 +488,6 @@ internal func internalDumpHex(_ x: UnsafeRawPointer?, newline: Bool = true) {
 @_versioned
 internal func internalDumpHex(_ x: Bool, newline: Bool = true) {
   internalDumpHexImpl(x ? 1 : 0, newline: newline)
-}
-
-
-//
-// Stats
-//
-extension _StringGuts {
-  enum Stats {
-    internal static var numNativeSelfSlice = 0
-    internal static var numCocoaSelfSlice = 0
-  }
-}
-
-extension _LegacyStringCore {
-  @_versioned // FIXME(sil-serialize-all)
-  internal func _copyToNativeStorage<CodeUnit>(
-    of codeUnit: CodeUnit.Type = CodeUnit.self
-  ) -> _SwiftStringStorage<CodeUnit>
-  where CodeUnit : FixedWidthInteger & UnsignedInteger {
-    let count = self.count
-    let storage = _SwiftStringStorage<CodeUnit>.create(
-      capacity: count,
-      count: count)
-    _LegacyStringCore._copyElements(
-      _baseAddress!, srcElementWidth: elementWidth,
-      dstStart: UnsafeMutableRawPointer(storage.start),
-      dstElementWidth: CodeUnit.bitWidth >> 3,
-      count: count)
-    return storage
-  }
-}
-
-// Conversions two/from legacy core
-extension _StringGuts {
-  @_versioned
-  var _legacyCore: _LegacyStringCore {
-    defer { _fixLifetime(self) }
-    if _object.isUnmanaged {
-      return _LegacyStringCore(
-        baseAddress: UnsafeMutableRawPointer(mutating: _object.asUnmanagedRawStart),
-        count: _unmanagedCount,
-        elementShift: _object.isSingleByte ? 0 : 1,
-        hasCocoaBuffer: false,
-        owner: nil)
-    } else if _object.isNative {
-      return makeCocoaLegacyStringCore(_cocoaString: _object.nativeRawStorage)
-    } else if _object.isCocoa {
-      return makeCocoaLegacyStringCore(_cocoaString: _object.asCocoaObject)
-    } else {
-      _sanityCheck(_object.isSmall)
-      return makeCocoaLegacyStringCore(_cocoaString: _taggedCocoaObject)
-    }
-  }
-
-  @_versioned
-  init(_ legacyCore: _LegacyStringCore) {
-    if UnsafeRawPointer(legacyCore._baseAddress) == _emptyStringBase {
-      self.init()
-      return
-    }
-
-    if _slowPath(legacyCore._baseAddress == nil) {
-      // Opaque Cocoa string
-      _sanityCheck(legacyCore.hasCocoaBuffer,
-        "Non-cocoa, non-contiguous legacy String")
-      _sanityCheck(legacyCore._owner != nil, "Cocoa string with no owner")
-      let owner = legacyCore._owner._unsafelyUnwrappedUnchecked
-      let guts = _makeCocoaStringGuts(owner)
-      _sanityCheck(guts.count == legacyCore.count,
-        "Self-slice of non-contiguous Cocoa string")
-      self = guts
-      return
-    }
-
-    let baseAddress = legacyCore._baseAddress._unsafelyUnwrappedUnchecked
-
-    guard let owner = legacyCore._owner else {
-      // Immortal String
-      if legacyCore.elementWidth == 1 {
-        let immortal = _UnmanagedString(
-          start: baseAddress.assumingMemoryBound(to: UInt8.self),
-          count: legacyCore.count)
-        self.init(immortal)
-        return
-      } else {
-        let immortal = _UnmanagedString(
-          start: baseAddress.assumingMemoryBound(to: UTF16.CodeUnit.self),
-          count: legacyCore.count)
-        self.init(immortal)
-        return
-      }
-    }
-
-    if _fastPath(legacyCore.hasCocoaBuffer) {
-      let guts = _makeCocoaStringGuts(owner)
-      // NOTE: Sometimes a _LegacyStringCore is a self-slice of a Cocoa string
-      // without having properly sliced the backing Cocoa string itself. Detect
-      // that situation in retrospect and create a native copy.
-      if _slowPath(guts.count != legacyCore.count) {
-        Stats.numCocoaSelfSlice += 1
-        self.init(legacyCore._copyToNativeStorage(of: UTF16.CodeUnit.self))
-        return
-      }
-      self = guts
-      return
-    }
-
-    let stringBuffer = unsafeBitCast(owner, to: _StringBuffer.self)
-    if _slowPath(stringBuffer.usedCount != legacyCore.count) {
-      Stats.numNativeSelfSlice += 1
-    }
-    if stringBuffer.elementWidth == 1 {
-      self.init(legacyCore._copyToNativeStorage(of: UInt8.self))
-    } else {
-      self.init(legacyCore._copyToNativeStorage(of: UTF16.CodeUnit.self))
-    }
-  }
 }
 
 extension _StringGuts {
@@ -1120,5 +1008,143 @@ extension _StringGuts {
     } else {
       self._replaceSubrange(bounds, with: newElements, of: UTF16.CodeUnit.self)
     }
+  }
+}
+
+extension _StringGuts : Sequence {
+  public typealias Element = UTF16.CodeUnit
+
+  @_fixed_layout
+  public struct Iterator : IteratorProtocol {
+    public typealias Element = UTF16.CodeUnit
+
+    @_versioned
+    internal let _guts: _StringGuts
+    @_versioned
+    internal let _endOffset: Int
+    @_versioned
+    internal var _nextOffset: Int
+    @_versioned
+    internal var _buffer = _FixedArray16<Element>()
+    @_versioned
+    internal var _bufferIndex: Int = 0
+
+    @_inlineable
+    @_versioned
+    internal init(_ guts: _StringGuts, range: Range<Int>) {
+      self._guts = guts
+      self._endOffset = range.upperBound
+      self._nextOffset = range.lowerBound
+      if _fastPath(!range.isEmpty) {
+        _fillBuffer()
+      }
+    }
+
+    @_inlineable
+    public mutating func next() -> Element? {
+      if _fastPath(_bufferIndex < _buffer.count) {
+        let result = _buffer[_bufferIndex]
+        _bufferIndex += 1
+        return result
+      }
+      if _nextOffset == _endOffset {
+        return nil
+      }
+      _fillBuffer()
+      _bufferIndex = 1
+      return _buffer[0]
+    }
+
+    @_versioned
+    @inline(never)
+    internal mutating func _fillBuffer() {
+      _sanityCheck(_buffer.count == 0)
+      _buffer.count = Swift.min(_buffer.capacity, _endOffset - _nextOffset)
+      _sanityCheck(_buffer.count > 0)
+      _buffer.withUnsafeMutableBufferPointer { buffer in
+        let range: Range<Int> = _nextOffset ..< _nextOffset + buffer.count
+        _guts._copy(range: range, into: buffer)
+      }
+      _nextOffset += _buffer.count
+    }
+  }
+
+  @_inlineable
+  public func makeIterator() -> Iterator {
+    return Iterator(self, range: 0..<count)
+  }
+
+  @_inlineable
+  @_versioned
+  internal func makeIterator(in range: Range<Int>) -> Iterator {
+    return Iterator(self, range: range)
+  }
+}
+
+extension _StringGuts {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal
+  static func fromCodeUnits<Input : Sequence, Encoding : _UnicodeEncoding>(
+    _ input: Input,
+    encoding: Encoding.Type,
+    repairIllFormedSequences: Bool,
+    minimumCapacity: Int = 0
+  ) -> (_StringGuts?, hadError: Bool)
+  where Input.Element == Encoding.CodeUnit {
+    // Determine how many UTF-16 code units we'll need
+    guard let (utf16Count, isASCII) = UTF16.transcodedLength(
+      of: input.makeIterator(),
+      decodedAs: Encoding.self,
+      repairingIllFormedSequences: repairIllFormedSequences) else {
+      return (nil, true)
+    }
+    if isASCII {
+      let storage = _SwiftStringStorage<UTF8.CodeUnit>.create(
+        capacity: Swift.max(minimumCapacity, utf16Count),
+        count: utf16Count)
+      let hadError = storage._initialize(
+        fromCodeUnits: input,
+        encoding: Encoding.self)
+      return (_StringGuts(storage), hadError)
+    }
+    let storage = _SwiftStringStorage<UTF16.CodeUnit>.create(
+      capacity: Swift.max(minimumCapacity, utf16Count),
+      count: utf16Count)
+    let hadError = storage._initialize(
+      fromCodeUnits: input,
+      encoding: Encoding.self)
+    return (_StringGuts(storage), hadError)
+  }
+}
+
+extension _SwiftStringStorage {
+  /// Initialize a piece of freshly allocated storage instance from a sequence
+  /// of code units, which is assumed to contain exactly as many code units as
+  /// fits in the current storage count.
+  ///
+  /// Returns true iff `input` was found to contain invalid code units in the
+  /// specified encoding. If any invalid sequences are found, they are replaced
+  /// with REPLACEMENT CHARACTER (U+FFFD).
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal
+  func _initialize<Input : Sequence, Encoding: _UnicodeEncoding>(
+    fromCodeUnits input: Input,
+    encoding: Encoding.Type
+  ) -> Bool
+  where Input.Element == Encoding.CodeUnit {
+    var p = self.start
+    let hadError = transcode(
+      input.makeIterator(),
+      from: Encoding.self,
+      to: UTF16.self,
+      stoppingOnError: false) { cu in
+      _sanityCheck(p < end)
+      p.pointee = CodeUnit(cu)
+      p += 1
+    }
+    _sanityCheck(p == end)
+    return hadError
   }
 }
