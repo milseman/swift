@@ -80,8 +80,8 @@ extension _StringGuts {
   @effects(readonly)
   public
   static func _compareDeterministicUnicodeCollation(
-    _leftUnsafeStringGutsBitPattern leftBits: (UInt64, UInt64),
-    _rightUnsafeStringGutsBitPattern rightBits: (UInt64, UInt64)
+    _leftUnsafeStringGutsBitPattern leftBits: _RawBitPattern,
+    _rightUnsafeStringGutsBitPattern rightBits: _RawBitPattern
   ) -> Int {
     let left = _StringGuts(rawBits: leftBits)
     let right = _StringGuts(rawBits: rightBits)
@@ -92,9 +92,9 @@ extension _StringGuts {
   @effects(readonly)
   public
   static func _compareDeterministicUnicodeCollation(
-    _leftUnsafeStringGutsBitPattern leftBits: (UInt64, UInt64),
+    _leftUnsafeStringGutsBitPattern leftBits: _RawBitPattern,
     _ leftRange: Range<Int>,
-    _rightUnsafeStringGutsBitPattern rightBits: (UInt64, UInt64),
+    _rightUnsafeStringGutsBitPattern rightBits: _RawBitPattern,
     _ rightRange: Range<Int>
   ) -> Int {
     let left = _StringGuts(rawBits: leftBits)

@@ -55,9 +55,11 @@ struct _StringGuts {
   }
 #endif
 
+  public typealias _RawBitPattern = (UInt64, UInt64)
+
   @_versioned
   @_inlineable
-  internal var rawBits: (UInt64, UInt64) {
+  internal var rawBits: _RawBitPattern {
     @inline(__always)
     get {
 #if arch(i386) || arch(arm)
@@ -70,7 +72,7 @@ struct _StringGuts {
     }
   }
 
-  init(rawBits: (UInt64, UInt64)) {
+  init(rawBits: _RawBitPattern) {
 #if arch(i386) || arch(arm)
     self.init(
       object: _StringObject(rawBits: rawBits.0),
