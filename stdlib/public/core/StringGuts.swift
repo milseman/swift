@@ -1195,9 +1195,10 @@ extension _StringGuts : Sequence {
       _sanityCheck(_buffer.count == 0)
       _buffer.count = Swift.min(_buffer.capacity, _endOffset - _nextOffset)
       _sanityCheck(_buffer.count > 0)
+      let guts = _guts // Make a copy to prevent overlapping access to self
       _buffer.withUnsafeMutableBufferPointer { buffer in
         let range: Range<Int> = _nextOffset ..< _nextOffset + buffer.count
-        _guts._copy(range: range, into: buffer)
+        guts._copy(range: range, into: buffer)
       }
       _nextOffset += _buffer.count
     }
