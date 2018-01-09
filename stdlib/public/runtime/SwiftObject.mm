@@ -151,7 +151,7 @@ NSString *swift::getDescription(OpaqueValue *value, const Metadata *type) {
   typedef SWIFT_CC(swift) NSString *GetDescriptionFn(OpaqueValue*, const Metadata*);
   auto getDescription = SWIFT_LAZY_CONSTANT(
     reinterpret_cast<GetDescriptionFn*>(dlsym(RTLD_DEFAULT,
-    MANGLE_AS_STRING(MANGLE_SYM(10Foundation15_getDescriptionSo8NSStringCxlF)))));
+    MANGLE_AS_STRING(MANGLE_SYM(10Foundation15_getDescriptionySo8NSStringCxlF)))));
   
   // If Foundation hasn't loaded yet, fall back to returning the static string
   // "SwiftObject". The likelihood of someone invoking -description without
