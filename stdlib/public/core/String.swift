@@ -958,16 +958,14 @@ extension String {
     into processCodeUnit: (Encoding.CodeUnit) -> Void
   ) {
     if _slowPath(_guts._isOpaque) {
-#if _runtime(_ObjC)
       let opaque = _guts._asOpaque()
       var i = opaque.makeIterator()
       Unicode.UTF16.ForwardParser._parse(&i) {
         Encoding._transcode($0, from: UTF16.self).forEach(processCodeUnit)
       }
-#else
-      _sanityCheckFailure("encode: non-native string without objc runtime")
-#endif
-    } else if _guts.isASCII {
+      return
+    }
+    if _guts.isASCII {
       let ascii = _guts._unmanagedASCIIView
       if encoding == Unicode.ASCII.self
       || encoding == Unicode.UTF8.self
@@ -983,12 +981,12 @@ extension String {
             Unicode.Scalar(_unchecked: UInt32(b))).forEach(processCodeUnit)
         }
       }
-    } else {
-      let utf16 = _guts._unmanagedUTF16View
-      var i = utf16.makeIterator()
-      Unicode.UTF16.ForwardParser._parse(&i) {
-        Encoding._transcode($0, from: UTF16.self).forEach(processCodeUnit)
-      }
+      return
+    }
+    let utf16 = _guts._unmanagedUTF16View
+    var i = utf16.makeIterator()
+    Unicode.UTF16.ForwardParser._parse(&i) {
+      Encoding._transcode($0, from: UTF16.self).forEach(processCodeUnit)
     }
   }
 }
@@ -1021,14 +1019,16 @@ extension String {
       self = other
       return
     }
+    defer { _fixLifetime(other) }
+    if _slowPath(other._guts._isOpaque) {
+      self._guts.append(other._guts._asOpaque())
+      return
+    }
     if other._guts.isASCII {
       self._guts.append(other._guts._unmanagedASCIIView)
-    } else if _slowPath(other._guts._isOpaque) {
-      self._guts.append(other._guts._asOpaque())
-    } else {
-      self._guts.append(other._guts._unmanagedUTF16View)
+      return
     }
-    _fixLifetime(other)
+    self._guts.append(other._guts._unmanagedUTF16View)
   }
 
   /// Appends the given Unicode scalar to the string.
@@ -1213,7 +1213,7 @@ internal func _nativeUnicodeLowercaseString(_ str: String) -> String {
 
   // Try to write it out to the same length.
   let z = _swift_stdlib_unicode_strToLower(
-    dest, Int32(utf16.count), // FIXME: handle overflow case
+    storage.start, Int32(utf16.count), // FIXME: handle overflow case
     utf16.start, Int32(utf16.count))
   let correctSize = Int(z)
 
@@ -1223,7 +1223,7 @@ internal func _nativeUnicodeLowercaseString(_ str: String) -> String {
       capacity: correctSize,
       count: correctSize)
     _swift_stdlib_unicode_strToLower(
-      dest, Int32(utf16.count), // FIXME: handle overflow case
+      storage.start, Int32(utf16.count), // FIXME: handle overflow case
       utf16.start, Int32(utf16.count))
   }
   return String(_storage: storage)
@@ -1240,7 +1240,7 @@ internal func _nativeUnicodeUppercaseString(_ str: String) -> String {
 
   // Try to write it out to the same length.
   let z = _swift_stdlib_unicode_strToUpper(
-    dest, Int32(utf16.count), // FIXME: handle overflow case
+    storage.start, Int32(utf16.count), // FIXME: handle overflow case
     utf16.start, Int32(utf16.count))
   let correctSize = Int(z)
 
@@ -1250,7 +1250,7 @@ internal func _nativeUnicodeUppercaseString(_ str: String) -> String {
       capacity: correctSize,
       count: correctSize)
     _swift_stdlib_unicode_strToUpper(
-      dest, Int32(utf16.count), // FIXME: handle overflow case
+      storage.start, Int32(utf16.count), // FIXME: handle overflow case
       utf16.start, Int32(utf16.count))
   }
   return String(_storage: storage)

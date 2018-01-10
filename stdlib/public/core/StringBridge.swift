@@ -366,4 +366,18 @@ extension String {
     return _stdlib_binary_bridgeToObjectiveCImpl()
   }
 }
+
+#else // !_runtime(_ObjC)
+
+@_fixed_layout // FIXME(sil-serialize-all)
+public class _SwiftNativeNSString {
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
+  internal init() {}
+  @_inlineable // FIXME(sil-serialize-all)
+  deinit {}
+}
+
+public protocol _NSStringCore: class {}
+
 #endif
