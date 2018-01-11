@@ -90,8 +90,8 @@ where CodeUnit : UnsignedInteger & FixedWidthInteger {
   }
 
   @objc(length)
-  public func length() -> UInt {
-    return UInt(count)
+  public var length: Int {
+    return count
   }
 
   @objc(characterAtIndex:)
