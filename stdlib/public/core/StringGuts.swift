@@ -621,11 +621,32 @@ extension _StringGuts {
     if _object.isSmall {
       return _taggedCocoaObject
     }
-
     return nil
   }
 }
 #endif
+
+extension _StringGuts {
+  /// Return the object identifier for the reference counted heap object
+  /// referred to by this string (if any). This is useful for testing allocation
+  /// behavior.
+  public // @testable
+  var _objectIdentifier: ObjectIdentifier? {
+    if _object.isNative {
+      return ObjectIdentifier(_object.nativeRawStorage)
+    }
+#if _runtime(_ObjC)
+    if _object.isCocoa {
+      return ObjectIdentifier(_object.asCocoaObject)
+    }
+#else
+    if _object.isOpaque {
+      return ObjectIdentifier(_object.asOpaqueObject)
+    }
+#endif
+    return nil
+  }
+}
 
 extension _StringGuts {
   @inline(never)
