@@ -946,8 +946,9 @@ func makeStringGuts(_ base: String) -> _StringGuts {
   x.reserveCapacity(base._guts.count * 3 / 2)
   let capacity = x.capacity
   x.append(base._guts)
-  // Widening the guts should not make it lose its capacity
-  expectEqual(x.capacity, capacity)
+  // Widening the guts should not make it lose its capacity,
+  // but the allocator may decide to get more storage.
+  expectGE(x.capacity, capacity)
   return x
 }
 
