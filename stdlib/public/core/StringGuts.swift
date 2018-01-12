@@ -1416,3 +1416,25 @@ extension _SwiftStringStorage {
     return hadError
   }
 }
+
+extension String {
+  // FIXME: Remove. Still used by swift-corelibs-foundation
+  @available(*, deprecated, renamed: "_guts")
+  public var _core: _StringGuts {
+    return _guts
+  }
+}
+
+extension _StringGuts {
+  // FIXME: Remove. Still used by swift-corelibs-foundation
+  @available(*, deprecated)
+  public var startASCII: UnsafeMutablePointer<UTF8.CodeUnit> {
+    return UnsafeMutablePointer(mutating: _unmanagedASCIIView.start)
+  }
+
+  // FIXME: Remove. Still used by swift-corelibs-foundation
+  @available(*, deprecated)
+  public var startUTF16: UnsafeMutablePointer<UTF16.CodeUnit> {
+    return UnsafeMutablePointer(mutating: _unmanagedUTF16View.start)
+  }
+}
