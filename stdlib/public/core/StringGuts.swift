@@ -782,6 +782,35 @@ extension _StringGuts {
 // String API helpers
 //
 extension _StringGuts {
+  // Return a contiguous _StringGuts with the same contents as this one.
+  // Use the existing guts if possible; otherwise copy the string into a
+  // new buffer.
+  @_versioned
+  internal
+  func _extractContiguous<CodeUnit>(
+    of codeUnit: CodeUnit.Type = CodeUnit.self
+  ) -> _StringGuts
+  where CodeUnit : FixedWidthInteger & UnsignedInteger {
+    if _fastPath(
+      _object.isContiguous && CodeUnit.bitWidth == _object.bitWidth) {
+      return self
+    }
+    let count = self.count
+    return _StringGuts(_copyToNativeStorage(of: CodeUnit.self, from: 0..<count))
+  }
+
+  @_versioned
+  internal
+  func _extractContiguousUTF16() -> _StringGuts {
+    return _extractContiguous(of: UTF16.CodeUnit.self)
+  }
+
+  @_versioned
+  internal
+  func _extractContiguousASCII() -> _StringGuts {
+    return _extractContiguous(of: UInt8.self)
+  }
+
   // Return a native storage object with the same contents as this string.
   // Use the existing buffer if possible; otherwise copy the string into a
   // new buffer.
@@ -795,7 +824,7 @@ extension _StringGuts {
       return _object.nativeStorage()
     }
     let count = self.count
-    return _copyToNativeStorage(from: 0..<count)
+    return _copyToNativeStorage(of: CodeUnit.self, from: 0..<count)
   }
 
   @_specialize(where CodeUnit == UInt8)
