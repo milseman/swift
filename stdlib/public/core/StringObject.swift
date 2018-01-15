@@ -295,7 +295,7 @@ extension _StringObject {
   @_versioned
   @_inlineable
   internal
-  var isEmptyLiteral: Bool {
+  var isEmptySingleton: Bool {
     guard _bits == _emptyStringAddressBits else { return false }
     switch _variant {
     case .unmanagedSingleByte, .unmanagedDoubleByte:
@@ -324,7 +324,7 @@ extension _StringObject {
   @_versioned
   @_inlineable
   internal
-  var isEmptyLiteral: Bool {
+  var isEmptySingleton: Bool {
     @inline(__always)
     get { return rawBits == _StringObject._emptyStringBitPattern }
   }

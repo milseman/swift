@@ -160,8 +160,8 @@ extension _StringGuts {
   @_versioned
   @_inlineable
   internal
-  var _isEmptyLiteral: Bool {
-    return _object.isEmptyLiteral
+  var _isEmptySingleton: Bool {
+    return _object.isEmptySingleton
   }
 
   @_inlineable
@@ -1040,7 +1040,7 @@ extension _StringGuts {
   @_inlineable
   public // TODO(StringGuts): for testing only
   mutating func append(_ other: _StringGuts) {
-    if _isEmptyLiteral {
+    if _isEmptySingleton {
       self = other
       return
     }
@@ -1059,7 +1059,7 @@ extension _StringGuts {
   mutating func append(_ other: _StringGuts, range: Range<Int>) {
     _sanityCheck(range.lowerBound >= 0 && range.upperBound <= other.count)
     guard range.count > 0 else { return }
-    if _isEmptyLiteral && range.count == other.count {
+    if _isEmptySingleton && range.count == other.count {
       self = other
       return
     }
