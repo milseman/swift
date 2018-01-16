@@ -252,9 +252,12 @@ extension _StringObject {
     @inline(__always)
     get {
 #if arch(i386) || arch(arm)
-      guard case let .strong(object) = _variant else { return 0 }
+      guard case let .strong(object) = _variant else {
+        _sanityCheckFailure("internal error: expected a non-tagged String")
+      }
       return Builtin.reinterpretCast(object)
 #else
+      _sanityCheck(isNative || isCocoa)
       return _bitPattern(_object) & UInt(_StringObject._payloadMask)
 #endif
     }
@@ -267,9 +270,12 @@ extension _StringObject {
     @inline(__always)
     get {
 #if arch(i386) || arch(arm)
-      if case .strong(_) = _variant { return 0 }
+      if case .strong(_) = _variant {
+        _sanityCheckFailure("internal error: expected a tagged String")
+      }
       return _bits
 #else
+      _sanityCheck(!isNative && !isCocoa)
       return UInt(truncatingIfNeeded: rawBits) & _StringObject._payloadMask
 #endif
     }
