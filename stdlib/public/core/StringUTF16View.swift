@@ -292,10 +292,7 @@ extension String {
     self.init(utf16._guts)
   }
 
-  /// The index type for subscripting a string.
-  public typealias UTF16Index = UTF16View.Index
-
-#if _runtime(_ObjC)
+  #if _runtime(_ObjC)
   // These may become less important once <rdar://problem/19255291> is addressed.
   @available(
     *, unavailable,

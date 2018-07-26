@@ -488,7 +488,7 @@ extension String.UnicodeScalarIndex {
   ///   - unicodeScalars: The `UnicodeScalarView` in which to find the new
   ///     position.
   public init?(
-    _ sourcePosition: String.UTF16Index,
+    _ sourcePosition: String.Index,
     within unicodeScalars: String.UnicodeScalarView
   ) {
     unimplemented_utf8()
