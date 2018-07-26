@@ -112,25 +112,13 @@ public protocol StringProtocol
 }
 
 extension StringProtocol {
-  //@available(swift, deprecated: 3.2, obsoleted: 4.0, message: "Please use the StringProtocol itself")
-  //public var characters: Self { return self }
-
-  @available(swift, deprecated: 3.2, obsoleted: 4.0, renamed: "UTF8View.Index")
-  public typealias UTF8Index = UTF8View.Index
-  @available(swift, deprecated: 3.2, obsoleted: 4.0, renamed: "UTF16View.Index")
-  public typealias UTF16Index = UTF16View.Index
-  @available(swift, deprecated: 3.2, obsoleted: 4.0, renamed: "UnicodeScalarView.Index")
-  public typealias UnicodeScalarIndex = UnicodeScalarView.Index
-}
-
-extension StringProtocol {
   // TODO(UTF8): Wean NSStringAPI.swift off of this
   public // @SPI(NSStringAPI.swift)
   var _ephemeralString: String {
     if let str = self as? String {
       return str
     }
-    // TODO: Substring shared
+    // TODO: Smol check and then shared storage substring
     return String(self)
   }
 }
