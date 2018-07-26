@@ -85,6 +85,13 @@ extension Character {
 
 extension Character {
   @usableFromInline
+  typealias UTF8View = String.UTF8View
+
+  @inlinable
+  internal var utf8: UTF8View {
+    return _str.utf8
+  }
+  @usableFromInline
   typealias UTF16View = String.UTF16View
 
   @inlinable
