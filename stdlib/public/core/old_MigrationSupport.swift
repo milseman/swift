@@ -444,13 +444,34 @@ extension String {
 
   @available(swift, deprecated: 3.2, obsoleted: 4.0)
   public init?(_ utf16: UTF16View) {
-    Builtin.unreachable()
+    // Attempt to recover the whole string, the better to implement the actual
+    // Swift 3.1 semantics, which are not as documented above!  Full Swift 3.1
+    // semantics may be impossible to preserve in the case of string literals,
+    // since we no longer have access to the length of the original string when
+    // there is no owner and elements are dropped from the end.
+    let wholeString = String(utf16._guts)
+    guard
+      let start = UTF16Index(encodedOffset: utf16._offset)
+        .samePosition(in: wholeString),
+      let end = UTF16Index(encodedOffset: utf16._offset + utf16._length)
+        .samePosition(in: wholeString)
+      else
+    {
+        return nil
+    }
+    self = String(wholeString[start..<end])
   }
-
+  
   @available(swift, deprecated: 3.2, message: "Failable initializer was removed in Swift 4. When upgrading to Swift 4, please use non-failable String.init(_:UTF8View)")
   @available(swift, obsoleted: 4.0, message: "Please use non-failable String.init(_:UTF8View) instead")
   public init?(_ utf8: UTF8View) {
-    Builtin.unreachable()
+    if utf8.startIndex.transcodedOffset != 0
+      || utf8.endIndex.transcodedOffset != 0
+      || utf8._legacyPartialCharacters.start
+      || utf8._legacyPartialCharacters.end {
+      return nil
+    }
+    self = String(utf8._guts)
   }
 }
 
@@ -462,7 +483,7 @@ extension String { // RangeReplaceableCollection
   // compile as Swift 4.
   @available(swift, obsoleted: 4, message: "String.init(_:String) is no longer failable")
   public init?(_ other: String, obsoletedInSwift4: () = ()) {
-    Builtin.unreachable()
+    self.init(other._guts)
   }
 }
 
@@ -477,19 +498,19 @@ extension String.UnicodeScalarView : _CustomPlaygroundQuickLookable {
 extension String.UnicodeScalarView {
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(after i: Index?) -> Index {
-    Builtin.unreachable()
+    return index(after: i!)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(_ i: Index?,  offsetBy n: Int) -> Index {
-    Builtin.unreachable()
+    return index(i!, offsetBy: n)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional indices")
   public func distance(from i: Index?, to j: Index?) -> Int {
-    Builtin.unreachable()
+    return distance(from: i!, to: j!)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public subscript(i: Index?) -> Unicode.Scalar {
-    Builtin.unreachable()
+    return self[i!]
   }
 }
 
@@ -497,19 +518,19 @@ extension String.UnicodeScalarView {
 extension String.UTF16View {
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(after i: Index?) -> Index {
-    Builtin.unreachable()
+    return index(after: i!)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(_ i: Index?, offsetBy n: Int) -> Index {
-    Builtin.unreachable()
+    return index(i!, offsetBy: n)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional indices")
   public func distance(from i: Index?, to j: Index?) -> Int {
-    Builtin.unreachable()
+    return distance(from: i!, to: j!)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public subscript(i: Index?) -> Unicode.UTF16.CodeUnit {
-    Builtin.unreachable()
+    return self[i!]
   }
 }
 
@@ -517,19 +538,19 @@ extension String.UTF16View {
 extension String.UTF8View {
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(after i: Index?) -> Index {
-    Builtin.unreachable()
+    return index(after: i!)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public func index(_ i: Index?, offsetBy n: Int) -> Index {
-    Builtin.unreachable()
+    return index(i!, offsetBy: n)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional indices")
   public func distance(from i: Index?, to j: Index?) -> Int {
-    Builtin.unreachable()
+    return distance(from: i!, to: j!)
   }
   @available(swift, obsoleted: 4.0, message: "Any String view index conversion can fail in Swift 4; please unwrap the optional index")
   public subscript(i: Index?) -> Unicode.UTF8.CodeUnit {
-    Builtin.unreachable()
+    return self[i!]
   }
 }
 
@@ -544,23 +565,20 @@ extension String.UTF8View {
 extension String {
   @available(swift, obsoleted: 4)
   public subscript(bounds: Range<Index>) -> String {
-    unimplemented_utf8()
-
-    // _boundsCheck(bounds)
-    // return String(Substring(_slice: Slice(base: self, bounds: bounds)))
+    _boundsCheck(bounds)
+    return String(Substring(_slice: Slice(base: self, bounds: bounds)))
   }
 
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String {
-    unimplemented_utf8()
-
-    // let r = bounds.relative(to: self)
-    // _boundsCheck(r)
-    // return String(Substring(_slice: Slice(
-    //       base: self,
-    //       bounds: r)))
+    let r = bounds.relative(to: self)
+    _boundsCheck(r)
+    return String(Substring(_slice: Slice(
+          base: self,
+          bounds: r)))
   }
 }
+
 
 //===--- Slicing Support --------------------------------------------------===//
 // In Swift 3.2, in the absence of type context,
@@ -573,14 +591,22 @@ extension String {
 // more-specific Swift-3-only `subscript` overload that continues to produce
 // `String.UnicodeScalarView`.
 extension String.UnicodeScalarView {
+  private subscript(_bounds bounds: Range<Index>) -> String.UnicodeScalarView {
+    let rawSubRange: Range<Int> =
+      _toCoreIndex(bounds.lowerBound)..<_toCoreIndex(bounds.upperBound)
+    return String.UnicodeScalarView(
+      _guts._extractSlice(rawSubRange),
+      coreOffset: bounds.lowerBound.encodedOffset)
+  }
+
   @available(swift, obsoleted: 4)
   public subscript(bounds: Range<Index>) -> String.UnicodeScalarView {
-    Builtin.unreachable()
+    return self[_bounds: bounds]
   }
 
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String.UnicodeScalarView {
-    Builtin.unreachable()
+    return self[_bounds: bounds.relative(to: self)]
   }
 }
 
@@ -593,14 +619,21 @@ extension String.UnicodeScalarView {
 // Swift-3-only `subscript` overload that continues to produce
 // `String.UTF16View`.
 extension String.UTF16View {
+  private subscript(_bounds bounds: Range<Index>) -> String.UTF16View {
+    return String.UTF16View(
+      _guts,
+      offset: _internalIndex(at: bounds.lowerBound.encodedOffset),
+      length: bounds.upperBound.encodedOffset - bounds.lowerBound.encodedOffset)
+  }
+
   @available(swift, obsoleted: 4)
   public subscript(bounds: Range<Index>) -> String.UTF16View {
-    Builtin.unreachable()
+    return self[_bounds: bounds]
   }
 
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String.UTF16View {
-    Builtin.unreachable()
+    return self[_bounds: bounds.relative(to: self)]
   }
 }
 
@@ -613,15 +646,45 @@ extension String.UTF16View {
 /// Swift-3-only `subscript` overload that continues to produce
 /// `String.UTF8View`.
 extension String.UTF8View {
+  private subscript(_bounds bounds: Range<Index>) -> String.UTF8View {
+    let wholeString = String(_guts)
+    let legacyPartialCharacters = (
+      (self._legacyPartialCharacters.start &&
+        bounds.lowerBound.encodedOffset == 0) ||
+      bounds.lowerBound.samePosition(in: wholeString) == nil,
+      (self._legacyPartialCharacters.end &&
+        bounds.upperBound.encodedOffset == _guts.count) ||
+      bounds.upperBound.samePosition(in: wholeString) == nil)
+
+    if bounds.upperBound.transcodedOffset == 0 {
+      return String.UTF8View(
+        _guts._extractSlice(
+        bounds.lowerBound.encodedOffset..<bounds.upperBound.encodedOffset),
+        legacyOffsets: (bounds.lowerBound.transcodedOffset, 0),
+        legacyPartialCharacters: legacyPartialCharacters)
+    }
+
+    let b0 = bounds.upperBound.utf8Buffer!.first!
+    let scalarLength8 = (~b0).leadingZeroBitCount
+    let scalarLength16 = scalarLength8 == 4 ? 2 : 1
+    let coreEnd = bounds.upperBound.encodedOffset + scalarLength16
+    return String.UTF8View(
+      _guts._extractSlice(bounds.lowerBound.encodedOffset..<coreEnd),
+      legacyOffsets: (
+        bounds.lowerBound.transcodedOffset,
+        bounds.upperBound.transcodedOffset - scalarLength8),
+      legacyPartialCharacters: legacyPartialCharacters)
+  }
+  
   @available(swift, obsoleted: 4)
   public subscript(bounds: Range<Index>) -> String.UTF8View {
-    Builtin.unreachable()
+    return self[_bounds: bounds]
   }
-
+  
 
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String.UTF8View {
-    Builtin.unreachable()
+    return self[_bounds: bounds.relative(to: self)]
   }
 }
 
@@ -640,14 +703,22 @@ public typealias UnicodeScalar = Unicode.Scalar
 extension String {
   @available(swift, deprecated: 3.2, obsoleted: 4, message: "Please use 'first', 'dropFirst()', or 'Substring.popFirst()'.")
   public mutating func popFirst() -> String.Element? {
-    Builtin.unreachable()
+    guard !isEmpty else { return nil }
+    let element = first!
+    let nextIdx = self.index(after: self.startIndex)
+    self = String(self[nextIdx...])
+    return element
   }
 }
 
 extension String.UnicodeScalarView {
   @available(swift, deprecated: 3.2, obsoleted: 4, message: "Please use 'first', 'dropFirst()', or 'Substring.UnicodeScalarView.popFirst()'.")
   public mutating func popFirst() -> String.UnicodeScalarView.Element? {
-    Builtin.unreachable()
+    guard !isEmpty else { return nil }
+    let element = first!
+    let nextIdx = self.index(after: self.startIndex)
+    self = String(self[nextIdx...]).unicodeScalars
+    return element
   }
 }
 
@@ -705,17 +776,17 @@ extension Substring {
   ) -> R {
     return body(&self)
   }
-
+  
   private func _boundsCheck(_ range: Range<Index>) {
     _precondition(range.lowerBound >= startIndex,
       "String index range is out of bounds")
     _precondition(range.upperBound <= endIndex,
       "String index range is out of bounds")
   }
-
+  
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String {
-    Builtin.unreachable()
+    return String(self[bounds.relative(to: self)])
   }
 }
 
