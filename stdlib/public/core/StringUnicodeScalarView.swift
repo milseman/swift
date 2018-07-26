@@ -433,7 +433,7 @@ extension String.UnicodeScalarView : RangeReplaceableCollection {
   where S.Element == Unicode.Scalar {
     // TODO(UTF8 perf): This is a horribly slow means...
     let scalars = String(decoding: newElements.map { $0.value }, as: UTF32.self)
-    scalars._guts.withFastUTF8 { self._guts.append($0) }
+    self = (String(self._guts) + scalars).unicodeScalars
   }
 
   /// Replaces the elements within the specified bounds with the given Unicode

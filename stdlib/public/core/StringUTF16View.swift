@@ -286,30 +286,6 @@ extension String {
   }
 
   /// Creates a string corresponding to the given sequence of UTF-16 code units.
-  ///
-  /// If `utf16` contains unpaired UTF-16 surrogates, the result is `nil`.
-  ///
-  /// You can use this initializer to create a new string from a slice of
-  /// another string's `utf16` view.
-  ///
-  ///     let picnicGuest = "Deserving porcupine"
-  ///     if let i = picnicGuest.utf16.firstIndex(of: 32) {
-  ///         let adjective = String(picnicGuest.utf16[..<i])
-  ///         print(adjective)
-  ///     }
-  ///     // Prints "Optional(Deserving)"
-  ///
-  /// The `adjective` constant is created by calling this initializer with a
-  /// slice of the `picnicGuest.utf16` view.
-  ///
-  /// - Parameter utf16: A UTF-16 code sequence.
-  @inlinable // FIXME(sil-serialize-all)
-  @available(swift, deprecated: 3.2, obsoleted: 4.0)
-  public init?(_ utf16: UTF16View) {
-    unimplemented_utf8()
-  }
-
-  /// Creates a string corresponding to the given sequence of UTF-16 code units.
   @inlinable @inline(__always)
   @available(swift, introduced: 4.0)
   public init(_ utf16: UTF16View) {

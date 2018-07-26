@@ -126,7 +126,7 @@ extension String: RangeReplaceableCollection {
     let scalars = String(
       decoding: newElements.map { $0.unicodeScalars }.joined().map { $0.value },
       as: UTF32.self)
-    scalars._guts.withFastUTF8 { self._guts.append($0) }
+    self.append(scalars)
   }
 
   /// Replaces the text within the specified bounds with the given characters.
@@ -286,55 +286,6 @@ extension String {
     return Swift.min(x,y)
   }
 }
-
-// Legacy
-extension String {
-  // The defaulted argument prevents this initializer from satisfies the
-  // LosslessStringConvertible conformance.  You can satisfy a protocol
-  // requirement with something that's not yet available, but not with
-  // something that has become unavailable. Without this, the code won't
-  // compile as Swift 4.
-  @inlinable // FIXME(sil-serialize-all)
-  @available(swift, obsoleted: 4, message: "String.init(_:String) is no longer failable")
-  public init?(_ other: String, obsoletedInSwift4: () = ()) {
-    self.init(other._guts)
-  }
-}
-
-// TODO(UTF8): can we drop the below?
-
-//===----------------------------------------------------------------------===//
-// The following overloads of flatMap are carefully crafted to allow the code
-// like the following:
-//   ["hello"].flatMap { $0 }
-// return an array of strings without any type context in Swift 3 mode, at the
-// same time allowing the following code snippet to compile:
-//   [0, 1].flatMap { x in
-//     if String(x) == "foo" { return "bar" } else { return nil }
-//   }
-// Note that the second overload is declared on a more specific protocol.
-// See: test/stdlib/StringFlatMap.swift for tests.
-extension Sequence {
-  @inlinable // FIXME(sil-serialize-all)
-  @available(swift, obsoleted: 4)
-  public func flatMap(
-    _ transform: (Element) throws -> String
-  ) rethrows -> [String] {
-    return try map(transform)
-  }
-}
-
-extension Collection {
-  @available(swift, deprecated: 4.1, renamed: "compactMap(_:)",
-    message: "Please use compactMap(_:) for the case where closure returns an optional value")
-  @inline(__always)
-  public func flatMap(
-    _ transform: (Element) throws -> String?
-  ) rethrows -> [String] {
-    return try _compactMap(transform)
-  }
-}
-//===----------------------------------------------------------------------===//
 
 extension Sequence where Element == String {
   @available(*, unavailable, message: "Operator '+' cannot be used to append a String to a sequence of strings")

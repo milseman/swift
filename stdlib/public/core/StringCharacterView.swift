@@ -247,18 +247,3 @@ extension String {
   }
 }
 
-extension String {
-  @available(swift, deprecated: 3.2, message:
-    "Please use String or Substring directly")
-  public typealias CharacterView = String
-
-  /// A view of the string's contents as a collection of characters.
-  @inlinable // FIXME(sil-serialize-all)
-  @available(swift, deprecated: 3.2, message:
-    "Please use String or Substring directly")
-  public var characters: CharacterView {
-    get { return self }
-    set { self = newValue }
-  }
-}
-
