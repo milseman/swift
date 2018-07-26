@@ -362,10 +362,6 @@ extension String {
   public init(_ utf8: UTF8View) {
     self = String(utf8._guts)
   }
-
-  // TODO(UTF8): Can this be deprecated?
-  /// The index type for subscripting a string.
-  public typealias UTF8Index = UTF8View.Index
 }
 
 // TODO(UTF8): design specialized iterator, rather than default indexing one
