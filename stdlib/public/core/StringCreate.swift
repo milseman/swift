@@ -33,13 +33,13 @@ extension String {
     // TODO(UTF8 perf): Skip intermediary array
     var contents: [UInt8] = []
     contents.reserveCapacity(input.count)
-    guard transcode(
+    let repaired = transcode(
       input.makeIterator(),
       from: UTF8.self,
       to: UTF8.self,
       stoppingOnError: true,
       into: { contents.append($0) })
-    else { return nil }
+    guard !repaired else { return nil }
 
     return contents.withUnsafeBufferPointer { String._uncheckedFromUTF8($0) }
   }
@@ -85,12 +85,13 @@ extension String {
     // TODO(UTF8): Skip intermediary array
     var contents: [UInt8] = []
     contents.reserveCapacity(input.count)
-    _ = transcode(
+    let repaired = transcode(
       input.makeIterator(),
       from: UTF16.self,
       to: UTF8.self,
       stoppingOnError: false,
       into: { contents.append($0) })
+    _sanityCheck(!repaired, "Error present")
 
     return contents.withUnsafeBufferPointer { String._uncheckedFromUTF8($0) }
   }
@@ -129,6 +130,7 @@ extension String {
       to: UTF8.self,
       stoppingOnError: false,
       into: { contents.append($0) })
+
     return contents.withUnsafeBufferPointer { String._uncheckedFromUTF8($0) }
   }
 }
