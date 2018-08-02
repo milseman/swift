@@ -23,6 +23,7 @@ struct _StringRepresentation {
     case _cocoa(object: AnyObject)
     case _native(object: AnyObject)
     case _immortal(address: UInt)
+    // TODO: shared native
   }
   public var _form: _Form
 

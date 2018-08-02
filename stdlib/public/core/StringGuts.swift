@@ -101,6 +101,18 @@ extension _StringGuts {
 
   @inlinable
   internal var isEmpty: Bool { @inline(__always) get { return count == 0 } }
+
+  @inlinable
+  internal var isKnownASCII: Bool  {
+    @inline(__always) get { return _object.isASCII }
+  }
+
+  @inlinable
+  internal var capacity: Int? {
+    // TODO: Should small strings return their capacity too?
+    guard _object.hasNativeStorage else { return nil }
+    return _object.nativeStorage.capacity
+  }
 }
 
 //
@@ -168,11 +180,7 @@ extension _StringGuts {
   internal mutating func reserveCapacity(_ n: Int) {
     // Check if there's nothing to do
     if n <= _SmallUTF8String.capacity { return }
-    if _object.hasNativeStorage {
-      if _object.nativeStorage.capacity >= n {
-        return
-      }
-    }
+    if let currentCap = self.capacity, currentCap >= n { return }
 
     // Grow
     if isFastUTF8 {
