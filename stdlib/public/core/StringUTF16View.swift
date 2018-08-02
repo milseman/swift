@@ -264,18 +264,18 @@ extension String.UTF16View: BidirectionalCollection {
     }
   }
 }
-//extension String.UTF16View: CustomStringConvertible {
-//  @inlinable
-//  public var description: String {
-//    @inline(__always) get { return String(_guts) }
-//  }
-//}
-//
-//extension String.UTF16View: CustomDebugStringConvertible {
-//  public var debugDescription: String {
-//    return "StringUTF16(\(self.description.debugDescription))"
-//  }
-//}
+extension String.UTF16View: CustomStringConvertible {
+ @inlinable
+ public var description: String {
+   @inline(__always) get { return String(_guts) }
+ }
+}
+
+extension String.UTF16View: CustomDebugStringConvertible {
+ public var debugDescription: String {
+   return "StringUTF16(\(self.description.debugDescription))"
+ }
+}
 
 extension String {
   /// A UTF-16 encoding of `self`.

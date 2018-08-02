@@ -296,19 +296,19 @@ extension String.UTF8View: BidirectionalCollection {
   }
 }
 
-//extension String.UTF8View: CustomStringConvertible {
-//  @inlinable
-//  public var description: String {
-//    @inline(__always) get { return String(String(_guts)) }
-//  }
-//}
-//
-//extension String.UTF8View: CustomDebugStringConvertible {
-//  public var debugDescription: String {
-//    return "UTF8View(\(self.description.debugDescription))"
-//  }
-//}
-//
+extension String.UTF8View: CustomStringConvertible {
+ @inlinable
+ public var description: String {
+   @inline(__always) get { return String(String(_guts)) }
+ }
+}
+
+extension String.UTF8View: CustomDebugStringConvertible {
+ public var debugDescription: String {
+   return "UTF8View(\(self.description.debugDescription))"
+ }
+}
+
 
 extension String {
   /// A UTF-8 encoding of `self`.

@@ -344,20 +344,18 @@ extension String.UnicodeScalarView: BidirectionalCollection {
 //   }
 // }
 
-//extension String.UnicodeScalarView: CustomStringConvertible {
-//  @inlinable
-//  // TODO(UTF8): Drop Swift.String
-//  public var description: Swift.String {
-//    @inline(__always) get { return Swift.String(String(_guts)) }
-//  }
-//}
-//
-//extension String.UnicodeScalarView: CustomDebugStringConvertible {
-//  // TODO(UTF8): Drop Swift.String
-//  public var debugDescription: Swift.String {
-//    return "StringUnicodeScalarView(\(self.description.debugDescription))"
-//  }
-//}
+extension String.UnicodeScalarView: CustomStringConvertible {
+ @inlinable
+ public var description: String {
+   @inline(__always) get { return String(_guts) }
+ }
+}
+
+extension String.UnicodeScalarView: CustomDebugStringConvertible {
+ public var debugDescription: String {
+   return "StringUnicodeScalarView(\(self.description.debugDescription))"
+ }
+}
 
 extension String {
   /// Creates a string corresponding to the given collection of Unicode
