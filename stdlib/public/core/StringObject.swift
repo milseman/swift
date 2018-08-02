@@ -140,8 +140,8 @@ extension _StringObject.Nibbles {
  Native strings have tail-allocated storage, which begins at an offset of
  `nativeBias` from the storage object's address. String literals, which reside
  in the constant section, are encoded as their start address minus `nativeBias`,
- unifying code paths for both mortal and immortal native strings. Mortal
- native Strings are always managed by the Swift runtime.
+ unifying code paths for both literals ("immortal native") and native strings.
+ Native Strings are always managed by the Swift runtime.
 
  Shared strings do not have tail-allocated storage, but can provide access
  upon query to contiguous UTF-8 code units. Lazily-bridged NSStrings capable of
@@ -484,6 +484,18 @@ extension _StringObject {
   @inlinable
   internal var count: Int {
     @inline(__always) get { return isSmall ? smallCount : largeCount }
+  }
+
+  // Whether the string is all ASCII
+  //
+  //
+  @inlinable
+  internal var isASCII: Bool {
+    @inline(__always) get {
+      if isSmall { return smallIsASCII }
+      // TODO(UTF8 perf and testing): track known asciiness
+      return false
+    }
   }
 
   // Get access to fast UTF-8 contents for large strings which provide it.
