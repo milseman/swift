@@ -544,21 +544,14 @@ extension String.UTF8View {
 extension String {
   @available(swift, obsoleted: 4)
   public subscript(bounds: Range<Index>) -> String {
-    unimplemented_utf8()
-
-    // _boundsCheck(bounds)
-    // return String(Substring(_slice: Slice(base: self, bounds: bounds)))
+    _boundsCheck(bounds)
+    return String(self[bounds])
   }
 
   @available(swift, obsoleted: 4)
   public subscript(bounds: ClosedRange<Index>) -> String {
-    unimplemented_utf8()
-
-    // let r = bounds.relative(to: self)
-    // _boundsCheck(r)
-    // return String(Substring(_slice: Slice(
-    //       base: self,
-    //       bounds: r)))
+    _boundsCheck(bounds)
+    return String(self[bounds])
   }
 }
 
