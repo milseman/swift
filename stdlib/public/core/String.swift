@@ -19,6 +19,13 @@ internal func unimplemented_utf8(
 ) -> Never {
   fatalError("Unimplemented for UTF-8 support", file: file, line: line)
 }
+@inlinable @_transparent
+internal func unimplemented_utf8_32bit(
+  _ message: String = "",
+  file: StaticString = #file, line: UInt = #line
+) -> Never {
+  fatalError("32-bit: Unimplemented for UTF-8 support", file: file, line: line)
+}
 
 // TODO(UTF8): Find a better place to stick these...
 extension UnsafePointer where Pointee == UInt8 {
