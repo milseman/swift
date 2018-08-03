@@ -196,6 +196,14 @@ extension _StringGuts {
     unimplemented_utf8()
   }
 
+  internal mutating func append(_ other: _StringGuts) {
+    if other.isFastUTF8 {
+      other.withFastUTF8 { self.append($0) }
+      return
+    }
+    _foreignAppend(other)
+  }
+
   internal mutating func append(_ bufPtr: UnsafeBufferPointer<UInt8>) {
     // Try to fit in existing storage if possible
     if _object.isSmall {
@@ -206,20 +214,44 @@ extension _StringGuts {
       }
     }
 
-    // Grow into an appropriately sized storage
-    //
-    // TODO(UTF8): How do we want to grow? Take current capacity into account?
-    if isFastUTF8 {
-      let storage = self.withFastUTF8 {
-        _StringStorage.create(initializingFrom: $0, andAppending: bufPtr)
-      }
-
-      // TODO(UTF8): Track known ascii
-      self = _StringGuts(storage)
+    if _slowPath(_object.isForeign) {
+      _foreignAppend(bufPtr)
       return
     }
 
-    unimplemented_utf8()
+    // Grow into an appropriately sized storage
+    //
+    // TODO(UTF8): How do we want to grow? Take current capacity into account?
+    let storage = self.withFastUTF8 {
+      _StringStorage.create(initializingFrom: $0, andAppending: bufPtr)
+    }
+
+    // TODO(UTF8): Track known ascii
+    self = _StringGuts(storage)
+    return
+  }
+
+  @inline(never) // slow-path
+  internal mutating func _foreignAppend(_ bufPtr: UnsafeBufferPointer<UInt8>) {
+    _sanityCheck(!isFastUTF8)
+
+    // TODO(UTF8 perf): skip the intermediary arrays
+    let selfUTF8 = Array(String(self).utf8)
+    selfUTF8.withUnsafeBufferPointer {
+      self = _StringGuts(_StringStorage.create(
+        initializingFrom: $0, andAppending: bufPtr))
+    }
+  }
+
+  @inline(never) // slow-path
+  internal mutating func _foreignAppend(_ other: _StringGuts) {
+    _sanityCheck(!other.isFastUTF8)
+
+    // TODO(UTF8 perf): skip the intermediary arrays
+    let otherUTF8 = Array(String(other).utf8)
+    otherUTF8.withUnsafeBufferPointer {
+      self.append($0)
+    }
   }
 }
 

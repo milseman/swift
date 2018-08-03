@@ -667,13 +667,7 @@ extension String {
       self = other
       return
     }
-
-    if other._guts.isFastUTF8 {
-      other._guts.withFastUTF8 { self._guts.append($0) }
-      return
-    }
-
-    unimplemented_utf8()
+    self._guts.append(other._guts)
   }
 
   @inline(__always) // Eliminate dynamic type check when possible
