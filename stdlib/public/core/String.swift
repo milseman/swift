@@ -505,23 +505,6 @@ extension String {
     self = String._fromCodeUnitsRepairing(codeUnits, encoding: sourceEncoding)
   }
 
-  /// Creates a string from the null-terminated sequence of bytes at the given
-  /// pointer.
-  ///
-  /// - Parameters:
-  ///   - nullTerminatedCodeUnits: A pointer to a sequence of contiguous code
-  ///     units in the encoding specified in `sourceEncoding`, ending just
-  ///     before the first zero code unit.
-  ///   - sourceEncoding: The encoding in which the code units should be
-  ///     interpreted.
-  @inlinable
-  @inline(__always) // Eliminate dynamic type check when possible
-  public init<Encoding: Unicode.Encoding>(
-    decodingCString nullTerminatedCodeUnits: UnsafePointer<Encoding.CodeUnit>,
-    as sourceEncoding: Encoding.Type) {
-    unimplemented_utf8()
-  }
-
   /// Calls the given closure with a pointer to the contents of the string,
   /// represented as a null-terminated sequence of code units.
   ///

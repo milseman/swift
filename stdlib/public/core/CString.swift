@@ -160,5 +160,23 @@ extension String {
 
     unimplemented_utf8()
   }
+  /// Creates a string from the null-terminated sequence of bytes at the given
+  /// pointer.
+  ///
+  /// - Parameters:
+  ///   - nullTerminatedCodeUnits: A pointer to a sequence of contiguous code
+  ///     units in the encoding specified in `sourceEncoding`, ending just
+  ///     before the first zero code unit.
+  ///   - sourceEncoding: The encoding in which the code units should be
+  ///     interpreted.
+  @_specialize(where Encoding == Unicode.UTF8)
+  @_specialize(where Encoding == Unicode.UTF16)
+  @inlinable // Fold away specializations
+  public init<Encoding: Unicode.Encoding>(
+    decodingCString ptr: UnsafePointer<Encoding.CodeUnit>,
+    as sourceEncoding: Encoding.Type
+  ) {
+    self = String.decodeCString(ptr, as: sourceEncoding)!.0
+  }
 }
 
