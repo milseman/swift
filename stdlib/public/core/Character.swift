@@ -240,3 +240,10 @@ extension Character: Hashable {
     _str.hash(into: &hasher)
   }
 }
+
+extension Character {
+  @usableFromInline // @testable
+  internal var _isSmall: Bool {
+    return _str._guts._object.isSmall
+  }
+}

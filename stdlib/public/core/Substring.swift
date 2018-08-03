@@ -121,6 +121,8 @@ extension Substring {
   internal var wholeString: String {
     @inline(__always) get { return String(self.wholeGuts) }
   }
+  @usableFromInline // TODO(UTF8 merge): for testing, drop this decl after merge
+  internal var _wholeString: String { return wholeString }
 
   @inlinable
   internal var offsetRange: Range<Int> {

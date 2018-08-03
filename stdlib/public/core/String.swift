@@ -628,7 +628,7 @@ extension String: ExpressibleByStringLiteral {
   /// initializer behind the scenes.
   @inlinable @inline(__always)
   public init(stringLiteral value: String) {
-    unimplemented_utf8()
+    self = value
   }
 }
 
@@ -793,6 +793,18 @@ extension BidirectionalCollection where Iterator.Element == String {
   }
 }
 
+// TODO(UTF8): Can we change the test and remove this? This is only here for
+// test/RuntimeObjC.swift
+#if _runtime(_ObjC)
+@usableFromInline // FIXME(sil-serialize-all)
+@_silgen_name("swift_stdlib_NSStringLowercaseString")
+internal func _stdlib_NSStringLowercaseString(_ str: AnyObject) -> _CocoaString
+
+@usableFromInline // FIXME(sil-serialize-all)
+@_silgen_name("swift_stdlib_NSStringUppercaseString")
+internal func _stdlib_NSStringUppercaseString(_ str: AnyObject) -> _CocoaString
+#endif
+
 // Unicode algorithms
 extension String {
  /// Returns a lowercase version of the string.
@@ -854,7 +866,39 @@ extension String {
  ///
  /// - Complexity: O(*n*)
  public func uppercased() -> String {
-   unimplemented_utf8()
+    // TODO(UTF8 perf): This is a horribly slow means...
+    let codeUnits = Array(self.utf16).withUnsafeBufferPointer {
+      (uChars: UnsafeBufferPointer<UInt16>) -> Array<UInt16> in
+      var result = Array<UInt16>(repeating: 0, count: uChars.count)
+      let len = result.withUnsafeMutableBufferPointer {
+        (output) -> Int in
+        var err = __swift_stdlib_U_ZERO_ERROR
+        return Int(truncatingIfNeeded:
+          __swift_stdlib_u_strToUpper(
+            output.baseAddress._unsafelyUnwrappedUnchecked,
+            Int32(output.count),
+            uChars.baseAddress._unsafelyUnwrappedUnchecked,
+            Int32(uChars.count),
+            "", // TODO(UTF8): with new root, nil
+            &err))
+      }
+      if len > uChars.count {
+        var err = __swift_stdlib_U_ZERO_ERROR
+        result = Array<UInt16>(repeating: 0, count: len)
+        result.withUnsafeMutableBufferPointer {
+          output -> Void in
+          __swift_stdlib_u_strToUpper(
+            output.baseAddress._unsafelyUnwrappedUnchecked,
+            Int32(output.count),
+            uChars.baseAddress._unsafelyUnwrappedUnchecked,
+            Int32(uChars.count),
+            "", // TODO(UTF8): with new root, nil
+            &err)
+        }
+      }
+      return result
+    }
+    return codeUnits.withUnsafeBufferPointer { String._uncheckedFromUTF16($0) }
  }
 
  /// Creates an instance from the description of a given
