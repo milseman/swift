@@ -84,7 +84,13 @@ extension _StringObject {
 
   @inlinable @_transparent
   internal var undiscriminatedObjectRawBits: UInt {
-    @inline(__always) get { return (objectRawBits & 0x00FF_FFFF_FFFF_FFFF) }
+    @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
+      return (objectRawBits & 0x00FF_FFFF_FFFF_FFFF)
+#endif
+    }
   }
 
   // Namespace to hold magic numbers
@@ -128,10 +134,15 @@ extension _StringObject.Nibbles {
   // The canonical empty sting is an empty small string
   @usableFromInline
   internal static var emptyString: UInt {
-    @inline(__always) get { return 0xE000_0000_0000_0000 }
+    @inline(__always) get {
+#if arch(i386) || arch(arm)
+      unimplemented_utf8_32bit()
+#else
+      return 0xE000_0000_0000_0000
+#endif
+    }
   }
 }
-
 
 /*
 
@@ -198,24 +209,40 @@ extension _StringObject.Nibbles {
   // Discriminator for large, immortal, swift-native strings
   @inlinable @inline(__always)
   internal static func largeImmortal() -> UInt {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
     return 0x8000_0000_0000_0000
+#endif
   }
 
   // Discriminator for large, mortal (i.e. managed), swift-native strings
   @inlinable @inline(__always)
   internal static func largeMortal() -> UInt {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
     return 0x0000_0000_0000_0000
+#endif
   }
 
   // Discriminator for large, shared, mortal (i.e. managed), swift-native
   // strings
   @inlinable @inline(__always)
   internal static func largeSharedMortal() -> UInt {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
     return 0x0800_0000_0000_0000
+#endif
   }
 
   internal static func largeCocoa(providesFastUTF8: Bool) -> UInt {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
     return providesFastUTF8 ? 0x4800_0000_0000_0000 : 0x5800_0000_0000_0000
+#endif
   }
 }
 
@@ -226,7 +253,11 @@ extension _StringObject {
   @inlinable
   internal var isImmortal: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       return (objectRawBits & 0x8000_0000_0000_0000) != 0
+#endif
     }
   }
 
@@ -238,7 +269,11 @@ extension _StringObject {
   @inlinable
   internal var isSmall: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       return (objectRawBits & 0x2000_0000_0000_0000) != 0
+#endif
     }
   }
 
@@ -254,7 +289,11 @@ extension _StringObject {
   @inlinable
   internal var providesFastUTF8: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       return (objectRawBits & 0x1000_0000_0000_0000) == 0
+#endif
     }
   }
 
@@ -267,15 +306,23 @@ extension _StringObject {
   @inlinable
   internal var hasNativeStorage: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       return (objectRawBits & 0xF800_0000_0000_0000) == 0
+#endif
     }
   }
 
   // Whether we are a mortal, shared string (managed by Swift runtime)
   internal var hasSharedStorage: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       return (objectRawBits & 0xF800_0000_0000_0000)
         == Nibbles.largeSharedMortal()
+#endif
     }
   }
 }
@@ -286,8 +333,12 @@ extension _StringObject {
   @inlinable
   internal var largeFastIsNative: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isLarge && providesFastUTF8)
       return (objectRawBits & 0x0800_0000_0000_0000) == 0
+#endif
     }
   }
   // Whether this string is shared, presupposing it is both large and fast
@@ -300,8 +351,12 @@ extension _StringObject {
   @inlinable
   internal var largeIsCocoa: Bool {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isLarge)
       return (objectRawBits & 0x4000_0000_0000_0000) != 0
+#endif
     }
   }
 }
@@ -325,11 +380,18 @@ extension _StringObject {
   internal var smallCount: Int {
     @inline(__always)
     get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isSmall)
       return Int(bitPattern: (objectRawBits & 0x0F00_0000_0000_0000) &>> 56)
+#endif
     }
     @inline(__always)
     set {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       // TODO(UTF8 codegen): Ensure this is just a couple simple ops
       _sanityCheck(isSmall && newValue < 15)
 
@@ -337,14 +399,19 @@ extension _StringObject {
       let discrim = Nibbles.emptyString | (UInt(bitPattern: newValue) &<< 56)
       self = _StringObject(
         rawObject: rawObject, rawDiscrim: discrim, otherBits: self._otherBits)
+#endif
     }
   }
   @inlinable
   internal var smallIsASCII: Bool {
     @inline(__always)
     get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isSmall)
       return objectRawBits & 0x4000_0000_0000_0000 == 0
+#endif
     }
   }
   @inlinable
@@ -377,34 +444,50 @@ extension _StringObject {
   @inlinable
   internal var largeCount: Int {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isLarge)
       return Int(bitPattern: (_otherBits & 0x0000_FFFF_FFFF_FFFF))
+#endif
     }
     @inline(__always) set {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(largeCount == 0)
       _sanityCheck(newValue == newValue & 0x0000_FFFF_FFFF_FFFF, "too large")
       _otherBits |= UInt(bitPattern: newValue)
       _sanityCheck(newValue == largeCount)
+#endif
     }
   }
 
   @inlinable
   internal var largeAddressBits: UInt {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isLarge)
       return undiscriminatedObjectRawBits
+#endif
     }
   }
 
   @inlinable
   internal var nativeUTF8Start: UnsafePointer<UInt8> {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(largeFastIsNative)
       let largeAddressBits = objectRawBits & 0x00FF_FFFF_FFFF_FFFF
 
       return UnsafePointer(
         bitPattern: largeAddressBits &+ _StringObject.nativeBias
       )._unsafelyUnwrappedUnchecked
+#endif
     }
   }
   @inlinable
@@ -468,10 +551,14 @@ extension _StringObject {
   @inlinable
   internal var largePerfFlags: _StringObjectPerfFlags {
     @inline(__always) get {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
       _sanityCheck(isLarge)
       return Builtin.reinterpretCast(
         UInt16(
           truncatingIfNeeded: _otherBits & 0xFFFF_0000_0000_0000) &>> 48)
+#endif
     }
   }
 }

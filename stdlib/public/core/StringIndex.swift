@@ -65,12 +65,16 @@ extension String.Index {
 
   @inlinable @inline(__always)
   internal init(encodedOffset: Int, transcodedOffset: Int) {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
     _sanityCheck(encodedOffset == encodedOffset & 0x0000_FFFF_FFFF_FFFF)
     _sanityCheck(transcodedOffset <= 3)
     let pos = UInt64(truncatingIfNeeded: encodedOffset)
     let trans = UInt64(truncatingIfNeeded: transcodedOffset)
 
     self.init((pos &<< 16) | (trans &<< 14))
+#endif
   }
 
   /// Creates a new index at the specified code unit offset.
