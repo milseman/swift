@@ -150,10 +150,12 @@ extension _SmallString: RandomAccessCollection {
     }
   }
 
-  @inlinable
   internal subscript(_ bounds: Range<Index>) -> SubSequence {
     @inline(__always) get {
-      unimplemented_utf8()
+      // TODO(UTF8 perf): In-register; just a couple shifts...
+      return self.withUTF8 { utf8 in
+        _SmallString(utf8[bounds]._rebased)._unsafelyUnwrappedUnchecked
+      }
     }
   }
 }
@@ -214,8 +216,8 @@ extension _SmallString {
 
     // TODO(UTF8 perf): Directly in register
     self.init()
-    self.withMutableExcessCapacity {
-      $0.baseAddress._unsafelyUnwrappedUnchecked.initialize(
+    self.withMutableExcessCapacity { mutBufPtr in
+      mutBufPtr.baseAddress._unsafelyUnwrappedUnchecked.initialize(
         from: input.baseAddress._unsafelyUnwrappedUnchecked, count: input.count)
       return input.count
     }
