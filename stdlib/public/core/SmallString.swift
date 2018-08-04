@@ -14,8 +14,10 @@
 // NOTE: This is a prototype, it does not have e.g. 32-bit support yet.
 //
 
+@usableFromInline typealias _SmallUTF8String = _SmallString
+
 @_fixed_layout @usableFromInline
-internal struct _SmallUTF8String {
+internal struct _SmallString {
   @usableFromInline
   internal typealias RawBitPattern = _StringObject.RawBitPattern
 
@@ -52,12 +54,12 @@ internal struct _SmallUTF8String {
   @inlinable
   internal var asStringObject: _StringObject {
     @inline(__always) get { return _StringObject(raw: _storage) }
-    @inline(__always) set { self = _SmallUTF8String(raw: newValue.rawBits) }
+    @inline(__always) set { self = _SmallString(raw: newValue.rawBits) }
   }
 }
 
 // TODO
-extension _SmallUTF8String {
+extension _SmallString {
   @inlinable
   internal static var capacity: Int { @inline(__always) get { return 15 } }
 
@@ -92,11 +94,11 @@ extension _SmallUTF8String {
 }
 
 // Internal invariants
-extension _SmallUTF8String {
+extension _SmallString {
   @inlinable @inline(__always)
   internal func _invariantCheck() {
     #if INTERNAL_CHECKS_ENABLED
-    _sanityCheck(count <= _SmallUTF8String.capacity)
+    _sanityCheck(count <= _SmallString.capacity)
 
     if self.isASCII {
       _sanityCheck(self.allSatisfy { $0 <= 0x7F })
@@ -117,7 +119,7 @@ extension _SmallUTF8String {
 }
 
 // Provide a RAC interface
-extension _SmallUTF8String: RandomAccessCollection {
+extension _SmallString: RandomAccessCollection {
   @usableFromInline
   internal typealias Index = Int
 
@@ -125,7 +127,7 @@ extension _SmallUTF8String: RandomAccessCollection {
   internal typealias Element = UInt8
 
   @usableFromInline
-  internal typealias SubSequence = _SmallUTF8String
+  internal typealias SubSequence = _SmallString
 
   @inlinable
   internal var startIndex: Int { @inline(__always) get { return 0 } }
@@ -156,7 +158,7 @@ extension _SmallUTF8String: RandomAccessCollection {
   }
 }
 
-extension _SmallUTF8String {
+extension _SmallString {
   @inlinable @inline(__always)
   internal func withUTF8<Result>(
     _ f: (UnsafeBufferPointer<UInt8>) throws -> Result
@@ -171,6 +173,7 @@ extension _SmallUTF8String {
 
   // Overwrite stored code units, including uninitialized. `f` should return the
   // new count.
+  @inline(__always)
   internal mutating func withMutableCapacity(
     _ f: (UnsafeMutableBufferPointer<UInt8>) throws -> Int
   ) rethrows {
@@ -179,16 +182,50 @@ extension _SmallUTF8String {
       let ptr = rawBufPtr.baseAddress._unsafelyUnwrappedUnchecked
         .assumingMemoryBound(to: UInt8.self)
       return try f(UnsafeMutableBufferPointer(
-        start: ptr, count: _SmallUTF8String.capacity))
+        start: ptr, count: _SmallString.capacity))
     }
 
     // TODO(UTF8): Update isASCII, and count in a single batch
+    _sanityCheck(len <= _SmallString.capacity)
     self.asStringObject.smallCount = len
+  }
+
+  // Write to excess capacity. `f` should return the new count.
+  @inline(__always)
+  internal mutating func withMutableExcessCapacity(
+    _ f: (UnsafeMutableBufferPointer<UInt8>) throws -> Int
+  ) rethrows {
+    let currentCount = self.count
+
+    try self.withMutableCapacity { fullBufPtr in
+      let rebased = UnsafeMutableBufferPointer(rebasing:
+        fullBufPtr[currentCount...])
+      let delta = try f(rebased)
+      return currentCount + delta
+    }
+  }
+}
+
+// Creation
+extension _SmallString {
+  init?(base: _StringGuts, appending other: _StringGuts) {
+    guard (base.utf8Count + other.utf8Count) <= _SmallString.capacity else {
+      return nil
+    }
+    self.init()
+
+    // TODO(UTF8 perf): In-register
+    self.withMutableExcessCapacity { capPtr in
+      return base.copyUTF8(into: capPtr)._unsafelyUnwrappedUnchecked
+    }
+    self.withMutableExcessCapacity { capPtr in
+      return other.copyUTF8(into: capPtr)._unsafelyUnwrappedUnchecked
+    }
   }
 }
 
 // Cocoa interop
-extension _SmallUTF8String {
+extension _SmallString {
   // Resiliently create from a tagged cocoa string
   //
   @_effects(readonly) // @opaque
@@ -196,7 +233,7 @@ extension _SmallUTF8String {
     self.init()
     self.withMutableCapacity {
       let len = _bridgeTagged(cocoa, intoUTF8: $0)
-      _sanityCheck(len != nil && len! < _SmallUTF8String.capacity,
+      _sanityCheck(len != nil && len! < _SmallString.capacity,
         "Internal invariant violated: large tagged NSStrings")
       return len._unsafelyUnwrappedUnchecked
     }

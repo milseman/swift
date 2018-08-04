@@ -415,16 +415,16 @@ extension _StringObject {
     }
   }
   @inlinable
-  internal var asSmallString: _SmallUTF8String {
+  internal var asSmallString: _SmallString {
     @inline(__always)
     get {
       _sanityCheck(isSmall)
-      return _SmallUTF8String(raw:rawBits)
+      return _SmallString(raw:rawBits)
     }
   }
 
   @inlinable @inline(__always)
-  internal init(_ small: _SmallUTF8String) {
+  internal init(_ small: _SmallString) {
     self.init(raw: small.rawBits)
   }
 
