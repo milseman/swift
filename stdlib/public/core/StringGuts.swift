@@ -54,13 +54,13 @@ extension _StringGuts {
 // Creation
 extension _StringGuts {
   @inlinable @inline(__always)
-  internal init(_ smol: _SmallUTF8String) {
+  internal init(_ smol: _SmallString) {
     self.init(_StringObject(smol))
   }
 
   @inlinable @inline(__always)
   internal init(_ bufPtr: UnsafeBufferPointer<UInt8>, isKnownASCII: Bool) {
-//    if let smol = _SmallUTF8String(bufPtr) {
+//    if let smol = _SmallString(bufPtr) {
 //      self.init(smol)
 //      return
 //    }
@@ -179,7 +179,7 @@ extension _StringGuts {
 extension _StringGuts {
   internal mutating func reserveCapacity(_ n: Int) {
     // Check if there's nothing to do
-    if n <= _SmallUTF8String.capacity { return }
+    if n <= _SmallString.capacity { return }
     if let currentCap = self.capacity, currentCap >= n { return }
 
     // Grow
@@ -197,6 +197,12 @@ extension _StringGuts {
   }
 
   internal mutating func append(_ other: _StringGuts) {
+    // Try to form a small string if possible
+    if let smol = _SmallString(base: self, appending: other) {
+      self = _StringGuts(smol)
+      return
+    }
+
     if other.isFastUTF8 {
       other.withFastUTF8 { self.append($0) }
       return
@@ -205,10 +211,7 @@ extension _StringGuts {
   }
 
   internal mutating func append(_ bufPtr: UnsafeBufferPointer<UInt8>) {
-    // Try to fit in existing storage if possible
-    if _object.isSmall {
-      // TODO(UTF8 perf): Try to fit into smol whenever possible
-    } else if _object.hasNativeStorage {
+    if _object.hasNativeStorage {
       if _object.nativeStorage.unusedCapacity >= bufPtr.count {
         // TODO(UTF8 perf): Uniqueness check and skip the reallocation
       }
@@ -312,7 +315,57 @@ extension _StringGuts {
       return try body(ptr)
     }
   }
-
 }
 
+extension _StringGuts {
+  // Copy UTF-8 contents. Returns number written or nil if not enough space.
+  // Contents of the buffer are unspecified if nil is returned.
+  @inlinable
+  internal func copyUTF8(into mbp: UnsafeMutableBufferPointer<UInt8>) -> Int? {
+    let ptr = mbp.baseAddress._unsafelyUnwrappedUnchecked
+    if _fastPath(self.isFastUTF8) {
+      return self.withFastUTF8 { utf8 in
+        guard utf8.count <= mbp.count else { return nil }
+
+        let utf8Start = utf8.baseAddress._unsafelyUnwrappedUnchecked
+        ptr.initialize(from: utf8Start, count: utf8.count)
+        return utf8.count
+      }
+    }
+
+    return _foreignCopyUTF8(into: mbp)
+  }
+
+  @usableFromInline @inline(never) // slow-path
+  internal func _foreignCopyUTF8(
+    into mbp: UnsafeMutableBufferPointer<UInt8>
+  ) -> Int? {
+    var ptr = mbp.baseAddress._unsafelyUnwrappedUnchecked
+    var numWritten = 0
+    for cu in String(self).utf8 {
+      guard numWritten < mbp.count else { return nil }
+      ptr.initialize(to: cu)
+      ptr += 1
+      numWritten += 1
+    }
+
+    return numWritten
+  }
+
+  internal var utf8Count: Int {
+    @inline(__always) get {
+      // TODO: Might be worth burning a bit for count-is-UTF-8, regardless of
+      // fast status.
+      if _fastPath(self.isFastUTF8) {
+        return self.count
+      }
+      return _foreignUTF8Count()
+    }
+  }
+
+  @inline(never) // slow-path
+  internal func _foreignUTF8Count() -> Int {
+    return String(self).utf8.count
+  }
+}
 

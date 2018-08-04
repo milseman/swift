@@ -481,42 +481,18 @@ extension String.UTF8View {
   @inlinable @inline(__always)
   public func _copyContents(
     initializing buffer: UnsafeMutableBufferPointer<Iterator.Element>
-  ) -> (Iterator,UnsafeMutableBufferPointer<Iterator.Element>.Index) {
-    guard let ptr = buffer.baseAddress else {
+  ) -> (Iterator, UnsafeMutableBufferPointer<Iterator.Element>.Index) {
+    guard buffer.baseAddress != nil else {
         _preconditionFailure(
           "Attempt to copy string contents into nil buffer pointer")
     }
-    if _fastPath(_guts.isFastUTF8) {
-      return _guts.withFastUTF8 { utf8 in
-        let utf8Start = utf8.baseAddress._unsafelyUnwrappedUnchecked
-        _precondition(utf8.count <= buffer.count,
-          "Insufficient space allocated to copy string contents")
-        ptr.initialize(from: utf8Start, count: utf8.count)
-        let it = String().utf8.makeIterator()
-        return (it, buffer.index(buffer.startIndex, offsetBy: utf8.count))
-      }
+    guard let written = _guts.copyUTF8(into: buffer) else {
+      _preconditionFailure(
+        "Insufficient space allocated to copy string contents")
     }
 
-    return _foreignCopyContents(initializing: buffer)
-  }
-
-  public func _foreignCopyContents(
-    initializing buffer: UnsafeMutableBufferPointer<Iterator.Element>
-  ) -> (Iterator,UnsafeMutableBufferPointer<Iterator.Element>.Index) {
-    _sanityCheck(_guts.isForeign)
-    guard var ptr = buffer.baseAddress else {
-        _preconditionFailure(
-          "Attempt to copy string contents into nil buffer pointer")
-    }
-    var it = self.makeIterator()
-    for idx in buffer.startIndex..<buffer.count {
-      guard let x = it.next() else {
-        return (it, idx)
-      }
-      ptr.initialize(to: x)
-      ptr += 1
-    }
-    return (it,buffer.endIndex)
+    let it = String().utf8.makeIterator()
+    return (it, buffer.index(buffer.startIndex, offsetBy: written))
   }
 }
 
