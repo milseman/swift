@@ -208,6 +208,23 @@ extension _SmallString {
 
 // Creation
 extension _SmallString {
+  // Direct from UTF-8
+  init?(_ input: UnsafeBufferPointer<UInt8>) {
+    guard input.count <= _SmallString.capacity else { return nil }
+
+    // TODO(UTF8 perf): Directly in register
+    self.init()
+    self.withMutableExcessCapacity {
+      $0.baseAddress._unsafelyUnwrappedUnchecked.initialize(
+        from: input.baseAddress._unsafelyUnwrappedUnchecked, count: input.count)
+      return input.count
+    }
+
+    _invariantCheck()
+  }
+
+
+  // Appending
   init?(base: _StringGuts, appending other: _StringGuts) {
     guard (base.utf8Count + other.utf8Count) <= _SmallString.capacity else {
       return nil
@@ -221,6 +238,7 @@ extension _SmallString {
     self.withMutableExcessCapacity { capPtr in
       return other.copyUTF8(into: capPtr)._unsafelyUnwrappedUnchecked
     }
+    _invariantCheck()
   }
 }
 
