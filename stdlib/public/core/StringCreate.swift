@@ -111,27 +111,30 @@ extension String {
   }
 
   @usableFromInline @inline(never) // slow-path
-  internal static func _fromCodeUnitsRepairing<
+  internal static func _fromCodeUnits<
     Input: Collection,
     Encoding: Unicode.Encoding
   >(
     _ input: Input,
-    encoding: Encoding.Type
-  ) -> String
+    encoding: Encoding.Type,
+    repair: Bool
+  ) -> (String, repairsMade: Bool)?
   where Input.Element == Encoding.CodeUnit {
     // TODO(SSO): small check
 
     // TODO(UTF8): Skip intermediary array
     var contents: [UInt8] = []
     contents.reserveCapacity(input.underestimatedCount)
-    _ = transcode(
+    let repaired = transcode(
       input.makeIterator(),
       from: Encoding.self,
       to: UTF8.self,
       stoppingOnError: false,
       into: { contents.append($0) })
+    guard repair || !repaired else { return nil }
 
-    return contents.withUnsafeBufferPointer { String._uncheckedFromUTF8($0) }
+    let str = contents.withUnsafeBufferPointer { String._uncheckedFromUTF8($0) }
+    return (str, repaired)
   }
 }
 

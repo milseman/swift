@@ -509,7 +509,8 @@ extension String {
       return
     }
 
-    self = String._fromCodeUnitsRepairing(codeUnits, encoding: sourceEncoding)
+    self = String._fromCodeUnits(
+      codeUnits, encoding: sourceEncoding, repair: true)!.0
   }
 
   /// Calls the given closure with a pointer to the contents of the string,
