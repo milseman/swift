@@ -82,14 +82,26 @@ extension _SmallString {
   }
 
   // Give raw, nul-terminated code units. This is only for limited internal
-  // usage: it always clears the count (in case it's full)
+  // usage: it always clears the discriminator and count (in case it's full)
   @inlinable
   internal var zeroTerminatedRawCodeUnits: RawBitPattern {
     @inline(__always) get {
-      var copy = self
-      copy.asStringObject.smallCount = 0
-      return copy.rawBits
+      return (self._storage.0, self.asStringObject.undiscriminatedObjectRawBits)
     }
+  }
+
+  @inlinable
+  internal func computeIsASCII() -> Bool {
+    // TODO(UTF8 codegen): Either mask off discrim before, or don't set bit
+    // after
+
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
+    let asciiMask: UInt = 0x8080_8080_8080_8080
+#endif
+    let raw = zeroTerminatedRawCodeUnits
+    return raw.0 & asciiMask == 0 && raw.1 & asciiMask == 0
   }
 }
 
@@ -101,7 +113,10 @@ extension _SmallString {
     _sanityCheck(count <= _SmallString.capacity)
 
     if self.isASCII {
+      _sanityCheck(computeIsASCII())
       _sanityCheck(self.allSatisfy { $0 <= 0x7F })
+    } else {
+      _sanityCheck(!computeIsASCII())
     }
 
     #endif // INTERNAL_CHECKS_ENABLED
@@ -187,9 +202,9 @@ extension _SmallString {
         start: ptr, count: _SmallString.capacity))
     }
 
-    // TODO(UTF8): Update isASCII, and count in a single batch
     _sanityCheck(len <= _SmallString.capacity)
-    self.asStringObject.smallCount = len
+    self.asStringObject.setSmallCount(len, isASCII: self.computeIsASCII())
+    self._invariantCheck()
   }
 
   // Write to excess capacity. `f` should return the new count.

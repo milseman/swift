@@ -134,13 +134,7 @@ extension _StringObject.Nibbles {
   // The canonical empty sting is an empty small string
   @usableFromInline
   internal static var emptyString: UInt {
-    @inline(__always) get {
-#if arch(i386) || arch(arm)
-      unimplemented_utf8_32bit()
-#else
-      return 0xE000_0000_0000_0000
-#endif
-    }
+    @inline(__always) get { return _StringObject.Nibbles.small(isASCII: true) }
   }
 }
 
@@ -206,6 +200,16 @@ extension _StringObject.Nibbles {
 
 */
 extension _StringObject.Nibbles {
+  // Discriminator for small strings
+  @inlinable @inline(__always)
+  internal static func small(isASCII: Bool) -> UInt {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
+    return isASCII ? 0xE000_0000_0000_0000 : 0xA000_0000_0000_0000
+#endif
+  }
+
   // Discriminator for large, immortal, swift-native strings
   @inlinable @inline(__always)
   internal static func largeImmortal() -> UInt {
@@ -387,21 +391,20 @@ extension _StringObject {
       return Int(bitPattern: (objectRawBits & 0x0F00_0000_0000_0000) &>> 56)
 #endif
     }
-    @inline(__always)
-    set {
-#if arch(i386) || arch(arm)
-    unimplemented_utf8_32bit()
-#else
-      // TODO(UTF8 codegen): Ensure this is just a couple simple ops
-      _sanityCheck(isSmall && newValue <= _SmallString.capacity)
-
-      let rawObject = self.undiscriminatedObjectRawBits
-      let discrim = Nibbles.emptyString | (UInt(bitPattern: newValue) &<< 56)
-      self = _StringObject(
-        rawObject: rawObject, rawDiscrim: discrim, otherBits: self._otherBits)
-#endif
-    }
   }
+
+  @inlinable @inline(__always)
+  mutating internal func setSmallCount(_ count: Int, isASCII: Bool) {
+    // TODO(UTF8 codegen): Ensure this is just a couple simple ops
+    _sanityCheck(isSmall && count <= _SmallString.capacity)
+
+    let rawObject = self.undiscriminatedObjectRawBits
+    let discrim = Nibbles.small(isASCII: isASCII)
+                | (UInt(bitPattern: count) &<< 56)
+    self = _StringObject(
+      rawObject: rawObject, rawDiscrim: discrim, otherBits: self._otherBits)
+  }
+
   @inlinable
   internal var smallIsASCII: Bool {
     @inline(__always)
@@ -410,7 +413,7 @@ extension _StringObject {
     unimplemented_utf8_32bit()
 #else
       _sanityCheck(isSmall)
-      return objectRawBits & 0x4000_0000_0000_0000 == 0
+      return objectRawBits & 0x4000_0000_0000_0000 != 0
 #endif
     }
   }
