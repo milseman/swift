@@ -393,7 +393,7 @@ extension _StringObject {
     unimplemented_utf8_32bit()
 #else
       // TODO(UTF8 codegen): Ensure this is just a couple simple ops
-      _sanityCheck(isSmall && newValue < 15)
+      _sanityCheck(isSmall && newValue <= _SmallString.capacity)
 
       let rawObject = self.undiscriminatedObjectRawBits
       let discrim = Nibbles.emptyString | (UInt(bitPattern: newValue) &<< 56)

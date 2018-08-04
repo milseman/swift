@@ -17,7 +17,9 @@ extension String {
   internal static func _fromASCII(
     _ input: UnsafeBufferPointer<UInt8>
   ) -> String {
-    // TODO(UTF8): smol strings
+    if let smol = _SmallString(input) {
+      return String(_StringGuts(smol))
+    }
 
     // TODO(UTF8): Do we want to do remember ASCII-ness?
     let storage = _StringStorage.create(initializingFrom: input)
@@ -67,7 +69,9 @@ extension String {
   internal static func _uncheckedFromUTF8(
     _ input: UnsafeBufferPointer<UInt8>
   ) -> String {
-    // TODO(UTF8): smol strings
+    if let smol = _SmallString(input) {
+      return String(_StringGuts(smol))
+    }
 
     // TODO(UTF8): Do we want to do an ascii scan?
     let storage = _StringStorage.create(initializingFrom: input)
