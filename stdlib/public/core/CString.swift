@@ -145,8 +145,9 @@ extension String {
     as encoding: Encoding.Type,
     repairingInvalidCodeUnits isRepairing: Bool = true
   ) -> (result: String, repairsMade: Bool)? {
-    if encoding == Unicode.UTF8.self {
-      guard let cPtr = cString else { return nil }
+    guard let cPtr = cString else { return nil }
+
+    if _fastPath(encoding == Unicode.UTF8.self) {
       let ptr = UnsafeRawPointer(cPtr).assumingMemoryBound(to: UInt8.self)
       let len = UTF8._nullCodeUnitOffset(in: ptr)
       let codeUnits = UnsafeBufferPointer(start: ptr, count: len)
@@ -158,7 +159,12 @@ extension String {
       }
     }
 
-    unimplemented_utf8()
+    var end = cPtr
+    while end.pointee != 0 { end += 1 }
+    let len = end - cPtr
+    let codeUnits = UnsafeBufferPointer(start: cPtr, count: len)
+    return String._fromCodeUnits(
+      codeUnits, encoding: encoding, repair: isRepairing)
   }
   /// Creates a string from the null-terminated sequence of bytes at the given
   /// pointer.
