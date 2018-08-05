@@ -169,9 +169,6 @@ extension String {
   public init<T : BinaryInteger>(
     _ value: T, radix: Int = 10, uppercase: Bool = false
   ) {
-    // TODO(UTF8): the below, but requires internal access control...
-    //self = value._description(radix: radix, uppercase: uppercase)
-
-    unimplemented_utf8()
+    self = value._description(radix: radix, uppercase: uppercase)
   }
 }
