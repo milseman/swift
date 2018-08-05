@@ -499,7 +499,10 @@ extension String.UnicodeScalarIndex {
     _ sourcePosition: String.Index,
     within unicodeScalars: String.UnicodeScalarView
   ) {
-    unimplemented_utf8()
+    guard unicodeScalars._guts.isOnUnicodeScalarBoundary(sourcePosition) else {
+      return nil
+    }
+    self = sourcePosition
   }
 
   /// Returns the position in the given string that corresponds exactly to this
