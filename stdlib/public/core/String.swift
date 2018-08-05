@@ -535,7 +535,35 @@ extension String {
     encodedAs targetEncoding: TargetEncoding.Type,
     _ body: (UnsafePointer<TargetEncoding.CodeUnit>) throws -> Result
   ) rethrows -> Result {
-    unimplemented_utf8()
+    if targetEncoding == UTF8.self {
+      return try self.withCString {
+        (cPtr: UnsafePointer<CChar>) -> Result  in
+        _sanityCheck(UInt8.self == TargetEncoding.CodeUnit.self)
+        let ptr = UnsafeRawPointer(cPtr).assumingMemoryBound(
+          to: TargetEncoding.CodeUnit.self)
+        return try body(ptr)
+      }
+    }
+    return try _slowWithCString(encodedAs: targetEncoding, body)
+  }
+
+  @usableFromInline @inline(never) // slow-path
+  @_effects(releasenone)
+  internal func _slowWithCString<Result, TargetEncoding: Unicode.Encoding>(
+    encodedAs targetEncoding: TargetEncoding.Type,
+    _ body: (UnsafePointer<TargetEncoding.CodeUnit>) throws -> Result
+  ) rethrows -> Result {
+    // TODO(UTF8 perf): Transcode from guts directly
+    let codeUnits = Array(self.utf8)
+    var arg = Array<TargetEncoding.CodeUnit>()
+    let repaired = transcode(
+      codeUnits.makeIterator(),
+      from: UTF8.self,
+      to: targetEncoding,
+      stoppingOnError: false,
+      into: { arg.append($0) })
+    _sanityCheck(!repaired)
+    return try body(arg)
   }
 }
 
