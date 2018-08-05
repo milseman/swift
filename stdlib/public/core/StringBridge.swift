@@ -45,7 +45,7 @@ internal func _stdlib_binary_CFStringGetCharactersPtr(
 
 /// Copies a slice of a _CocoaString into contiguous storage of
 /// sufficient capacity.
-@_effects(readonly)
+@_effects(releasenone)
 internal func _cocoaStringCopyCharacters(
   from source: _CocoaString,
   range: Range<Int>,
