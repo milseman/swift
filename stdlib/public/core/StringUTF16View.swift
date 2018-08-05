@@ -184,7 +184,7 @@ extension String.UTF16View: BidirectionalCollection {
     // scalar, use a transcoded offset first.
     let len = _guts.fastUTF8ScalarLength(startingAt: i.encodedOffset)
     if len == 4 && i.transcodedOffset == 0 {
-      return Index(encodedOffset: i.encodedOffset, transcodedOffset: 1)
+      return Index(transcodedAfter: i)
     }
     return Index(encodedOffset: i.encodedOffset &+ len)
   }
@@ -209,7 +209,7 @@ extension String.UTF16View: BidirectionalCollection {
         transcodedOffset: 1)
     }
 
-    _sanityCheck((1...3).contains(len))
+    _sanityCheck((1...3) ~= len)
     return Index(encodedOffset: i.encodedOffset &- len)
   }
 

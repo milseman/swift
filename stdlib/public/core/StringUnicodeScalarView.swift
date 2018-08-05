@@ -96,7 +96,7 @@ extension _StringGuts {
   internal func fastUTF8ScalarLength(startingAt i: Int) -> Int {
     _sanityCheck(isFastUTF8)
     let len = _utf8ScalarLength(self.withFastUTF8 { $0[i] })
-    _sanityCheck((1...4).contains(len))
+    _sanityCheck((1...4) ~= len)
     return len
   }
 

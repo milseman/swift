@@ -513,9 +513,7 @@ extension String.UTF8View {
 
     // Check if we're still transcoding sub-scalar
     if i.transcodedOffset < len - 1 {
-        return Index(
-          encodedOffset: i.encodedOffset,
-          transcodedOffset: 1 + i.transcodedOffset)
+        return Index(transcodedAfter: i)
     }
 
     // Skip to the next scalar
@@ -528,15 +526,27 @@ extension String.UTF8View {
   internal func _foreignIndex(before i: Index) -> Index {
     _sanityCheck(_guts.isForeign)
 
-    // Currently, foreign means NSString
-    unimplemented_utf8()
+    if i.transcodedOffset != 0 {
+      _sanityCheck((1...3) ~= i.transcodedOffset)
+      return Index(transcodedBefore: i)
+    }
+    var offset = i.encodedOffset &- 1
+    var cu = _guts.foreignUTF16CodeUnit(at: offset)
+    if _isTrailingSurrogate(cu) {
+      offset = offset &- 1
+      _sanityCheck(offset >= 0)
+      cu = _guts.foreignUTF16CodeUnit(at: offset)
+    }
+    let len = _numTranscodedUTF8CodeUnits(cu)
+
+    return Index(encodedOffset: offset, transcodedOffset: len &- 1)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignSubscript(position i: Index) -> UTF8.CodeUnit {
     _sanityCheck(_guts.isForeign)
-    
+
     // Currently, foreign means NSString
 
     // TODO(UTF8 perf): Could probably work just off a single code unit
