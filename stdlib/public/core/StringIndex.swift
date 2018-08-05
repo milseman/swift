@@ -103,6 +103,22 @@ extension String.Index {
   }
 }
 
+// Creation helpers
+extension String.Index {
+  @inlinable @inline(__always)
+  internal init(transcodedAfter i: String.Index) {
+    _sanityCheck((0...2) ~= i.transcodedOffset)
+    self.init(
+      encodedOffset: i.encodedOffset, transcodedOffset: i.transcodedOffset &+ 1)
+  }
+  @inlinable @inline(__always)
+  internal init(transcodedBefore i: String.Index) {
+    _sanityCheck((1...3) ~= i.transcodedOffset)
+    self.init(
+      encodedOffset: i.encodedOffset, transcodedOffset: i.transcodedOffset &- 1)
+  }
+}
+
 extension String.Index: Equatable {
   @inlinable @inline(__always)
   public static func == (lhs: String.Index, rhs: String.Index) -> Bool {
