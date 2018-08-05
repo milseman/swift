@@ -102,6 +102,23 @@ extension _StringGuts {
 
   // TODO(UTF8): Should probably take a String.Index, assert no transcoding
   @usableFromInline @inline(__always)
+  internal func fastUTF8ScalarLength(endingAt i: Int) -> Int {
+    _sanityCheck(isFastUTF8)
+
+    return self.withFastUTF8 { utf8 in
+      _sanityCheck(i == utf8.count || !_isContinuation(utf8[i]))
+      var len = 1
+      while _isContinuation(utf8[i - len]) {
+        _sanityCheck(i - len > 0)
+        len += 1
+      }
+      _sanityCheck(len <= 4)
+      return len
+    }
+  }
+
+  // TODO(UTF8): Should probably take a String.Index, assert no transcoding
+  @usableFromInline @inline(__always)
   internal func fastUTF8Scalar(startingAt i: Int) -> Unicode.Scalar {
     _sanityCheck(isFastUTF8)
     return self.withFastUTF8 { utf8 in

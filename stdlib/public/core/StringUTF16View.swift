@@ -193,13 +193,24 @@ extension String.UTF16View: BidirectionalCollection {
   public func index(before i: Index) -> Index {
     precondition(i.encodedOffset > 0)
 
+    if _slowPath(_guts.isForeign) { return _foreignIndex(before: i) }
+
     // TODO(UTF8) known-ASCII fast path
 
-    if _fastPath(_guts.isFastUTF8) {
-      unimplemented_utf8()
+    if i.transcodedOffset != 0 {
+      _sanityCheck(i.transcodedOffset == 1)
+      return Index(encodedOffset: i.encodedOffset)
     }
 
-    return _foreignIndex(before: i)
+    let len = _guts.fastUTF8ScalarLength(endingAt: i.encodedOffset)
+    if len == 4 {
+      return Index(
+        encodedOffset: i.encodedOffset &- len,
+        transcodedOffset: 1)
+    }
+
+    _sanityCheck((1...3).contains(len))
+    return Index(encodedOffset: i.encodedOffset &- len)
   }
 
   @inlinable @inline(__always)
