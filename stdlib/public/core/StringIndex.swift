@@ -173,7 +173,10 @@ extension String.Index {
     _ sourcePosition: String.Index,
     within target: String
   ) {
-    unimplemented_utf8() // on grapheme cluster boundary
+    guard target._guts.isOnGraphemeClusterBoundary(sourcePosition) else {
+      return nil
+    }
+    self = sourcePosition
   }
 
   /// Returns the position in the given UTF-8 view that corresponds exactly to

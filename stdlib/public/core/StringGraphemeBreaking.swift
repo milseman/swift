@@ -79,6 +79,18 @@ internal func _measureCharacterStride(
 extension _StringGuts {
   @usableFromInline @inline(never)
   @_effects(releasenone)
+  internal func isOnGraphemeClusterBoundary(_ i: String.Index) -> Bool {
+    let offset = i.encodedOffset
+    if offset == 0 || offset == self.count { return true }
+
+    guard isOnUnicodeScalarBoundary(i) else { return false }
+
+    let str = String(self)
+    return i == str.index(before: str.index(after: i))
+  }
+
+  @usableFromInline @inline(never)
+  @_effects(releasenone)
   internal func _opaqueCharacterStride(startingAt i: Int) -> Int {
     if _slowPath(isForeign) {
       return _foreignOpaqueCharacterStride(startingAt: i)
