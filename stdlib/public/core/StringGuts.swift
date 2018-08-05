@@ -336,6 +336,7 @@ extension _StringGuts {
     return _foreignCopyUTF8(into: mbp)
   }
 
+  @_effects(releasenone)
   @usableFromInline @inline(never) // slow-path
   internal func _foreignCopyUTF8(
     into mbp: UnsafeMutableBufferPointer<UInt8>
@@ -363,6 +364,7 @@ extension _StringGuts {
     }
   }
 
+  @_effects(releasenone)
   @inline(never) // slow-path
   internal func _foreignUTF8Count() -> Int {
     return String(self).utf8.count

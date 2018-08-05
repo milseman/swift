@@ -153,6 +153,16 @@ extension _StringGuts {
     }
     return 1
   }
+
+  @_effects(releasenone)
+  internal func isOnUnicodeScalarBoundary(_ i: String.Index) -> Bool {
+    if _fastPath(isFastUTF8) {
+      return self.withFastUTF8 { return !_isContinuation($0[i.encodedOffset]) }
+    }
+    let cu = foreignUTF16CodeUnit(at: i.encodedOffset)
+    return !_isTrailingSurrogate(cu)
+  }
+
 }
 
 extension String {
