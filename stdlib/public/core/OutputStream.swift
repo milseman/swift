@@ -293,6 +293,7 @@ internal struct _Stdout: TextOutputStream {
       for c in string.utf8 {
         _stdlib_putchar_unlocked(Int32(c))
       }
+      return
     }
 
     _ = string._guts.withFastUTF8 { utf8 in
