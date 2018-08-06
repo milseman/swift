@@ -20,6 +20,7 @@ import SwiftShims
 /// Effectively an untyped NSString that doesn't require foundation.
 public typealias _CocoaString = AnyObject
 
+@usableFromInline // @testable
 @_effects(releasenone)
 internal func _stdlib_binary_CFStringCreateCopy(
   _ source: _CocoaString
@@ -28,6 +29,7 @@ internal func _stdlib_binary_CFStringCreateCopy(
   return result
 }
 
+@usableFromInline // @testable
 @_effects(readonly)
 internal func _stdlib_binary_CFStringGetLength(
   _ source: _CocoaString
@@ -35,6 +37,7 @@ internal func _stdlib_binary_CFStringGetLength(
   return _swift_stdlib_CFStringGetLength(source)
 }
 
+@usableFromInline // @testable
 @_effects(readonly)
 internal func _stdlib_binary_CFStringGetCharactersPtr(
   _ source: _CocoaString

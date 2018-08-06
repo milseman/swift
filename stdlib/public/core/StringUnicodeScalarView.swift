@@ -543,7 +543,7 @@ extension String.UnicodeScalarIndex {
   ///   an attempt to convert the position of a UTF-8 continuation byte
   ///   returns `nil`.
   public func samePosition(in characters: String) -> String.Index? {
-    unimplemented_utf8()
+    return String.Index(self, within: characters)
   }
 }
 
