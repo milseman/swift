@@ -117,7 +117,7 @@ extension StringProtocol {
   /// - Returns: `true` if the string ends with `suffix`; otherwise, `false`.
   @inlinable
   public func hasSuffix<Suffix: StringProtocol>(_ suffix: Suffix) -> Bool {
-    unimplemented_utf8()
+    return self.reversed().starts(with: suffix.reversed())
   }
 }
 
