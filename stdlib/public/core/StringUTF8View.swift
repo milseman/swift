@@ -462,7 +462,7 @@ extension String.UTF8View : CustomReflectable {
 extension String.UTF8View {
   public typealias SubSequence = Substring.UTF8View
 
-  @inlinable // FIXME(sil-serialize-all)
+  @inlinable
   @available(swift, introduced: 4)
   public subscript(r: Range<Index>) -> String.UTF8View.SubSequence {
     return Substring.UTF8View(self, _bounds: r)
