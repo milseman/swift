@@ -28,7 +28,7 @@ extension String: RangeReplaceableCollection {
   ///   - count: The number of times to repeat `repeatedValue` in the
   ///     resulting string.
   public init(repeating repeatedValue: Character, count: Int) {
-    unimplemented_utf8()
+    self.init(repeating: repeatedValue._str, count: count)
   }
 
   // This initializer disambiguates between the following intitializers, now
@@ -114,7 +114,8 @@ extension String: RangeReplaceableCollection {
   }
 
   public mutating func append(contentsOf newElements: Substring) {
-    unimplemented_utf8()
+    // TODO(UTF8 perf): This is a horribly slow means...
+    self.append(String(newElements))
   }
 
   /// Appends the characters in the given sequence to the string.
@@ -143,12 +144,17 @@ extension String: RangeReplaceableCollection {
   ///   `newElements`. If the call to `replaceSubrange(_:with:)` simply
   ///   removes text at the end of the string, the complexity is O(*n*), where
   ///   *n* is equal to `bounds.count`.
-  @inlinable // specialize
+  @_specialize(where C == String)
+  @_specialize(where C == Substring)
+  @_specialize(where C == Array<Character>)
   public mutating func replaceSubrange<C>(
     _ bounds: Range<Index>,
     with newElements: C
   ) where C : Collection, C.Iterator.Element == Character {
-    unimplemented_utf8()
+    // TODO(UTF8 perf): This is a horribly slow means...
+    let prefix = self[..<bounds.lowerBound]
+    let suffix = self[bounds.upperBound...]
+    self = prefix + String(newElements) + suffix
   }
 
   /// Inserts a new character at the specified position.
@@ -163,7 +169,8 @@ extension String: RangeReplaceableCollection {
   ///
   /// - Complexity: O(*n*), where *n* is the length of the string.
   public mutating func insert(_ newElement: Character, at i: Index) {
-    unimplemented_utf8()
+    // TODO(UTF8 perf): Operate on storage direclty, sliding down elements
+    self.replaceSubrange(i..<i, with: newElement._str)
   }
 
   /// Inserts a collection of characters at the specified position.
@@ -180,11 +187,15 @@ extension String: RangeReplaceableCollection {
   ///
   /// - Complexity: O(*n*), where *n* is the combined length of the string and
   ///   `newElements`.
-  @inlinable // specialize
+  @_specialize(where S == String)
+  @_specialize(where S == Substring)
+  @_specialize(where S == Array<Character>)
   public mutating func insert<S : Collection>(
     contentsOf newElements: S, at i: Index
-  ) where S.Iterator.Element == Character {
-    unimplemented_utf8()
+  ) where S.Element == Character {
+    // TODO(UTF8 perf): Operate on storage direclty, sliding down elements
+    // TODO(UTF8 perf): This is a horribly slow means...
+    self.replaceSubrange(i..<i, with: String(newElements))
   }
 
   /// Removes and returns the character at the specified position.
@@ -207,7 +218,10 @@ extension String: RangeReplaceableCollection {
   /// - Returns: The character that was removed.
   @discardableResult
   public mutating func remove(at i: Index) -> Character {
-    unimplemented_utf8()
+    // TODO(UTF8 perf): Operate on storage directly, sliding down elements
+    let c = self[i]
+    self.replaceSubrange(i..<i, with: String()) // TODO(UTF8): empty literal
+    return c
   }
 
   /// Removes the characters in the given range.
@@ -221,11 +235,8 @@ extension String: RangeReplaceableCollection {
   /// - Parameter bounds: The range of the elements to remove. The upper and
   ///   lower bounds of `bounds` must be valid indices of the string.
   public mutating func removeSubrange(_ bounds: Range<Index>) {
-    // TODO(UTF8 perf): Use existing storage, if possible
-
-    // let result = self[..<bounds.startIndex] + self[bounds.endIndex...]
-    // self = result
-    unimplemented_utf8()
+    // TODO(UTF8 perf): Operate on storage directly, sliding down elements
+    self.replaceSubrange(bounds, with: String())
   }
 
   /// Replaces this string with the empty string.
@@ -238,7 +249,7 @@ extension String: RangeReplaceableCollection {
   ///   optimization when you're planning to grow the string again. The
   ///   default value is `false`.
   public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
-    guard keepCapacity else {
+    guard keepCapacity || _guts.capacity != nil else {
       self = String()
       return
     }
