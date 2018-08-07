@@ -480,7 +480,18 @@ extension String.UnicodeScalarView : RangeReplaceableCollection {
     _ bounds: Range<Index>,
     with newElements: C
   ) where C : Collection, C.Element == Unicode.Scalar {
-    unimplemented_utf8()
+    // TODO(UTF8 perf): This is a horribly slow means...
+    //
+    // TODO(UTF8 perf): Consider storing a string directly, or implemeting RSR
+    // on guts.
+
+    let utf8Replacement = newElements.flatMap { String($0).utf8 }
+    let replacement = utf8Replacement.withUnsafeBufferPointer {
+      return String._uncheckedFromUTF8($0)
+    }
+    var copy = String(_guts)
+    copy.replaceSubrange(bounds, with: replacement)
+    self = copy.unicodeScalars
   }
 }
 
