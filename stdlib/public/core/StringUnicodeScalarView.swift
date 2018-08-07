@@ -173,6 +173,12 @@ extension _StringGuts {
 
   @_effects(releasenone)
   internal func isOnUnicodeScalarBoundary(_ i: String.Index) -> Bool {
+    // TODO(UTF8 perf): isASCII check
+
+    // TODO(UTF8): Guts bounds check helper, or something in terms of Index
+
+    if i.encodedOffset == 0 || i.encodedOffset == self.count { return true }
+
     if _fastPath(isFastUTF8) {
       return self.withFastUTF8 { return !_isContinuation($0[i.encodedOffset]) }
     }
