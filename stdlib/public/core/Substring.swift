@@ -269,7 +269,9 @@ extension Substring: StringProtocol {
   @inlinable // specialization
   public func withCString<Result>(
     _ body: (UnsafePointer<CChar>) throws -> Result) rethrows -> Result {
-    return try wholeGuts.withCString(body, offsetRange)
+    // TODO(UTF8 perf): Detect when we cover the rest of a nul-terminated
+    // String, and thus can avoid a copy.
+    return try String(self).withCString(body)
   }
 
   /// Calls the given closure with a pointer to the contents of the string,
@@ -293,7 +295,9 @@ extension Substring: StringProtocol {
     encodedAs targetEncoding: TargetEncoding.Type,
     _ body: (UnsafePointer<TargetEncoding.CodeUnit>) throws -> Result
   ) rethrows -> Result {
-    unimplemented_utf8()
+    // TODO(UTF8 perf): Detect when we cover the rest of a nul-terminated
+    // String, and thus can avoid a copy.
+    return try String(self).withCString(encodedAs: targetEncoding, body)
   }
 }
 

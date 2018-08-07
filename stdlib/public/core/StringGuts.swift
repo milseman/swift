@@ -274,22 +274,6 @@ extension _StringGuts {
     }
   }
 
-  @inlinable @inline(__always) // fast-path: already C-string compatible
-  internal func withCString<Result>(
-    _ body: (UnsafePointer<Int8>) throws -> Result,
-    _ range: Range<Int>
-  ) rethrows -> Result {
-    if _slowPath(!_object.isFastZeroTerminated) {
-      return try _slowWithCString(body, range)
-    }
-
-    return try self.withFastUTF8 {
-      let ptr =
-        $0[range]._rebased._asCChar.baseAddress._unsafelyUnwrappedUnchecked
-      return try body(ptr)
-    }
-  }
-
   @inline(never) // slow-path
   @usableFromInline
   internal func _slowWithCString<Result>(
@@ -298,20 +282,6 @@ extension _StringGuts {
     _sanityCheck(!_object.isFastZeroTerminated)
     return try String(self).utf8CString.withUnsafeBufferPointer {
       let ptr = $0.baseAddress._unsafelyUnwrappedUnchecked
-      return try body(ptr)
-    }
-  }
-
-  @inline(never) // slow-path
-  @usableFromInline
-  internal func _slowWithCString<Result>(
-    _ body: (UnsafePointer<Int8>) throws -> Result,
-    _ range: Range<Int>
-  ) rethrows -> Result {
-    _sanityCheck(!_object.isFastZeroTerminated)
-
-    return try String(self).utf8CString.withUnsafeBufferPointer {
-      let ptr = $0[range]._rebased.baseAddress._unsafelyUnwrappedUnchecked
       return try body(ptr)
     }
   }
