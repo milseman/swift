@@ -243,7 +243,7 @@ extension String.UTF8View: BidirectionalCollection {
   public func index(_ i: Index, offsetBy n: Int) -> Index {
     if _fastPath(_guts.isFastUTF8) {
       let offset = i.encodedOffset + n
-      _precondition(offset <= _guts.count)
+      _precondition(offset >= 0 && offset <= _guts.count)
       return Index(encodedOffset: offset)
     }
 
@@ -255,9 +255,18 @@ extension String.UTF8View: BidirectionalCollection {
     _ i: Index, offsetBy n: Int, limitedBy limit: Index
   ) -> Index? {
     if _fastPath(_guts.isFastUTF8) {
-      let offset = i.encodedOffset + n
-      guard offset < limit.encodedOffset else { return nil }
-      return Index(encodedOffset: offset)
+      // Check the limit: ignore limit if it precedes `i` (in the correct
+      // direction), otherwise must not be beyond limit (in the correct
+      // direction).
+      let iOffset = i.encodedOffset
+      let result = iOffset + n
+      let limitOffset = limit.encodedOffset
+      if n >= 0 {
+        guard limitOffset < iOffset || result <= limitOffset else { return nil }
+      } else {
+        guard limitOffset > iOffset || result >= limitOffset else { return nil }
+      }
+      return Index(encodedOffset: result)
     }
 
     return _foreignIndex(i, offsetBy: n, limitedBy: limit)
