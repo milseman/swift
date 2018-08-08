@@ -99,9 +99,9 @@ extension _SmallString {
     unimplemented_utf8_32bit()
 #else
     let asciiMask: UInt = 0x8080_8080_8080_8080
-#endif
     let raw = zeroTerminatedRawCodeUnits
     return raw.0 & asciiMask == 0 && raw.1 & asciiMask == 0
+#endif
   }
 }
 
