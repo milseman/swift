@@ -341,3 +341,37 @@ extension _StringGuts {
   }
 }
 
+// TODO(UTF8 merge): move to UnicodeScalars.swift
+extension Unicode.Scalar {
+  // Access the scalar as encoded in UTF-16
+  @inlinable
+  internal func withUTF16CodeUnits<Result>(
+    _ body: (UnsafeBufferPointer<UInt16>) throws -> Result
+  ) rethrows -> Result {
+    var codeUnits: (UInt16, UInt16) = (self.utf16[0], 0)
+    let utf16Count = self.utf16.count
+    if utf16Count > 1 {
+      _sanityCheck(utf16Count == 2)
+      codeUnits.1 = self.utf16[1]
+    }
+    return try Swift.withUnsafePointer(to: &codeUnits) {
+      let ptr = UnsafeRawPointer($0).assumingMemoryBound(to: UInt16.self)
+      return try body(UnsafeBufferPointer(start: ptr, count: utf16Count))
+    }
+  }
+
+  // Access the scalar as encoded in UTF-8
+  @inlinable
+  internal func withUTF8CodeUnits<Result>(
+    _ body: (UnsafeBufferPointer<UInt8>) throws -> Result
+  ) rethrows -> Result {
+    let encodedScalar = UTF8.encode(self)!
+    var (codeUnits, utf8Count) = encodedScalar._bytes
+    return try Swift.withUnsafePointer(to: &codeUnits) {
+      let ptr = UnsafeRawPointer($0).assumingMemoryBound(to: UInt8.self)
+      return try body(UnsafeBufferPointer(start: ptr, count: utf8Count))
+    }
+  }
+}
+
+
