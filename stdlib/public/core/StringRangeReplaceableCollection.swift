@@ -249,7 +249,7 @@ extension String: RangeReplaceableCollection {
   ///   optimization when you're planning to grow the string again. The
   ///   default value is `false`.
   public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
-    guard keepCapacity || _guts.capacity != nil else {
+    guard keepCapacity || _guts.uniqueNativeCapacity != nil else {
       self = String()
       return
     }

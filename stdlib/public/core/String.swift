@@ -688,7 +688,11 @@ extension String {
   @inline(__always) // Eliminate dynamic type check when possible
   internal mutating func append<S: StringProtocol>(_ other: S) {
     if let contigBytes = other as? _HasContiguousBytes {
-      contigBytes.withUnsafeBytes { self._guts.append($0._asUInt8) }
+      contigBytes.withUnsafeBytes {
+        // TODO(UTF8 perf): track ASCIIness
+        let immortalBytes = _StringGuts($0._asUInt8, isKnownASCII: false)
+        self._guts.append(immortalBytes)
+      }
       return
     }
 
