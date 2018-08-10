@@ -60,6 +60,7 @@ extension _AbstractStringStorage {
   @objc(_fastCStringContents)
   final func _fastCStringContents() -> UnsafePointer<CChar>? {
     if let native = self as? _StringStorage {
+      // FIXME(UTF8): Need to check for interior nul
       return native.start._asCChar
     }
 
@@ -134,7 +135,7 @@ extension _StringStorage {
     storage._capacity = endAddr - storage.start
     storage._count = count
     _sanityCheck(storage.capacity >= capacity)
-    storage.unusedStorage[0] = 0 // nul-terminated
+    storage.terminator.pointee = 0 // nul-terminated
     storage._invariantCheck()
 
     return storage
@@ -149,6 +150,7 @@ extension _StringStorage {
       capacity: capacity, count: bufPtr.count)
     let addr = bufPtr.baseAddress._unsafelyUnwrappedUnchecked
     storage.mutableStart.initialize(from: addr, count: bufPtr.count)
+    storage._invariantCheck()
     return storage
   }
 
@@ -158,24 +160,6 @@ extension _StringStorage {
   ) -> _StringStorage {
     return _StringStorage.create(
       initializingFrom: bufPtr, capacity: bufPtr.count)
-  }
-
-  @nonobjc
-  internal static func create(
-    initializingFrom bufPtr: UnsafeBufferPointer<UInt8>,
-    andAppending secondBufPtr: UnsafeBufferPointer<UInt8>
-  ) -> _StringStorage {
-    let size = bufPtr.count + secondBufPtr.count
-    let storage = _StringStorage.create(
-      capacity: size, count: size)
-
-    let addr = bufPtr.baseAddress._unsafelyUnwrappedUnchecked
-    storage.mutableStart.initialize(from: addr, count: bufPtr.count)
-
-    let secondAddr = secondBufPtr.baseAddress._unsafelyUnwrappedUnchecked
-    (storage.mutableStart + bufPtr.count).initialize(
-      from: secondAddr, count: secondBufPtr.count)
-    return storage
   }
 }
 
@@ -211,8 +195,8 @@ extension _StringStorage {
   // Point to the nul-terminator
   @nonobjc
   @inlinable
-  internal final var terminator: UnsafePointer<UInt8> {
-    @inline(__always) get { return end }
+  internal final var terminator: UnsafeMutablePointer<UInt8> {
+    @inline(__always) get { return mutableEnd }
   }
 
   @nonobjc
@@ -265,12 +249,16 @@ extension _StringStorage {
   @nonobjc
   internal func appendInPlace(_ other: UnsafeBufferPointer<UInt8>) {
     _sanityCheck(self.capacity >= other.count)
+    var oldTerminator = self.terminator
+
     let srcAddr = other.baseAddress._unsafelyUnwrappedUnchecked
     let srcCount = other.count
     self.mutableEnd.initialize(from: srcAddr, count: srcCount)
     self._count += srcCount
 
-    self.mutableEnd[0] = 0
+    _sanityCheck(oldTerminator + other.count == self.terminator)
+    self.terminator.pointee = 0
+
     _invariantCheck()
   }
 
@@ -278,14 +266,18 @@ extension _StringStorage {
   internal func appendInPlace<Iter: IteratorProtocol>(
     _ other: inout Iter
   ) where Iter.Element == UInt8 {
+    var oldTerminator = self.terminator
     var srcCount = 0
     while let cu = other.next() {
+      _sanityCheck(self.unusedCapacity >= 1)
       unusedStorage[srcCount] = cu
       srcCount += 1
     }
     self._count += srcCount
 
-    self.mutableEnd[0] = 0
+    _sanityCheck(oldTerminator + srcCount == self.terminator)
+    self.terminator.pointee = 0
+
     _invariantCheck()
   }
 }

@@ -60,10 +60,6 @@ extension _StringGuts {
 
   @inlinable @inline(__always)
   internal init(_ bufPtr: UnsafeBufferPointer<UInt8>, isKnownASCII: Bool) {
-//    if let smol = _SmallString(bufPtr) {
-//      self.init(smol)
-//      return
-//    }
     self.init(_StringObject(immortal: bufPtr, isASCII: isKnownASCII))
   }
 
@@ -111,15 +107,19 @@ extension _StringGuts {
   // If natively stored and uniquely referenced, return the storage's total
   // capacity. Otherwise, nil.
   internal var uniqueNativeCapacity: Int? {
-    guard isUniqueNative else { return nil }
-    return _object.nativeStorage.capacity
+    @inline(__always) mutating get {
+      guard isUniqueNative else { return nil }
+      return _object.nativeStorage.capacity
+    }
   }
 
   // If natively stored and uniquely referenced, return the storage's spare
   // capacity. Otherwise, nil.
   internal var uniqueNativeUnusedCapacity: Int? {
-    guard isUniqueNative else { return nil }
-    return _object.nativeStorage.unusedCapacity
+    @inline(__always) mutating get {
+      guard isUniqueNative else { return nil }
+      return _object.nativeStorage.unusedCapacity
+    }
   }
 
   @inlinable
@@ -189,7 +189,8 @@ extension _StringGuts {
 // Append
 extension _StringGuts {
   internal var isUniqueNative: Bool {
-    @inline(__always) get {
+    @inline(__always) mutating get {
+      // Note: mutating so that self is `inout`.
       guard hasNativeStorage else { return false }
       defer { _fixLifetime(self) }
       var bits: UInt = _object.largeAddressBits
@@ -207,6 +208,8 @@ extension _StringGuts {
   }
 
   internal mutating func grow(_ n: Int) {
+    defer { self._invariantCheck() }
+
     _sanityCheck(
       self.uniqueNativeCapacity == nil || self.uniqueNativeCapacity! < n)
 
@@ -233,6 +236,8 @@ extension _StringGuts {
   }
 
   internal mutating func append(_ other: _StringGuts) {
+    defer { self._invariantCheck() }
+
     // Try to form a small string if possible
     if !hasNativeStorage {
       if let smol = _SmallString(base: self, appending: other) {
@@ -244,7 +249,7 @@ extension _StringGuts {
     // See if we can accomodate without growing
     let otherUTF8Count = other.utf8Count
     if let unusedCapacity = self.uniqueNativeUnusedCapacity,
-       unusedCapacity > otherUTF8Count
+       unusedCapacity >= otherUTF8Count
     {
       // Nothing
     } else {
@@ -255,10 +260,18 @@ extension _StringGuts {
       "growth should produce uniqueness")
 
     if other.isFastUTF8 {
-      other.withFastUTF8 { self._object.nativeStorage.appendInPlace($0) }
+      other.withFastUTF8 { self.appendInPlace($0) }
       return
     }
     _foreignAppendInPlace(other)
+  }
+
+  internal mutating func appendInPlace(_ other: UnsafeBufferPointer<UInt8>) {
+    self._object.nativeStorage.appendInPlace(other)
+
+    // We re-initialize from the modified storage to pick up new count, flags,
+    // etc.
+    self = _StringGuts(self._object.nativeStorage)
   }
 
   @inline(never) // slow-path
@@ -268,6 +281,10 @@ extension _StringGuts {
 
     var iter = String(other).utf8.makeIterator()
     self._object.nativeStorage.appendInPlace(&iter)
+
+    // We re-initialize from the modified storage to pick up new count, flags,
+    // etc.
+    self = _StringGuts(self._object.nativeStorage)
   }
 }
 

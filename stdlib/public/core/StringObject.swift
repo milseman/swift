@@ -462,6 +462,7 @@ extension _StringObject {
       _sanityCheck(newValue == newValue & 0x0000_FFFF_FFFF_FFFF, "too large")
       _otherBits |= UInt(bitPattern: newValue)
       _sanityCheck(newValue == largeCount)
+      _invariantCheck()
 #endif
     }
   }
@@ -716,6 +717,8 @@ extension _StringObject {
         } else {
           _sanityCheck(hasNativeStorage)
           _sanityCheck(hasObjCBridgeableObject)
+          _sanityCheck(nativeStorage.count == self.count)
+          nativeStorage._invariantCheck()
         }
       }
       if largeIsCocoa {

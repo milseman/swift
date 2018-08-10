@@ -126,7 +126,7 @@ extension _SmallString {
     #if INTERNAL_CHECKS_ENABLED
     print("""
       smallUTF8: count: \(self.count), codeUnits: \(
-        self.map { String($0, radix: 16) }.dropLast()
+        self.map { String($0, radix: 16) }.dropLast().joined()
       )
       """)
     #endif // INTERNAL_CHECKS_ENABLED
