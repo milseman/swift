@@ -139,12 +139,10 @@ CharacterTests.test("sizeof") {
   // <rdar://problem/16754935> MemoryLayout<Character>.size is 9, should be 8
 
   let size1 = MemoryLayout<Character>.size
-  expectTrue(size1 == 8 || size1 == 9)
+  expectTrue(size1 == 16)
 
   let a: Character = "a"
   let size2 = MemoryLayout.size(ofValue: a)
-  expectTrue(size2 == 8 || size2 == 9)
-
   expectEqual(size1, size2)
 }
 
@@ -252,8 +250,7 @@ func checkUnicodeScalars(_ s: String) {
 
 func checkRepresentation(_ s: String) {
   let utf16 = Array(s.utf16)
-  let expectSmall
-    = utf16.count < 4 || utf16.count == 4 && utf16[3] < 0x8000
+  let expectSmall = s.utf8.count <= _SmallString.capacity
   let isSmall = isSmallRepresentation(s)
 
   let expectedSize = expectSmall ? "small" : "large"
