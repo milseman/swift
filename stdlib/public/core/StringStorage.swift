@@ -88,7 +88,7 @@ final internal class _StringStorage: _AbstractStringStorage {
   // which is not available for overridding.
   @nonobjc
   @usableFromInline
-  internal var _capacity: Int
+  internal var _realCapacity: Int
 
   @nonobjc
   @usableFromInline
@@ -119,12 +119,12 @@ extension _StringStorage {
     _sanityCheck(capacity >= count)
 
     // Reserve enough capacity for a trailing nul character
-    let capacity = 1 + Swift.max(capacity, _SmallUTF8String.capacity)
-    _sanityCheck(capacity > count)
+    let desiredCapacity = 1 + Swift.max(capacity, _SmallUTF8String.capacity)
+    _sanityCheck(desiredCapacity > count)
 
     let storage = Builtin.allocWithTailElems_1(
       _StringStorage.self,
-      capacity._builtinWordValue, UInt8.self)
+      desiredCapacity._builtinWordValue, UInt8.self)
 
     let storageAddr = UnsafeRawPointer(
       Builtin.bridgeToRawPointer(storage))
@@ -132,7 +132,7 @@ extension _StringStorage {
       storageAddr + _stdlib_malloc_size(storageAddr)
     ).assumingMemoryBound(to: UInt8.self)
 
-    storage._capacity = endAddr - storage.start
+    storage._realCapacity = endAddr - storage.start
     storage._count = count
     _sanityCheck(storage.capacity >= capacity)
     storage.terminator.pointee = 0 // nul-terminated
@@ -210,7 +210,7 @@ extension _StringStorage {
   // The total capacity available for code units. Note that this excludes the
   // required nul-terminator
   @nonobjc
-  internal var capacity: Int { return _capacity &- 1 }
+  internal var capacity: Int { return _realCapacity &- 1 }
 
   // The unused capacity available for appending. Note that this excludes the
   // required nul-terminator
@@ -227,7 +227,7 @@ extension _StringStorage {
   @nonobjc
   @inlinable
   internal var unusedCapacity: Int {
-    @inline(__always) get { return _capacity &- _count &- 1 }
+    @inline(__always) get { return _realCapacity &- _count &- 1 }
   }
 
   @nonobjc
@@ -238,7 +238,7 @@ extension _StringStorage {
     let rawStart = UnsafeRawPointer(start)
     _sanityCheck(unusedCapacity >= 0)
     _sanityCheck(rawSelf + Int(_StringObject.nativeBias) == rawStart)
-    _sanityCheck(self._capacity > self._count, "no room for nul-terminator")
+    _sanityCheck(self._realCapacity > self._count, "no room for nul-terminator")
     _sanityCheck(self.terminator.pointee == 0, "not nul terminated")
     #endif
   }
