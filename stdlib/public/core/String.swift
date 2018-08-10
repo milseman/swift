@@ -576,11 +576,7 @@ extension String: _ExpressibleByBuiltinUnicodeScalarLiteral {
 
   @inlinable @inline(__always)
   public init(_ scalar: Unicode.Scalar) {
-    // FIXME(UTF8 perf): These should always fit in small representation
-    // For now, hack hack hack and go slow
-    self = Array(scalar.utf16).withUnsafeBufferPointer {
-      String._uncheckedFromUTF16($0)
-    }
+    self = scalar.withUTF8CodeUnits { String._uncheckedFromUTF8($0) }
   }
 }
 
