@@ -742,7 +742,13 @@ extension _StringObject {
       return
     }
     if providesFastUTF8 && largeFastIsNative {
-      print("Native")
+      let repr = _StringGuts(self)._classify()
+      print("""
+        Native(\
+        owner: \(repr._objectIdentifier!), \
+        count: \(repr._count), \
+        capacity: \(repr._capacity))
+        """)
     } else if largeIsCocoa {
       print("Cocoa")
     } else {
