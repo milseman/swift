@@ -249,7 +249,7 @@ extension _StringStorage {
   @nonobjc
   internal func appendInPlace(_ other: UnsafeBufferPointer<UInt8>) {
     _sanityCheck(self.capacity >= other.count)
-    var oldTerminator = self.terminator
+    let oldTerminator = self.terminator
 
     let srcAddr = other.baseAddress._unsafelyUnwrappedUnchecked
     let srcCount = other.count
@@ -266,7 +266,7 @@ extension _StringStorage {
   internal func appendInPlace<Iter: IteratorProtocol>(
     _ other: inout Iter
   ) where Iter.Element == UInt8 {
-    var oldTerminator = self.terminator
+    let oldTerminator = self.terminator
     var srcCount = 0
     while let cu = other.next() {
       _sanityCheck(self.unusedCapacity >= 1)

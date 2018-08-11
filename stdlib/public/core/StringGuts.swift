@@ -207,15 +207,17 @@ extension _StringGuts {
     self.grow(n)
   }
 
+  // Grow to accomodate at least `n` code units
   internal mutating func grow(_ n: Int) {
     defer { self._invariantCheck() }
 
     _sanityCheck(
       self.uniqueNativeCapacity == nil || self.uniqueNativeCapacity! < n)
 
+    let growthTarget = Swift.max(n, _growArrayCapacity(n))
     if _fastPath(isFastUTF8) {
       let storage = self.withFastUTF8 {
-        _StringStorage.create(initializingFrom: $0, capacity: n)
+        _StringStorage.create(initializingFrom: $0, capacity: growthTarget)
       }
 
       // TODO(UTF8): Track known ascii
@@ -223,10 +225,11 @@ extension _StringGuts {
       return
     }
 
-    _foreignGrow(n)
+    _foreignGrow(growthTarget: growthTarget)
   }
 
-  internal mutating func _foreignGrow(_ n: Int) {
+  @inline(never) // slow-path
+  internal mutating func _foreignGrow(growthTarget n: Int) {
     // TODO(UTF8 perf): skip the intermediary arrays
     let selfUTF8 = Array(String(self).utf8)
     selfUTF8.withUnsafeBufferPointer {
