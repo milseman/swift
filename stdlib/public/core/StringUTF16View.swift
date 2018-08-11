@@ -191,7 +191,8 @@ extension String.UTF16View: BidirectionalCollection {
 
   @inlinable @inline(__always)
   public func index(before i: Index) -> Index {
-    precondition(i.encodedOffset > 0)
+    precondition(
+      i.encodedOffset > 0 || i.encodedOffset == 0 && i.transcodedOffset > 0)
 
     if _slowPath(_guts.isForeign) { return _foreignIndex(before: i) }
 
@@ -204,11 +205,14 @@ extension String.UTF16View: BidirectionalCollection {
 
     let len = _guts.fastUTF8ScalarLength(endingAt: i.encodedOffset)
     if len == 4 {
+      // 2 UTF-16 code units comprise this scalar; advance to the beginning and
+      // start mid-scalar transcoding
       return Index(
         encodedOffset: i.encodedOffset &- len,
         transcodedOffset: 1)
     }
 
+    // Single UTF-16 code unit
     _sanityCheck((1...3) ~= len)
     return Index(encodedOffset: i.encodedOffset &- len)
   }
