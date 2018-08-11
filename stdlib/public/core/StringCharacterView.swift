@@ -37,7 +37,7 @@ extension String: BidirectionalCollection {
   /// In an empty string, `startIndex` is equal to `endIndex`.
   @inlinable
   public var startIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: 0) }
+    @inline(__always) get { return _guts.startIndex }
   }
 
   /// A string's "past the end" position---that is, the position one greater
@@ -46,7 +46,7 @@ extension String: BidirectionalCollection {
   /// In an empty string, `endIndex` is equal to `startIndex`.
   @inlinable
   public var endIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: _guts.count) }
+    @inline(__always) get { return _guts.endIndex }
   }
 
   /// The number of characters in a string.

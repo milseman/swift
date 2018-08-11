@@ -971,12 +971,6 @@ extension String {
       self._rawBits = raw
       self._invariantCheck()
     }
-
-    @inlinable @inline(__always)
-    internal func _invariantCheck() {
-      #if INTERNAL_CHECKS_ENABLED
-      #endif
-    }
   }
 }
 

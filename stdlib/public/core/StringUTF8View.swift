@@ -205,7 +205,7 @@ extension String.UTF8View: BidirectionalCollection {
   /// If the UTF-8 view is empty, `startIndex` is equal to `endIndex`.
   @inlinable
   public var startIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: 0) }
+    @inline(__always) get { return _guts.startIndex }
   }
 
   /// The "past the end" position---that is, the position one
@@ -214,7 +214,7 @@ extension String.UTF8View: BidirectionalCollection {
   /// In an empty UTF-8 view, `endIndex` is equal to `startIndex`.
   @inlinable
   public var endIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: _guts.count) }
+    @inline(__always) get { return _guts.endIndex }
   }
 
   /// Returns the next consecutive position after `i`.

@@ -177,7 +177,11 @@ extension _StringGuts {
 
     // TODO(UTF8): Guts bounds check helper, or something in terms of Index
 
-    if i.encodedOffset == 0 || i.encodedOffset == self.count { return true }
+    // Beginning and end are always scalar aligned; mid-scalar never is
+    //
+    // TODO(UTF8 merge): Is this only under guarantee of well-formedness?
+    guard i.transcodedOffset == 0 else { return false }
+    if i == self.startIndex || i == self.endIndex { return true }
 
     if _fastPath(isFastUTF8) {
       return self.withFastUTF8 { return !_isContinuation($0[i.encodedOffset]) }
@@ -265,7 +269,7 @@ extension String.UnicodeScalarView: BidirectionalCollection {
   /// If the string is empty, `startIndex` is equal to `endIndex`.
   @inlinable
   public var startIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: 0) }
+    @inline(__always) get { return _guts.startIndex }
   }
 
   /// The "past the end" position---that is, the position one greater than
@@ -274,7 +278,7 @@ extension String.UnicodeScalarView: BidirectionalCollection {
   /// In an empty Unicode scalars view, `endIndex` is equal to `startIndex`.
   @inlinable
   public var endIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: _guts.count) }
+    @inline(__always) get { return _guts.endIndex }
   }
 
   /// Returns the next consecutive location after `i`.

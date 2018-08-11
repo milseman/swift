@@ -162,7 +162,7 @@ extension String.UTF16View: BidirectionalCollection {
   /// nonempty; identical to `endIndex` otherwise.
   @inlinable // FIXME(sil-serialize-all)
   public var startIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: 0) }
+    @inline(__always) get { return _guts.startIndex }
   }
 
   /// The "past the end" position---that is, the position one greater than
@@ -171,7 +171,7 @@ extension String.UTF16View: BidirectionalCollection {
   /// In an empty UTF-16 view, `endIndex` is equal to `startIndex`.
   @inlinable // FIXME(sil-serialize-all)
   public var endIndex: Index {
-    @inline(__always) get { return Index(encodedOffset: _guts.count) }
+    @inline(__always) get { return _guts.endIndex }
   }
 
   @inlinable @inline(__always)
@@ -191,8 +191,7 @@ extension String.UTF16View: BidirectionalCollection {
 
   @inlinable @inline(__always)
   public func index(before i: Index) -> Index {
-    precondition(
-      i.encodedOffset > 0 || i.encodedOffset == 0 && i.transcodedOffset > 0)
+    precondition(!i.isZeroPosition)
 
     if _slowPath(_guts.isForeign) { return _foreignIndex(before: i) }
 

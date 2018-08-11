@@ -35,13 +35,16 @@ the default value being `0`.
 */
 
 extension String.Index {
-
-}
-
-extension String.Index {
   @inlinable
   internal var orderingValue: UInt64 {
     @inline(__always) get { return _rawBits &>> 14 }
+  }
+
+  // Whether this is at the canonical "start" position, that is encoded AND
+  // transcoded offset of 0.
+  @inlinable
+  internal var isZeroPosition: Bool {
+    @inline(__always) get { return orderingValue == 0 }
   }
 
   /// The offset into a string's code units for this index.
@@ -100,6 +103,13 @@ extension String.Index {
   @usableFromInline
   internal init(encodedOffset pos: Int, characterStride char: Int) {
     self.init(encodedOffset: pos, transcodedOffset: 0, characterStride: char)
+  }
+
+  @inlinable @inline(__always)
+  internal func _invariantCheck() {
+    #if INTERNAL_CHECKS_ENABLED
+    _sanityCheck(encodedOffset >= 0)
+    #endif
   }
 }
 
