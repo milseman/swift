@@ -601,9 +601,10 @@ extension String: _ExpressibleByBuiltinUTF16StringLiteral {
   public init(
     _builtinUTF16StringLiteral start: Builtin.RawPointer,
     utf16CodeUnitCount: Builtin.Word
-    ) {
-    // TODO(UTF8): have compiler emit as UTF-8 instead
+  ) {
+//    fatalError("TODO: Have compiler emit as UTF-8 instead")
 
+    // TODO(UTF8 merge) Remove this conformance entirely...
     let bufPtr = UnsafeBufferPointer(
       start: UnsafeRawPointer(start).assumingMemoryBound(to: UInt16.self),
       count: Int(utf16CodeUnitCount))
