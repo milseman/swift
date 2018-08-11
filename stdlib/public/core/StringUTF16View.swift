@@ -348,12 +348,16 @@ extension String.UTF16View.Index {
   ///   - sourcePosition: A position in at least one of the views of the string
   ///     shared by `target`.
   ///   - target: The `UTF16View` in which to find the new position.
-  @inlinable // FIXME(sil-serialize-all)
   public init?(
     _ sourcePosition: String.Index, within target: String.UTF16View
   ) {
-    guard sourcePosition.transcodedOffset == 0 else { return nil }
-    self.init(encodedOffset: sourcePosition.encodedOffset)
+    if target._guts.isForeign {
+      guard sourcePosition.transcodedOffset == 0 else { return nil }
+      self.init(encodedOffset: sourcePosition.encodedOffset)
+      return
+    }
+
+    self.init(sourcePosition, within: String.UnicodeScalarView(target._guts))
   }
 
   /// Returns the position in the given view of Unicode scalars that
