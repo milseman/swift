@@ -352,15 +352,15 @@ extension String.UTF16View.Index {
   ///     shared by `target`.
   ///   - target: The `UTF16View` in which to find the new position.
   public init?(
-    _ sourcePosition: String.Index, within target: String.UTF16View
+    _ idx: String.Index, within target: String.UTF16View
   ) {
-    if target._guts.isForeign {
-      guard sourcePosition.transcodedOffset == 0 else { return nil }
-      self.init(encodedOffset: sourcePosition.encodedOffset)
-      return
+    if _slowPath(target._guts.isForeign) {
+      guard idx._foreignIsWithin(target) else { return nil }
+    } else {
+      guard target._guts.isOnUnicodeScalarBoundary(idx) else { return nil }
     }
 
-    self.init(sourcePosition, within: String.UnicodeScalarView(target._guts))
+    self = idx
   }
 
   /// Returns the position in the given view of Unicode scalars that
@@ -472,5 +472,17 @@ extension String.UTF16View {
     // Currently, foreign means NSString
     return Index(encodedOffset: i.encodedOffset + n)
   }
-
 }
+
+extension String.Index {
+  @usableFromInline @inline(never) // opaque slow-path
+  @_effects(releasenone)
+  internal func _foreignIsWithin(_ target: String.UTF16View) -> Bool {
+    _sanityCheck(target._guts.isForeign)
+    // Currently, foreign means UTF-16.
+
+    // If we're transcoding, we're a UTF-8 view index, not UTF-16.
+    return self.transcodedOffset == 0
+  }
+}
+

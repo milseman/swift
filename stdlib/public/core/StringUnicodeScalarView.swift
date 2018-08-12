@@ -171,6 +171,7 @@ extension _StringGuts {
     return 1
   }
 
+  @usableFromInline
   @_effects(releasenone)
   internal func isOnUnicodeScalarBoundary(_ i: String.Index) -> Bool {
     // TODO(UTF8 perf): isASCII check

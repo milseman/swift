@@ -445,9 +445,17 @@ extension String.UTF8View.Index {
   /// - Parameters:
   ///   - sourcePosition: A position in a `String` or one of its views.
   ///   - target: The `UTF8View` in which to find the new position.
-  @inlinable // FIXME(sil-serialize-all)
+  @inlinable
   public init?(_ idx: String.Index, within target: String.UTF8View) {
-    unimplemented_utf8()
+    if _slowPath(target._guts.isForeign) {
+      guard idx._foreignIsWithin(target) else { return nil }
+    } else {
+      // All indices, except sub-scalar UTF-16 indices pointing at trailing
+      // surrogates, are valid.
+      guard idx.transcodedOffset == 0 else { return nil }
+    }
+
+    self = idx
   }
 }
 
@@ -596,5 +604,20 @@ extension String.UTF8View {
     _sanityCheck(_guts.isForeign)
     return __distance(from: startIndex, to: endIndex)
   }
+}
 
+extension String.Index {
+  @usableFromInline @inline(never) // opaque slow-path
+  @_effects(releasenone)
+  internal func _foreignIsWithin(_ target: String.UTF8View) -> Bool {
+    _sanityCheck(target._guts.isForeign)
+    // Currently, foreign means UTF-16.
+
+    // If we're transcoding, we're already a UTF8 view index.
+    if self.encodedOffset != 0 { return true }
+
+    // Otherwise, we must be scalar-aligned, i.e. not pointing at a trailing
+    // surrogate.
+    return target._guts.isOnUnicodeScalarBoundary(self)
+  }
 }
