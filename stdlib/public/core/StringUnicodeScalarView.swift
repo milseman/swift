@@ -119,23 +119,61 @@ extension _StringGuts {
 
   // TODO(UTF8): Should probably take a String.Index, assert no transcoding
   @usableFromInline @inline(__always)
-  internal func fastUTF8Scalar(startingAt i: Int) -> Unicode.Scalar {
+  internal func fastUTF8Scalar(startingAtOrBefore idx: Int) -> Unicode.Scalar {
     _sanityCheck(isFastUTF8)
     return self.withFastUTF8 { utf8 in
+      var i = idx
+      while _slowPath(_isContinuation(utf8[i])) {
+        i -= 1
+        // TODO(UTF8 merge): Verify it's not possible to form Substring from
+        // sub-scalar indices, otherwise `utf8` could start with continuation
+        // byte.
+        _sanityCheck(
+          i >= 0, "Malformed contents: starts with continuation byte")
+      }
       let cu0 = utf8[i]
-      switch _utf8ScalarLength(cu0) {
+      let length = _utf8ScalarLength(cu0)
+      _sanityCheck(idx < i+length)
+
+      switch length {
       case 1: return _decodeUTF8(cu0)
       case 2: return _decodeUTF8(cu0, utf8[i &+ 1])
       case 3: return _decodeUTF8(cu0, utf8[i &+ 1], utf8[i &+ 2])
       case 4: return _decodeUTF8(cu0, utf8[i &+ 1], utf8[i &+ 2], utf8[i &+ 3])
       default: Builtin.unreachable()
       }
+
     }
   }
 
+  // @usableFromInline @inline(__always)
+  // internal func fastUTF8Scalar(startingAt i: Int) -> Unicode.Scalar {
+  //   _sanityCheck(isFastUTF8)
+  //   return self.withFastUTF8 { utf8 in
+  //     let cu0 = utf8[i]
+  //     switch _utf8ScalarLength(cu0) {
+  //     case 1: return _decodeUTF8(cu0)
+  //     case 2: return _decodeUTF8(cu0, utf8[i &+ 1])
+  //     case 3: return _decodeUTF8(cu0, utf8[i &+ 1], utf8[i &+ 2])
+  //     case 4: return _decodeUTF8(cu0, utf8[i &+ 1], utf8[i &+ 2], utf8[i &+ 3])
+  //     default: Builtin.unreachable()
+  //     }
+  //   }
+  // }
+
   // TODO(UTF8): Should probably take a String.Index, assert no transcoding
   @_effects(releasenone)
-  internal func foreignScalar(startingAt i: Int) -> Unicode.Scalar {
+  internal func foreignScalar(startingAtOrBefore idx: Int) -> Unicode.Scalar {
+    var i = idx
+    if _slowPath(_isTrailingSurrogate(foreignUTF16CodeUnit(at: i))) {
+      i -= 1
+      // TODO(UTF8 merge): Verify it's not possible to form Substring from
+      // sub-scalar indices, otherwise `utf8` could start with continuation
+      // byte. Also, need to handle invalid-contents NSStrings
+      _sanityCheck(
+        i >= 0, "Malformed contents: starts with trailing surrogate")
+    }
+
     let cu = foreignUTF16CodeUnit(at: i)
     _sanityCheck(!_isTrailingSurrogate(cu))
 
@@ -147,6 +185,21 @@ extension _StringGuts {
 
     return Unicode.Scalar(_unchecked: UInt32(cu))
   }
+
+  // // TODO(UTF8): Should probably take a String.Index, assert no transcoding
+  // @_effects(releasenone)
+  // internal func foreignScalar(startingAt i: Int) -> Unicode.Scalar {
+  //   let cu = foreignUTF16CodeUnit(at: i)
+  //   _sanityCheck(!_isTrailingSurrogate(cu))
+
+  //   if _slowPath(_isLeadingSurrogate(cu)) {
+  //     let trailing = foreignUTF16CodeUnit(at: i+1)
+  //     return Unicode.Scalar(
+  //       _unchecked: _decodeSurrogatePair(leading: cu, trailing: trailing))
+  //   }
+
+  //   return Unicode.Scalar(_unchecked: UInt32(cu))
+  // }
 
   // TODO(UTF8): Should probably take a String.Index, assert no transcoding
   @_effects(releasenone)
@@ -342,7 +395,7 @@ extension String.UnicodeScalarView: BidirectionalCollection {
   public subscript(position: Index) -> Unicode.Scalar {
     @inline(__always) get {
       if _fastPath(_guts.isFastUTF8) {
-        return _guts.fastUTF8Scalar(startingAt: position.encodedOffset)
+        return _guts.fastUTF8Scalar(startingAtOrBefore: position.encodedOffset)
       }
 
       return _foreignSubscript(position: position)
@@ -622,6 +675,6 @@ extension String.UnicodeScalarView {
   internal func _foreignSubscript(position i: Index) -> Unicode.Scalar {
     _sanityCheck(_guts.isForeign)
 
-    return _guts.foreignScalar(startingAt: i.encodedOffset)
+    return _guts.foreignScalar(startingAtOrBefore: i.encodedOffset)
   }
 }

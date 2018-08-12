@@ -563,11 +563,10 @@ extension String.UTF8View {
   @_effects(releasenone)
   internal func _foreignSubscript(position i: Index) -> UTF8.CodeUnit {
     _sanityCheck(_guts.isForeign)
-
     // Currently, foreign means NSString
 
     // TODO(UTF8 perf): Could probably work just off a single code unit
-    let scalar = _guts.foreignScalar(startingAt: i.encodedOffset)
+    let scalar = _guts.foreignScalar(startingAtOrBefore: i.encodedOffset)
     let encoded = Unicode.UTF8.encode(scalar)._unsafelyUnwrappedUnchecked
 
     _sanityCheck(i.transcodedOffset < 1+encoded.count)
