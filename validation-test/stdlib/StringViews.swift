@@ -178,8 +178,21 @@ tests.test("index-mapping/utf16-to-utf8/\(id)") {
   expectEqualSequence(
     [
       [0xf0, 0x9f, 0x8f],
-      // does not align with any utf8 code unit
-      id == "legacy" ? [] : replacementUTF8,
+
+      // TODO(UTF8 merge): Verify reasoning below:
+      //
+      // Prior to UTF-8 String, this tested for empty array in "legacy mode" or
+      // the replacemnet character otherwise. However, SE-0180 (String Index
+      // Overhual) dictates subscript behavior should treat it as emergent
+      // behavior from its encoded offset, hence we should get the same 3 code
+      // units as prior for non-scalar-aligned UTF-16 offsets applied to the
+      // UTF-8 view.
+      //
+      // Old code:
+      //   // does not align with any utf8 code unit
+      //   id == "legacy" ? [] : replacementUTF8,
+      id == "legacy" ? [] : [0xf0, 0x9f, 0x8f],
+
       [0xe2, 0x98, 0x83],
       [0xe2, 0x9d, 0x85],
       [0xe2, 0x9d, 0x86],
