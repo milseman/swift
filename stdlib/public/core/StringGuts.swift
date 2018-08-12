@@ -103,6 +103,15 @@ extension _StringGuts {
     @inline(__always) get { return _object.isASCII }
   }
 
+  internal var nativeCapacity: Int? {
+      guard hasNativeStorage else { return nil }
+      return _object.nativeStorage.capacity
+  }
+
+  internal var nativeUnusedCapacity: Int? {
+      guard hasNativeStorage else { return nil }
+      return _object.nativeStorage.unusedCapacity
+  }
 
   // If natively stored and uniquely referenced, return the storage's total
   // capacity. Otherwise, nil.
@@ -214,10 +223,9 @@ extension _StringGuts {
     _sanityCheck(
       self.uniqueNativeCapacity == nil || self.uniqueNativeCapacity! < n)
 
-    let growthTarget = Swift.max(n, _growArrayCapacity(n))
     if _fastPath(isFastUTF8) {
       let storage = self.withFastUTF8 {
-        _StringStorage.create(initializingFrom: $0, capacity: growthTarget)
+        _StringStorage.create(initializingFrom: $0, capacity: n)
       }
 
       // TODO(UTF8): Track known ascii
@@ -225,11 +233,11 @@ extension _StringGuts {
       return
     }
 
-    _foreignGrow(growthTarget: growthTarget)
+    _foreignGrow(n)
   }
 
   @inline(never) // slow-path
-  internal mutating func _foreignGrow(growthTarget n: Int) {
+  internal mutating func _foreignGrow(_ n: Int) {
     // TODO(UTF8 perf): skip the intermediary arrays
     let selfUTF8 = Array(String(self).utf8)
     selfUTF8.withUnsafeBufferPointer {
@@ -249,14 +257,29 @@ extension _StringGuts {
       }
     }
 
-    // See if we can accomodate without growing
+    // See if we can accomodate without growing or copying. If we have
+    // sufficient capacity, we do not need to grow, and we can skip the copy if
+    // unique. Otherwise, growth is required.
     let otherUTF8Count = other.utf8Count
-    if let unusedCapacity = self.uniqueNativeUnusedCapacity,
-       unusedCapacity >= otherUTF8Count
-    {
-      // Nothing
+    let sufficientCapacity: Bool
+    if let unused = self.nativeUnusedCapacity, unused >= otherUTF8Count {
+      sufficientCapacity = true
     } else {
-      self.grow(self.utf8Count + otherUTF8Count)
+      sufficientCapacity = false
+    }
+    if !self.isUniqueNative || !sufficientCapacity {
+      let totalCount = self.utf8Count + otherUTF8Count
+
+      // Non-unique storage: just make a copy of the appropriate size, otherwise
+      // grow like an array.
+      let growthTarget: Int
+      if sufficientCapacity {
+        growthTarget = totalCount
+      } else {
+        growthTarget = Swift.max(
+          totalCount, _growArrayCapacity(nativeCapacity ?? 0))
+      }
+      self.grow(growthTarget)
     }
 
     _sanityCheck(self.uniqueNativeUnusedCapacity != nil,

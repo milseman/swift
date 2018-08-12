@@ -46,8 +46,7 @@ extension _StringGuts {
     var result = _StringRepresentation(
       _isASCII: self.isKnownASCII,
       _count: self.count,
-      _capacity:
-        self.hasNativeStorage ? self._object.nativeStorage.capacity : 0,
+      _capacity: nativeCapacity ?? 0,
       _form: ._small
     )
     if _object.isSmall {
