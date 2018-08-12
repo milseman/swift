@@ -450,7 +450,21 @@ tests.test("index-mapping/utf8-to-unicode-scalar/\(id)") {
 
 tests.test("index-mapping/utf16-to-unicode-scalar/\(id)") {
   let winterUtf16UnicodeScalars: [UnicodeScalar?] = [
-    UnicodeScalar(0x1f3c2), err(replacementScalar.value),
+    UnicodeScalar(0x1f3c2),
+
+  // TODO(UTF8 merge): Verify reasoning below:
+  //
+  // Prior to UTF-8 String, this tested for empty array in "legacy mode" or
+  // the replacemnet character otherwise. However, SE-0180 (String Index
+  // Overhual) dictates subscript behavior should treat it as emergent
+  // behavior from its encoded offset, hence we should get the same 3 code
+  // units as prior for non-scalar-aligned UTF-16 offsets applied to the
+  // UTF-8 view.
+  //
+  // Old code:
+  //   err(replacementScalar.value),
+    err(0x1f3c2),
+
     UnicodeScalar(0x2603), 
     UnicodeScalar(0x2745), 
     UnicodeScalar(0x2746), 
