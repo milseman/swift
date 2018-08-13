@@ -694,43 +694,43 @@ extension _StringObject {
   @inlinable @inline(__always)
   internal func _invariantCheck() {
     #if INTERNAL_CHECKS_ENABLED
-    _sanityCheck(MemoryLayout<_StringObject>.size == 16)
-    if isForeign {
-      _sanityCheck(largeIsCocoa, "No other foreign forms yet")
-    }
+    // _sanityCheck(MemoryLayout<_StringObject>.size == 16)
+    // if isForeign {
+    //   _sanityCheck(largeIsCocoa, "No other foreign forms yet")
+    // }
 
-    if isSmall {
-      _sanityCheck(isImmortal)
-      _sanityCheck(smallCount <= 15)
-      _sanityCheck(smallCount == count)
-      _sanityCheck(!hasObjCBridgeableObject)
-    } else {
-      _sanityCheck(isLarge)
-      _sanityCheck(largeCount == count)
-      if providesFastUTF8 && largeFastIsNative {
-        _sanityCheck(!isSmall)
-        _sanityCheck(!largeIsCocoa)
+    // if isSmall {
+    //   _sanityCheck(isImmortal)
+    //   _sanityCheck(smallCount <= 15)
+    //   _sanityCheck(smallCount == count)
+    //   _sanityCheck(!hasObjCBridgeableObject)
+    // } else {
+    //   _sanityCheck(isLarge)
+    //   _sanityCheck(largeCount == count)
+    //   if providesFastUTF8 && largeFastIsNative {
+    //     _sanityCheck(!isSmall)
+    //     _sanityCheck(!largeIsCocoa)
 
-        if isImmortal {
-          _sanityCheck(!hasNativeStorage)
-          _sanityCheck(!hasObjCBridgeableObject)
-        } else {
-          _sanityCheck(hasNativeStorage)
-          _sanityCheck(hasObjCBridgeableObject)
-          _sanityCheck(nativeStorage.count == self.count)
-          nativeStorage._invariantCheck()
-        }
-      }
-      if largeIsCocoa {
-        _sanityCheck(hasObjCBridgeableObject)
-        _sanityCheck(!isSmall)
-        if isForeign {
+    //     if isImmortal {
+    //       _sanityCheck(!hasNativeStorage)
+    //       _sanityCheck(!hasObjCBridgeableObject)
+    //     } else {
+    //       _sanityCheck(hasNativeStorage)
+    //       _sanityCheck(hasObjCBridgeableObject)
+    //       _sanityCheck(nativeStorage.count == self.count)
+    //       nativeStorage._invariantCheck()
+    //     }
+    //   }
+    //   if largeIsCocoa {
+    //     _sanityCheck(hasObjCBridgeableObject)
+    //     _sanityCheck(!isSmall)
+    //     if isForeign {
 
-        } else {
-          _sanityCheck(largeFastIsShared)
-        }
-      }
-    }
+    //     } else {
+    //       _sanityCheck(largeFastIsShared)
+    //     }
+    //   }
+    // }
     #endif // INTERNAL_CHECKS_ENABLED
   }
 
