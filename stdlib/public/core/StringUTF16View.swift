@@ -267,7 +267,8 @@ extension String.UTF16View: BidirectionalCollection {
       // TODO(UTF8): known-ASCII fast path
 
       if _fastPath(_guts.isFastUTF8) {
-        let scalar = _guts.fastUTF8Scalar(startingAtOrBefore: i.encodedOffset)
+        let scalar = _guts.fastUTF8Scalar(
+          startingAt: _guts.scalarAlign(i).encodedOffset)
         if scalar.value <= 0xFFFF {
           return UInt16(truncatingIfNeeded: scalar.value)
         }

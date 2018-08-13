@@ -188,7 +188,7 @@ extension String: BidirectionalCollection {
       // FIXME(UTF8): bounds checking
 
       // TODO: known-ASCII and single-scalar-grapheme fast path, etc.
-
+      let i = _guts.scalarAlign(i)
       let distance = _characterStride(startingAt: i)
 
       // TODO(UTF8): Probably worth making into `extractRange` on StringGuts.

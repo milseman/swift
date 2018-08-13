@@ -566,7 +566,8 @@ extension String.UTF8View {
     // Currently, foreign means NSString
 
     // TODO(UTF8 perf): Could probably work just off a single code unit
-    let scalar = _guts.foreignScalar(startingAtOrBefore: i.encodedOffset)
+    let scalar = _guts.foreignScalar(
+      startingAt: _guts.scalarAlign(i).encodedOffset)
     let encoded = Unicode.UTF8.encode(scalar)._unsafelyUnwrappedUnchecked
 
     _sanityCheck(i.transcodedOffset < 1+encoded.count)
