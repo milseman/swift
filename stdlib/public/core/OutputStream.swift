@@ -405,13 +405,3 @@ internal struct _TeeStream<
   @inlinable // FIXME(sil-serialize-all)
   internal mutating func _unlock() { right._unlock(); left._unlock() }
 }
-
-@available(*, unavailable, renamed: "TextOutputStream")
-public typealias OutputStreamType = TextOutputStream
-
-extension TextOutputStreamable {
-  @available(*, unavailable, renamed: "write(to:)")
-  public func writeTo<Target: TextOutputStream>(_ target: inout Target) {
-    Builtin.unreachable()
-  }
-}
