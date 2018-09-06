@@ -13,8 +13,14 @@
 extension _StringGuts {
   @usableFromInline @inline(__always) // fast-path: fold common fastUTF8 check
   internal func scalarAlign(_ idx: Index) -> Index {
+    // TODO(UTF8 perf): isASCII check
+
+    if _slowPath(idx.transcodedOffset != 0 || idx.encodedOffset == 0) {
+      // Transcoded indices are already scalar aligned
+      return String.Index(encodedOffset: idx.encodedOffset)
+    }
     if _slowPath(self.isForeign) {
-      return _foreignScalarAlign(idx)
+      return foreignScalarAlign(idx)
     }
 
     return self.withFastUTF8 { utf8 in
@@ -34,22 +40,6 @@ extension _StringGuts {
 
       return Index(encodedOffset: i)
     }
-  }
-
-  @usableFromInline @inline(never) // slow-path
-  internal func _foreignScalarAlign(_ idx: Index) -> Index {
-    var i = idx.encodedOffset
-    if _slowPath(_isTrailingSurrogate(foreignUTF16CodeUnit(at: i))) {
-      i -= 1
-      // TODO(UTF8 merge): Verify it's not possible to form Substring from sub-
-      // scalar indices, otherwise `utf16` could start with trailing surrogate.
-      // Also, need to handle invalid-contents NSStrings
-      _sanityCheck(
-        i >= 0, "Malformed contents: starts with trailing surrogate")
-      return Index(encodedOffset: i)
-    }
-
-    return idx
   }
 
   // TODO(UTF8): Should probably take a String.Index, assert no transcoding
@@ -93,49 +83,10 @@ extension _StringGuts {
     }
   }
 
-  // TODO(UTF8): Should probably take a String.Index, assert no transcoding
-  @_effects(releasenone)
-  internal func foreignScalar(startingAt i: Int) -> Unicode.Scalar {
-    let cu = foreignUTF16CodeUnit(at: i)
-    _sanityCheck(!_isTrailingSurrogate(cu))
-
-    if _slowPath(_isLeadingSurrogate(cu)) {
-      let trailing = foreignUTF16CodeUnit(at: i+1)
-      return Unicode.Scalar(
-        _unchecked: _decodeSurrogatePair(leading: cu, trailing: trailing))
-    }
-
-    return Unicode.Scalar(_unchecked: UInt32(cu))
-  }
-
-  // TODO(UTF8): Should probably take a String.Index, assert no transcoding
-  @_effects(releasenone)
-  internal func foreignScalarLength(startingAt i: Int) -> Int {
-    let cu = foreignUTF16CodeUnit(at: i)
-    _sanityCheck(!_isTrailingSurrogate(cu))
-
-    if _slowPath(_isLeadingSurrogate(cu)) {
-      return 2
-    }
-    return 1
-  }
-
-  // TODO(UTF8): Should probably take a String.Index, assert no transcoding
-  @_effects(releasenone)
-  internal func foreignScalarLength(endingAt i: Int) -> Int {
-    let cu = foreignUTF16CodeUnit(at: i &- 1)
-    _sanityCheck(!_isLeadingSurrogate(cu))
-    if _slowPath(_isTrailingSurrogate(cu)) {
-      return 2
-    }
-    return 1
-  }
-
   @usableFromInline
   @_effects(releasenone)
   internal func isOnUnicodeScalarBoundary(_ i: String.Index) -> Bool {
     // TODO(UTF8 perf): isASCII check
-
     // TODO(UTF8): Guts bounds check helper, or something in terms of Index
 
     // Beginning and end are always scalar aligned; mid-scalar never is
@@ -147,10 +98,9 @@ extension _StringGuts {
     if _fastPath(isFastUTF8) {
       return self.withFastUTF8 { return !_isContinuation($0[i.encodedOffset]) }
     }
-    let cu = foreignUTF16CodeUnit(at: i.encodedOffset)
-    return !_isTrailingSurrogate(cu)
-  }
 
+    return i == foreignScalarAlign(i)
+  }
 }
 
 extension String {
@@ -564,8 +514,9 @@ extension String.UnicodeScalarView {
   @_effects(releasenone)
   internal func _foreignIndex(after i: Index) -> Index {
     _sanityCheck(_guts.isForeign)
+    let cu = _guts.foreignErrorCorrectedUTF16CodeUnit(at: i)
+    let len = _isLeadingSurrogate(cu) ? 2 : 1
 
-    let len = _guts.foreignScalarLength(startingAt: i.encodedOffset)
     return Index(encodedOffset: i.encodedOffset + len)
   }
 
@@ -573,8 +524,10 @@ extension String.UnicodeScalarView {
   @_effects(releasenone)
   internal func _foreignIndex(before i: Index) -> Index {
     _sanityCheck(_guts.isForeign)
+    let priorIdx = String.Index(encodedOffset: i.encodedOffset - 1)
+    let cu = _guts.foreignErrorCorrectedUTF16CodeUnit(at: priorIdx)
+    let len = _isTrailingSurrogate(cu) ? 2 : 1
 
-    let len = _guts.foreignScalarLength(endingAt: i.encodedOffset)
     return Index(encodedOffset: i.encodedOffset - len)
   }
 
@@ -585,6 +538,6 @@ extension String.UnicodeScalarView {
     _sanityCheck(_guts.isOnUnicodeScalarBoundary(i),
       "should of been aligned prior")
 
-    return _guts.foreignScalar(startingAt: i.encodedOffset)
+    return _guts.foreignErrorCorrectedScalar(startingAt: i)
   }
 }

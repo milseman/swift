@@ -127,6 +127,13 @@ extension String.Index {
     self.init(
       encodedOffset: i.encodedOffset, transcodedOffset: i.transcodedOffset &- 1)
   }
+
+  @inlinable
+  internal var strippingTranscoding: String.Index {
+    @inline(__always) get {
+      return String.Index(encodedOffset: self.encodedOffset)
+    }
+  }
 }
 
 extension String.Index: Equatable {

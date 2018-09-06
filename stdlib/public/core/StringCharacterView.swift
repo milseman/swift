@@ -228,6 +228,13 @@ extension String {
   internal func _foreignSubscript(position: Index, distance: Int) -> Character {
     _sanityCheck(_guts.isForeign)
 
+    // Both a fast-path for single-code-unit graphemes and validation:
+    //   ICU treats isolated surrogates as isolated graphemes
+    if distance == 1 {
+      return Character(
+        String(_guts.foreignErrorCorrectedScalar(startingAt: position)))
+    }
+
     let start = position.encodedOffset
     let end = start + distance
     let count = end - start

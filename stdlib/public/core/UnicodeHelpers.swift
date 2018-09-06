@@ -11,8 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 //
-// A collection of helper functions and utilities for interpreting Unicode
-// contents at a low-level.
+// Low-level helper functions and utilities for interpreting Unicode
 //
 
 internal let _leadingSurrogateBias: UInt16 = 0xd800
@@ -111,4 +110,143 @@ internal func _decodeSurrogatePair(
 
   return ((hi10 &<< 10) | lo10) &+ 0x1_00_00
 }
+
+@inline(__always)
+internal func _numUTF8CodeUnits(_ scalar: Unicode.Scalar) -> Int {
+  switch scalar.value {
+    case 0..<0x80: return 1
+    case 0x80..<0x0800: return 2
+    case 0x0800..<0x1_0000: return 3
+    default: return 4
+  }
+}
+@inline(__always)
+internal func _numUTF16CodeUnits(_ scalar: Unicode.Scalar) -> Int {
+  return scalar.value <= UInt16.max ? 1 : 2
+}
+
+
+//
+// Error-correcting helpers (U+FFFD for unpaired surrogates) for accessing
+// contents of foreign strings
+//
+extension _StringGuts {
+  @_effects(releasenone)
+  private func _getForeignCodeUnit(at i: Int) -> UInt16 {
+    // Currently, foreign  means NSString
+    return _cocoaStringSubscript(_object.cocoaObject, i)
+  }
+
+  @_effects(releasenone)
+  internal func foreignErrorCorrectedScalar(
+    startingAt idx: String.Index
+  ) -> Unicode.Scalar {
+    _sanityCheck(idx.transcodedOffset == 0)
+    _sanityCheck(idx.encodedOffset < self.count)
+
+    let start = idx.encodedOffset
+    let leading = _getForeignCodeUnit(at: start)
+
+    if _fastPath(!_isSurrogate(leading)) {
+      return Unicode.Scalar(_unchecked: UInt32(leading))
+    }
+
+    // Validate foreign strings on-read: trailing surrogates are invalid,
+    // leading need following trailing
+    //
+    // TODO(UTF8 perf flags): Have a valid bit available to check, and assert
+    // it's not set in the condition here.
+    let nextOffset = start &+ 1
+    if _slowPath(_isTrailingSurrogate(leading) || nextOffset == self.count) {
+      return Unicode.Scalar._replacementCharacter
+    }
+    let trailing = _getForeignCodeUnit(at: nextOffset)
+    if _slowPath(!_isTrailingSurrogate(trailing)) {
+      return Unicode.Scalar._replacementCharacter
+    }
+
+    return Unicode.Scalar(
+      _unchecked: _decodeSurrogatePair(leading: leading, trailing: trailing))
+  }
+
+  @_effects(releasenone)
+  internal func foreignErrorCorrectedScalar(
+    endingAt idx: String.Index
+  ) -> Unicode.Scalar {
+    _sanityCheck(idx.transcodedOffset == 0)
+    _sanityCheck(idx.encodedOffset <= self.count)
+    _sanityCheck(idx.encodedOffset > 0)
+
+    let end = idx.encodedOffset
+    let trailing = _getForeignCodeUnit(at: end &- 1)
+    if _fastPath(!_isSurrogate(trailing)) {
+      return Unicode.Scalar(_unchecked: UInt32(trailing))
+    }
+
+    // Validate foreign strings on-read: trailing surrogates are invalid,
+    // leading need following trailing
+    //
+    // TODO(UTF8 perf flags): Have a valid bit available to check, and assert
+    // it's not set in the condition here.
+    let priorOffset = end &- 2
+    if _slowPath(_isLeadingSurrogate(trailing) || priorOffset < 0) {
+      return Unicode.Scalar._replacementCharacter
+    }
+    let leading = _getForeignCodeUnit(at: priorOffset)
+    if _slowPath(!_isLeadingSurrogate(leading)) {
+      return Unicode.Scalar._replacementCharacter
+    }
+
+    return Unicode.Scalar(
+      _unchecked: _decodeSurrogatePair(leading: leading, trailing: trailing))
+  }
+
+  @_effects(releasenone)
+  internal func foreignErrorCorrectedUTF16CodeUnit(
+    at idx: String.Index
+  ) -> UInt16 {
+    _sanityCheck(idx.transcodedOffset == 0)
+    _sanityCheck(idx.encodedOffset < self.count)
+
+    let start = idx.encodedOffset
+    let cu = _getForeignCodeUnit(at: start)
+    if _fastPath(!_isSurrogate(cu)) {
+      return cu
+    }
+
+    // Validate foreign strings on-read: trailing surrogates are invalid,
+    // leading need following trailing
+    //
+    // TODO(UTF8 perf flags): Have a valid bit available to check, and assert
+    // it's not set in the condition here.
+    if _isLeadingSurrogate(cu) {
+      let nextOffset = start &+ 1
+      guard nextOffset < self.count,
+            _isTrailingSurrogate(_getForeignCodeUnit(at: nextOffset))
+      else { return UTF16._replacementCodeUnit }
+    } else {
+      let priorOffset = start &- 1
+      guard priorOffset >= 0,
+            _isLeadingSurrogate(_getForeignCodeUnit(at: priorOffset))
+      else { return UTF16._replacementCodeUnit }
+    }
+
+    return cu
+  }
+
+  @usableFromInline @inline(never) // slow-path
+  @_effects(releasenone)
+  internal func foreignScalarAlign(_ idx: Index) -> Index {
+    _sanityCheck(idx.encodedOffset < self.count)
+
+    let ecCU = foreignErrorCorrectedUTF16CodeUnit(at: idx)
+    if _fastPath(!_isTrailingSurrogate(ecCU)) {
+      return idx
+    }
+    _sanityCheck(idx.encodedOffset > 0,
+      "Error-correction shouldn't give trailing surrogate at position zero")
+    return String.Index(encodedOffset: idx.encodedOffset &- 1)
+  }
+}
+
 

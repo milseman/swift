@@ -10,30 +10,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// TODO(UTF8 merge): Find a common place for these helpers
-extension _StringGuts {
-  @_effects(releasenone)
-  // TODO(UTF8): Should probably take a String.Index, assert no transcoding
-  internal func foreignUTF16CodeUnit(at i: Int) -> UInt16 {
-    // Currently, foreign means NSString
-    return _cocoaStringSubscript(_object.cocoaObject, i)
-  }
-}
-
-// FIXME: This should do the error-correction, and thus be on guts...
-internal func _numTranscodedUTF8CodeUnits(_ x: UInt16) -> Int {
-  _sanityCheck(!_isTrailingSurrogate(x))
-
-  if _slowPath(_isLeadingSurrogate(x)) { return 4 }
-
-  switch x {
-    case 0..<0x80: return 1
-    case 0x80..<0x0800: return 2
-    case _: return 3
-  }
-}
-
-
 // FIXME(ABI)#71 : The UTF-16 string view should have a custom iterator type to
 // allow performance optimizations of linear traversals.
 
@@ -406,8 +382,6 @@ extension String.UTF16View {
   @_effects(releasenone)
   internal func _foreignIndex(after i: Index) -> Index {
     _sanityCheck(_guts.isForeign)
-
-    // Currently, foreign means NSString
     return Index(encodedOffset: i.encodedOffset + 1)
   }
 
@@ -415,8 +389,6 @@ extension String.UTF16View {
   @_effects(releasenone)
   internal func _foreignIndex(before i: Index) -> Index {
     _sanityCheck(_guts.isForeign)
-
-    // Currently, foreign means NSString
     return Index(encodedOffset: i.encodedOffset - 1)
   }
 
@@ -424,17 +396,13 @@ extension String.UTF16View {
   @_effects(releasenone)
   internal func _foreignSubscript(position i: Index) -> UTF16.CodeUnit {
     _sanityCheck(_guts.isForeign)
-
-    // Currently, foreign means NSString
-    return _guts.foreignUTF16CodeUnit(at: i.encodedOffset)
+    return _guts.foreignErrorCorrectedUTF16CodeUnit(at: i)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignDistance(from start: Index, to end: Index) -> Int {
     _sanityCheck(_guts.isForeign)
-
-    // Currently, foreign means NSString
     return end.encodedOffset - start.encodedOffset
   }
 
@@ -444,8 +412,6 @@ extension String.UTF16View {
     _ i: Index, offsetBy n: Int, limitedBy limit: Index
   ) -> Index? {
     _sanityCheck(_guts.isForeign)
-
-    // Currently, foreign means NSString
     let l = limit.encodedOffset - i.encodedOffset
     if n > 0 ? l >= 0 && l < n : l <= 0 && n < l {
       return nil
@@ -457,8 +423,6 @@ extension String.UTF16View {
   @_effects(releasenone)
   internal func _foreignIndex(_ i: Index, offsetBy n: Int) -> Index {
     _sanityCheck(_guts.isForeign)
-
-    // Currently, foreign means NSString
     return Index(encodedOffset: i.encodedOffset + n)
   }
 }
@@ -468,7 +432,6 @@ extension String.Index {
   @_effects(releasenone)
   internal func _foreignIsWithin(_ target: String.UTF16View) -> Bool {
     _sanityCheck(target._guts.isForeign)
-    // Currently, foreign means UTF-16.
 
     // If we're transcoding, we're a UTF-8 view index, not UTF-16.
     return self.transcodedOffset == 0
