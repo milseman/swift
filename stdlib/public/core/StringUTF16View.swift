@@ -20,19 +20,7 @@ extension _StringGuts {
   }
 }
 
-internal let _leadingSurrogateBias: UInt16 = 0xd800
-internal let _trailingSurrogateBias: UInt16 = 0xdc00
-internal let _surrogateMask: UInt16 = 0xfc00
-
-@inline(__always)
-internal func _isTrailingSurrogate(_ cu: UInt16) -> Bool {
-  return cu & _surrogateMask == _trailingSurrogateBias
-}
-@inline(__always)
-internal func _isLeadingSurrogate(_ cu: UInt16) -> Bool {
-  return cu & _surrogateMask == _leadingSurrogateBias
-}
-
+// FIXME: This should do the error-correction, and thus be on guts...
 internal func _numTranscodedUTF8CodeUnits(_ x: UInt16) -> Int {
   _sanityCheck(!_isTrailingSurrogate(x))
 
