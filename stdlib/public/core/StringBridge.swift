@@ -305,7 +305,7 @@ extension StringProtocol {
   @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _utf16OffsetsToRange(_ range: Range<Int>) -> Range<Index> {
-    // TODO(UTF8): Can be more efficient for a range
+    // TODO(UTF8 perf): Can be more efficient for a range
     return self._utf16OffsetToIndex(range.lowerBound)
        ..< self._utf16OffsetToIndex(range.upperBound)
   }
@@ -316,14 +316,22 @@ extension StringProtocol {
   @_specialize(where Self == String)
   @_specialize(where Self == Substring)
   public // SPI(Foundation)
-  func _rangeToUTF16Offsets(_ range: Range<Index>) -> Range<Int> {
-    let lower = range.lowerBound
-    let upper = range.upperBound
+  func _indexToUTF16Offset(_ idx: Index) -> Int {
+    // TODO(UTF8 perf): More efficient impl
+    return self.utf16.distance(from: self.utf16.startIndex, to: idx)
+  }
 
-    // TODO(UTF8 perf): More efficient impl, at very least iterate once
+  // TODO:
+  //
+  @_effects(releasenone)
+  @_specialize(where Self == String)
+  @_specialize(where Self == Substring)
+  public // SPI(Foundation)
+  func _rangeToUTF16Offsets(_ range: Range<Index>) -> Range<Int> {
+    // TODO(UTF8 perf): Can be more efficient for a range
     return Range(uncheckedBounds: (
-      lower: self.utf16.distance(from: self.utf16.startIndex, to: lower),
-      upper: self.utf16.distance(from: self.utf16.startIndex, to: upper)))
+      lower: _indexToUTF16Offset(range.lowerBound),
+      upper: _indexToUTF16Offset(range.upperBound)))
   }
 
   // Resiliently provide a (barely) amortized random access UTF-16 interface

@@ -454,6 +454,11 @@ extension StringProtocol where Index == String.Index {
     return self._utf16OffsetToIndex(utf16Index)
   }
 
+  /// Return the UTF-16 code unit offset corresponding to an Index
+  func _toOffset(_ idx: String.Index) -> Int {
+    return self._indexToUTF16Offset(idx)
+  }
+
   @inlinable
   internal func _toRelativeNSRange(_ r: Range<String.Index>) -> NSRange {
     let offsetRange = self._rangeToUTF16Offsets(r)
@@ -1534,7 +1539,7 @@ extension StringProtocol where Index == String.Index {
   public
   func rangeOfComposedCharacterSequence(at anIndex: Index) -> Range<Index> {
     return _toRange(
-      _ns.rangeOfComposedCharacterSequence(at: anIndex.encodedOffset))
+      _ns.rangeOfComposedCharacterSequence(at: _toOffset(anIndex)))
   }
 
   // - (NSRange)rangeOfComposedCharacterSequencesForRange:(NSRange)range
@@ -1683,7 +1688,7 @@ extension StringProtocol where Index == String.Index {
   @available(swift, deprecated: 4.0,
     message: "Please use String slicing subscript with a 'partial range from' operator.")
   public func substring(from index: Index) -> String {
-    return _ns.substring(from: index.encodedOffset)
+    return _ns.substring(from: _toOffset(index))
   }
 
   // - (NSString *)substringToIndex:(NSUInteger)anIndex
@@ -1693,7 +1698,7 @@ extension StringProtocol where Index == String.Index {
   @available(swift, deprecated: 4.0,
     message: "Please use String slicing subscript with a 'partial range upto' operator.")
   public func substring(to index: Index) -> String {
-    return _ns.substring(to: index.encodedOffset)
+    return _ns.substring(to: _toOffset(index))
   }
 
   // - (NSString *)substringWithRange:(NSRange)aRange
