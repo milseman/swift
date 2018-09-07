@@ -4,7 +4,7 @@
 
 // __FUNCTION__ used as top-level parameter produces the module name.
 // CHECK-LABEL: sil @main
-// CHECK:         string_literal utf16 "default_arguments"
+// CHECK:         string_literal utf8 "default_arguments"
 
 // Default argument for first parameter.
 // CHECK-LABEL: sil hidden @$S17default_arguments7defarg11i1d1sySi_SdSStFfA_ : $@convention(thin) () -> Int
@@ -63,7 +63,7 @@ func autocloseFile(x: @autoclosure () -> String = #file,
 // CHECK-LABEL: sil hidden @$S17default_arguments17testAutocloseFileyyF
 func testAutocloseFile() {
   // CHECK-LABEL: sil private [transparent] @$S17default_arguments17testAutocloseFileyyFSSyXKfu_ : $@convention(thin) () -> @owned String
-  // CHECK: string_literal utf16{{.*}}default_arguments.swift
+  // CHECK: string_literal utf8{{.*}}default_arguments.swift
 
   // CHECK-LABEL: sil private [transparent] @$S17default_arguments17testAutocloseFileyyFSiyXKfu0_ : $@convention(thin) () -> Int
   // CHECK: integer_literal $Builtin.Int2048, [[@LINE+1]]
@@ -90,12 +90,12 @@ func closure(_: () -> ()) {}
 func autoclosure(_: @autoclosure () -> ()) {}
 
 // CHECK-LABEL: sil hidden @$S17default_arguments25testCallWithMagicLiteralsyyF
-// CHECK:         string_literal utf16 "testCallWithMagicLiterals()"
-// CHECK:         string_literal utf16 "testCallWithMagicLiterals()"
+// CHECK:         string_literal utf8 "testCallWithMagicLiterals()"
+// CHECK:         string_literal utf8 "testCallWithMagicLiterals()"
 // CHECK-LABEL: sil private @$S17default_arguments25testCallWithMagicLiteralsyyFyyXEfU_
-// CHECK:         string_literal utf16 "testCallWithMagicLiterals()"
+// CHECK:         string_literal utf8 "testCallWithMagicLiterals()"
 // CHECK-LABEL: sil private [transparent] @$S17default_arguments25testCallWithMagicLiteralsyyFyyXKfu_
-// CHECK:         string_literal utf16 "testCallWithMagicLiterals()"
+// CHECK:         string_literal utf8 "testCallWithMagicLiterals()"
 func testCallWithMagicLiterals() {
   testMagicLiterals()
   testMagicLiterals()
@@ -104,7 +104,7 @@ func testCallWithMagicLiterals() {
 }
 
 // CHECK-LABEL: sil hidden @$S17default_arguments25testPropWithMagicLiteralsSivg
-// CHECK:         string_literal utf16 "testPropWithMagicLiterals"
+// CHECK:         string_literal utf8 "testPropWithMagicLiterals"
 var testPropWithMagicLiterals: Int {
   testMagicLiterals()
   closure { testMagicLiterals() }
@@ -115,7 +115,7 @@ var testPropWithMagicLiterals: Int {
 class Foo {
 
   // CHECK-LABEL: sil hidden @$S17default_arguments3FooC3int6stringACSi_SStcfc : $@convention(method) (Int, @owned String, @owned Foo) -> @owned Foo
-  // CHECK:         string_literal utf16 "init(int:string:)"
+  // CHECK:         string_literal utf8 "init(int:string:)"
   init(int: Int, string: String = #function) {
     testMagicLiterals()
     closure { testMagicLiterals() }
@@ -123,7 +123,7 @@ class Foo {
   }
 
   // CHECK-LABEL: sil hidden @$S17default_arguments3FooCfd
-  // CHECK:         string_literal utf16 "deinit"
+  // CHECK:         string_literal utf8 "deinit"
   deinit {
     testMagicLiterals()
     closure { testMagicLiterals() }
@@ -131,7 +131,7 @@ class Foo {
   }
 
   // CHECK-LABEL: sil hidden @$S17default_arguments3FooCyS2icig
-  // CHECK:         string_literal utf16 "subscript(_:)"
+  // CHECK:         string_literal utf8 "subscript"(_:)
   subscript(x: Int) -> Int {
     testMagicLiterals()
     closure { testMagicLiterals() }
@@ -140,7 +140,7 @@ class Foo {
   }
  
   // CHECK-LABEL: sil private @globalinit_33_E52D764B1F2009F2390B2B8DF62DAEB8_func0
-  // CHECK:         string_literal utf16 "Foo" 
+  // CHECK:         string_literal utf8 "Foo" 
   static let x = Foo(int:0)
 
 }
@@ -150,17 +150,17 @@ testMagicLiterals()
 closure { testMagicLiterals() }
 autoclosure(testMagicLiterals())
 
-// CHECK: string_literal utf16 "default_arguments"
+// CHECK: string_literal utf8 "default_arguments"
 let y : String = #function 
 
 // CHECK-LABEL: sil hidden @$S17default_arguments16testSelectorCall_17withMagicLiteralsySi_SitF
-// CHECK:         string_literal utf16 "testSelectorCall(_:withMagicLiterals:)"
+// CHECK:         string_literal utf8 "testSelectorCall(_:withMagicLiterals:)"
 func testSelectorCall(_ x: Int, withMagicLiterals y: Int) {
   testMagicLiterals()
 }
 
 // CHECK-LABEL: sil hidden @$S17default_arguments32testSelectorCallWithUnnamedPieceyySi_SitF
-// CHECK:         string_literal utf16 "testSelectorCallWithUnnamedPiece(_:_:)"
+// CHECK:         string_literal utf8 "testSelectorCallWithUnnamedPiece(_:_:)"
 func testSelectorCallWithUnnamedPiece(_ x: Int, _ y: Int) {
   testMagicLiterals()
 }
