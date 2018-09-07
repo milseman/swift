@@ -197,6 +197,7 @@ extension _StringGuts {
 
 // Append
 extension _StringGuts {
+  @usableFromInline // @testable
   internal var isUniqueNative: Bool {
     @inline(__always) mutating get {
       // Note: mutating so that self is `inout`.

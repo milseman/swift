@@ -70,32 +70,35 @@ struct StringGutsCollection: RangeReplaceableCollection, RandomAccessCollection 
   typealias Indices = CountableRange<Int>
 
   init(_ guts: _StringGuts) {
-    self._guts = guts
+    self._str = String(guts)
   }
 
   init() {
     self.init(_StringGuts())
   }
 
-  var _guts: _StringGuts
+  var _str: String
+  var _guts: _StringGuts { return _str._guts }
 
   var startIndex: Index { return 0 }
   var endIndex: Index { return _guts.count }
   var indices: Indices { return startIndex..<endIndex }
 
   subscript(position: Index) -> Element {
-    return _guts.codeUnit(atCheckedOffset: position)
+    return _str._utf16CodeUnitAtOffset(position)
   }
 
   mutating func replaceSubrange<C>(
     _ subrange: Range<Index>,
     with newElements: C
   ) where C : Collection, C.Element == Element {
-    _guts.replaceSubrange(subrange, with: newElements)
+    var utf16 = Array(_str.utf16)
+    utf16.replaceSubrange(subrange, with: newElements)
+    self._str = String(decoding: utf16, as: UTF16.self)
   }
 
   mutating func reserveCapacity(_ n: Int) {
-    _guts.reserveCapacity(n)
+    _str.reserveCapacity(n)
   }
 }
 
@@ -878,23 +881,25 @@ StringTests.test("stringGutsExtensibility")
             k == 0 ? asciiString("b")
           : k == 1 ? ("b" as NSString as String)
           : ("b" as NSMutableString as String)
-        )._guts
+        )
 
-        if k == 0 { expectTrue(x.isSingleByte) }
+        if k == 0 { expectTrue(x._guts.isFastUTF8) }
         
         for i in 0..<count {
-          x.append(contentsOf:
-            repeatElement(i < boundary ? ascii : nonAscii, count: 3))
+          x.append(String(
+            decoding: repeatElement(i < boundary ? ascii : nonAscii, count: 3),
+            as: UTF16.self))
         }
         // Make sure we can append pure ASCII to wide storage
-        x.append(contentsOf: repeatElement(ascii, count: 2))
+        x.append(String(
+          decoding: repeatElement(ascii, count: 2), as: UTF16.self))
         
         expectEqualSequence(
           [UTF16.CodeUnit(UnicodeScalar("b").value)]
           + Array(repeatElement(ascii, count: 3*boundary))
           + repeatElement(nonAscii, count: 3*(count - boundary))
           + repeatElement(ascii, count: 2),
-          StringGutsCollection(x)
+          StringGutsCollection(x.utf16)
         )
       }
     }
@@ -944,10 +949,10 @@ StringTests.test("stringGutsReserve")
     expectEqual(isSwiftNative(base), startedNative)
     
     let originalBuffer = base.bufferID
-    let isUnique = base._guts._isUniqueNative()
+    let isUnique = base._guts.isUniqueNative
     let startedUnique =
       startedNative &&
-      base._guts._objectIdentifier != nil &&
+      base._classify()._objectIdentifier != nil &&
       isUnique
     
     base.reserveCapacity(16)
@@ -990,15 +995,15 @@ StringTests.test("stringGutsReserve")
 }
 
 func makeStringGuts(_ base: String) -> _StringGuts {
-  var x = _StringGuts()
+  var x = String(_StringGuts())
   // make sure some - but not all - replacements will have to grow the buffer
   x.reserveCapacity(base._classify()._count * 3 / 2)
   let capacity = x.capacity
-  x.append(base._guts)
+  x.append(base)
   // Widening the guts should not make it lose its capacity,
   // but the allocator may decide to get more storage.
   expectGE(x.capacity, capacity)
-  return x
+  return x._guts
 }
 
 StringTests.test("StringGutsReplace") {
@@ -1025,9 +1030,10 @@ StringTests.test("UnicodeScalarViewReplace") {
   let wide = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪ"
   for s1 in [narrow, wide] {
     for s2 in [narrow, wide] {
+      let doubleS2 = Array(String(makeStringGuts(s2 + s2)).utf16)
       checkRangeReplaceable(
-        { String(makeStringGuts(s1)).unicodeScalars },
-        { String(makeStringGuts(s2 + s2)._extractSlice(0..<$0)).unicodeScalars }
+        { () -> String.UnicodeScalarView in String(makeStringGuts(s1)).unicodeScalars },
+        { String(decoding: doubleS2[0..<$0], as: UTF16.self).unicodeScalars }
       )
       checkRangeReplaceable(
         { String(makeStringGuts(s1)).unicodeScalars },
@@ -1337,8 +1343,8 @@ StringTests.test("indexConversion")
     result, flags, stop
   in
     let r = result!.range(at: 1)
-    let start = String.UTF16Index(encodedOffset: r.location)
-    let end = String.UTF16Index(encodedOffset: r.location + r.length)
+    let start = String.Index(encodedOffset: r.location)
+    let end = String.Index(encodedOffset: r.location + r.length)
     matches.append(String(s.utf16[start..<end])!)
   }
 
@@ -1923,6 +1929,24 @@ for test in testCases {
     expectNotEqual(s1, s2)
     expectEqual(identity1, s1._rawIdentifier())
     expectEqual(identity2, s2._rawIdentifier())
+  }
+}
+
+enum _Ordering: Int, Equatable {
+  case less = -1
+  case equal = 0
+  case greater = 1
+
+  var flipped: _Ordering {
+    switch self {
+      case .less: return .greater
+      case .equal: return .equal
+      case .greater: return .less
+    }
+  }
+
+  init(signedNotation int: Int) {
+    self = int < 0 ? .less : int == 0 ? .equal : .greater
   }
 }
 
