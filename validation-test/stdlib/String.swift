@@ -251,19 +251,12 @@ StringTests.test("ForeignIndexes/Valid") {
   }
 }
 
-StringTests.test("ForeignIndexes/UnexpectedCrash")
-  .xfail(
-    .always("<rdar://problem/18029290> String.Index caches the grapheme " +
-      "cluster size, but it is not always correct to use"))
-  .code {
-
+StringTests.test("ForeignIndexes/UnexpectedCrash") {
   let donor = "\u{1f601}\u{1f602}\u{1f603}"
   let acceptor = "abcdef"
 
   // Adjust donor.startIndex to ensure it caches a stride
   let start = donor.index(before: donor.index(after: donor.startIndex))
-  
-  // FIXME: this traps right now when trying to construct Character("ab").
   expectEqual("a", acceptor[start])
 }
 
