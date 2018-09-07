@@ -556,12 +556,14 @@ extension String {
     // TODO(UTF8 perf): Transcode from guts directly
     let codeUnits = Array(self.utf8)
     var arg = Array<TargetEncoding.CodeUnit>()
+    arg.reserveCapacity(1 &+ self._guts.count / 4)
     let repaired = transcode(
       codeUnits.makeIterator(),
       from: UTF8.self,
       to: targetEncoding,
       stoppingOnError: false,
       into: { arg.append($0) })
+    arg.append(TargetEncoding.CodeUnit(0))
     _sanityCheck(!repaired)
     return try body(arg)
   }
@@ -754,8 +756,7 @@ extension Sequence where Element: StringProtocol {
   /// - Returns: A single, concatenated string.
   @_specialize(where Self == Array<Substring>)
   @_specialize(where Self == Array<String>)
-  // TODO(UTF8 merge): replace String() with ""
-  public func joined(separator: String = String()) -> String {
+  public func joined(separator: String = "") -> String {
     return _joined(separator: separator)
   }
 
@@ -805,8 +806,7 @@ extension BidirectionalCollection where Iterator.Element == String {
   ///   in this sequence. The default separator is an empty string.
   /// - Returns: A single, concatenated string.
   @_specialize(where Self == Array<String>)
-  // TODO(UTF8 merge): replace String() with ""
-  public func joined(separator: String = String()) -> String {
+  public func joined(separator: String = "") -> String {
     return _joined(separator: separator)
   }
 }
