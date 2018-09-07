@@ -25,6 +25,7 @@ internal func _measureCharacterStride(
     _sanityCheck(offset > i, "zero-sized grapheme?")
     return Int(truncatingIfNeeded: offset) &- i
   }
+  _sanityCheck(utf8.count > i)
   return utf8.count &- i
 }
 

@@ -227,7 +227,7 @@ extension String.UTF16View: BidirectionalCollection {
   @inlinable
   public subscript(i: Index) -> UTF16.CodeUnit {
     @inline(__always) get {
-      _precondition(i.encodedOffset >= 0 && i < endIndex)
+      String(_guts)._boundsCheck(i)
       // TODO(UTF8): known-ASCII fast path
 
       if _fastPath(_guts.isFastUTF8) {

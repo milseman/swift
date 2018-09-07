@@ -220,7 +220,7 @@ extension String: RangeReplaceableCollection {
   public mutating func remove(at i: Index) -> Character {
     // TODO(UTF8 perf): Operate on storage directly, sliding down elements
     let c = self[i]
-    self.replaceSubrange(i..<i, with: String()) // TODO(UTF8): empty literal
+    self.removeSubrange(i..<self.index(after: i))
     return c
   }
 
@@ -236,6 +236,7 @@ extension String: RangeReplaceableCollection {
   ///   lower bounds of `bounds` must be valid indices of the string.
   public mutating func removeSubrange(_ bounds: Range<Index>) {
     // TODO(UTF8 perf): Operate on storage directly, sliding down elements
+    // TODO(UTF8 merge): replace with literal
     self.replaceSubrange(bounds, with: String())
   }
 

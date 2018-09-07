@@ -251,6 +251,7 @@ extension String.UnicodeScalarView: BidirectionalCollection {
   @inlinable
   public subscript(position: Index) -> Unicode.Scalar {
     @inline(__always) get {
+      String(_guts)._boundsCheck(position)
       let i = _guts.scalarAlign(position)
       if _fastPath(_guts.isFastUTF8) {
         return _guts.fastUTF8Scalar(startingAt: i.encodedOffset)

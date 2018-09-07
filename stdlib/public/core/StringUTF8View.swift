@@ -295,7 +295,7 @@ extension String.UTF8View: BidirectionalCollection {
   @inlinable
   public subscript(i: Index) -> UTF8.CodeUnit {
     @inline(__always) get {
-      _precondition(i.encodedOffset >= 0 && i < endIndex)
+      String(_guts)._boundsCheck(i)
       if _fastPath(_guts.isFastUTF8) {
         return _guts.withFastUTF8 { utf8 in utf8[i.encodedOffset] }
       }
