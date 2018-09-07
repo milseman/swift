@@ -448,30 +448,22 @@ extension StringProtocol where Index == String.Index {
     return self._ephemeralString._bridgeToObjectiveC()
   }
 
-  // self can be a Substring so we need to subtract/add this offset when
-  // passing _ns to the Foundation APIs. Will be 0 if self is String.
-  @inlinable
-  internal var _substringOffset: Int {
-    return self.startIndex.encodedOffset
-  }
-
   /// Return an `Index` corresponding to the given offset in our UTF-16
   /// representation.
-  func _index(_ utf16Index: Int) -> Index {
-    return Index(encodedOffset: utf16Index + _substringOffset)
+  func _toIndex(_ utf16Index: Int) -> Index {
+    return self._utf16OffsetToIndex(utf16Index)
   }
 
   @inlinable
   internal func _toRelativeNSRange(_ r: Range<String.Index>) -> NSRange {
-    return NSRange(
-      location: r.lowerBound.encodedOffset - _substringOffset,
-      length: r.upperBound.encodedOffset - r.lowerBound.encodedOffset)
+    let offsetRange = self._rangeToUTF16Offsets(r)
+    return NSRange(offsetRange)
   }
 
   /// Return a `Range<Index>` corresponding to the given `NSRange` of
   /// our UTF-16 representation.
-  func _range(_ r: NSRange) -> Range<Index> {
-    return _index(r.location)..<_index(r.location + r.length)
+  func _toRange(_ r: NSRange) -> Range<Index> {
+    return self._utf16OffsetsToRange(Range(r)!)
   }
 
   /// Return a `Range<Index>?` corresponding to the given `NSRange` of
@@ -480,7 +472,7 @@ extension StringProtocol where Index == String.Index {
     if r.location == NSNotFound {
       return nil
     }
-    return _range(r)
+    return _toRange(r)
   }
 
   /// Invoke `body` on an `Int` buffer.  If `index` was converted from
@@ -492,7 +484,7 @@ extension StringProtocol where Index == String.Index {
   ) -> Result {
     var utf16Index: Int = 0
     let result = (index != nil ? body(&utf16Index) : body(nil))
-    index?.pointee = _index(utf16Index)
+    index?.pointee = _toIndex(utf16Index)
     return result
   }
 
@@ -505,7 +497,7 @@ extension StringProtocol where Index == String.Index {
   ) -> Result {
     var nsRange = NSRange(location: 0, length: 0)
     let result = (range != nil ? body(&nsRange) : body(nil))
-    range?.pointee = self._range(nsRange)
+    range?.pointee = self._toRange(nsRange)
     return result
   }
 
@@ -1237,7 +1229,7 @@ extension StringProtocol where Index == String.Index {
       orthography: orthography != nil ? orthography! : nil
     ) {
       var stop_ = false
-      body($0, self._range($1), self._range($2), &stop_)
+      body($0, self._toRange($1), self._toRange($2), &stop_)
       if stop_ {
         $3.pointee = true
       }
@@ -1300,8 +1292,8 @@ extension StringProtocol where Index == String.Index {
       var stop_ = false
 
       body($0,
-        self._range($1),
-        self._range($2),
+        self._toRange($1),
+        self._toRange($2),
         &stop_)
 
       if stop_ {
@@ -1451,7 +1443,7 @@ extension StringProtocol where Index == String.Index {
   public func lineRange<
     R : RangeExpression
   >(for aRange: R) -> Range<Index> where R.Bound == Index {
-    return _range(_ns.lineRange(
+    return _toRange(_ns.lineRange(
       for: _toRelativeNSRange(aRange.relative(to: self))))
   }
 
@@ -1486,7 +1478,7 @@ extension StringProtocol where Index == String.Index {
 
     if let nsTokenRanges = nsTokenRanges {
       tokenRanges?.pointee = (nsTokenRanges as [AnyObject]).map {
-        self._range($0.rangeValue)
+        self._toRange($0.rangeValue)
       }
     }
 
@@ -1500,7 +1492,7 @@ extension StringProtocol where Index == String.Index {
   public func paragraphRange<
     R : RangeExpression
   >(for aRange: R) -> Range<Index> where R.Bound == Index {
-    return _range(
+    return _toRange(
       _ns.paragraphRange(for: _toRelativeNSRange(aRange.relative(to: self))))
   }
 #endif
@@ -1541,7 +1533,7 @@ extension StringProtocol where Index == String.Index {
   /// character sequence located at a given index.
   public
   func rangeOfComposedCharacterSequence(at anIndex: Index) -> Range<Index> {
-    return _range(
+    return _toRange(
       _ns.rangeOfComposedCharacterSequence(at: anIndex.encodedOffset))
   }
 
@@ -1557,7 +1549,7 @@ extension StringProtocol where Index == String.Index {
     // Theoretically, this will be the identity function.  In practice
     // I think users will be able to observe differences in the input
     // and output ranges due (if nothing else) to locale changes
-    return _range(
+    return _toRange(
       _ns.rangeOfComposedCharacterSequences(
         for: _toRelativeNSRange(range.relative(to: self))))
   }

@@ -283,11 +283,14 @@ public protocol _NSStringCore: class {}
 
 #endif
 
-extension String {
+extension StringProtocol {
   // Resiliently provide a (barely) amortized random access UTF-16 interface
   //
-  // @opaque
-  internal func _utf16OffsetToIndex(_ offset: Int) -> Index {
+  @_effects(releasenone)
+  @_specialize(where Self == String)
+  @_specialize(where Self == Substring)
+  public // SPI(Foundation)
+  func _utf16OffsetToIndex(_ offset: Int) -> Index {
     // TODO(UTF8): Track known ASCII
 
     // TODO(UTF8): Leave breadcrumbs, and more efficient impl
@@ -297,17 +300,39 @@ extension String {
 
   // Resiliently provide a (barely) amortized random access UTF-16 interface
   //
-  // @opaque
-  internal func _utf16OffsetToIndex(_ range: Range<Int>) -> Range<Index> {
+  @_effects(releasenone)
+  @_specialize(where Self == String)
+  @_specialize(where Self == Substring)
+  public // SPI(Foundation)
+  func _utf16OffsetsToRange(_ range: Range<Int>) -> Range<Index> {
     // TODO(UTF8): Can be more efficient for a range
     return self._utf16OffsetToIndex(range.lowerBound)
        ..< self._utf16OffsetToIndex(range.upperBound)
   }
 
+  // TODO:
+  //
+  @_effects(releasenone)
+  @_specialize(where Self == String)
+  @_specialize(where Self == Substring)
+  public // SPI(Foundation)
+  func _rangeToUTF16Offsets(_ range: Range<Index>) -> Range<Int> {
+    let lower = range.lowerBound
+    let upper = range.upperBound
+
+    // TODO(UTF8 perf): More efficient impl, at very least iterate once
+    return Range(uncheckedBounds: (
+      lower: self.utf16.distance(from: self.utf16.startIndex, to: lower),
+      upper: self.utf16.distance(from: self.utf16.startIndex, to: upper)))
+  }
+
   // Resiliently provide a (barely) amortized random access UTF-16 interface
   //
-  // @opaque
-  internal func _utf16Length() -> Int {
+  @_effects(releasenone)
+  @_specialize(where Self == String)
+  @_specialize(where Self == Substring)
+  public // SPI(Foundation)
+  func _utf16Length() -> Int {
     // TODO(UTF8): Track known ASCII
 
     // TODO(UTF8): Leave breadcrumbs, and more efficient impl. Perhaps even
@@ -318,8 +343,11 @@ extension String {
 
   // Resiliently provide a (barely) amortized `characterAtIndex`
   //
-  // @opaque
-  internal func _utf16CodeUnitAtOffset(_ offset: Int) -> UInt16 {
+  @_effects(releasenone)
+  @_specialize(where Self == String)
+  @_specialize(where Self == Substring)
+  public // SPI(Foundation)
+  func _utf16CodeUnitAtOffset(_ offset: Int) -> UInt16 {
     return self.utf16[self._utf16OffsetToIndex(offset)]
   }
 
