@@ -238,7 +238,16 @@ StringTests.test("ForeignIndexes/Valid") {
     let donor = "abcdef"
     let acceptor = "\u{1f601}\u{1f602}\u{1f603}"
     expectEqual("\u{1f601}", acceptor[donor.startIndex])
-    expectEqual("\u{fffd}", acceptor[donor.index(after: donor.startIndex)])
+
+    // TODO(UTF8 merge): We are adjusting subscript semantics to scalar-align
+    // for the Character view. The old behavior mentioned at
+    // https://github.com/apple/swift-evolution/blob/master/proposals/0180
+    // -string-index-overhaul.md only makes sense because UTF-16 code units are
+    // also code points, however UTF-8 continuation code units have no
+    // interpretable semantics right now...
+    //
+
+    expectEqual("\u{1f601}", acceptor[donor.index(after: donor.startIndex)])
   }
 }
 
