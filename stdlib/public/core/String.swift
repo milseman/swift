@@ -685,7 +685,7 @@ extension String {
   ///
   /// - Parameter other: Another string.
   public mutating func append(_ other: String) {
-    if self.isEmpty {
+    if self.isEmpty && !_guts.hasNativeStorage {
       self = other
       return
     }
