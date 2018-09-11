@@ -81,6 +81,12 @@ extension _AbstractStringStorage {
 }
 #endif // _runtime(_ObjC)
 
+
+//
+// TODO(UTF8 merge): Documentation about the runtime layout of these instances,
+// which is growing in complexity
+//
+
 @_fixed_layout
 @usableFromInline
 final internal class _StringStorage: _AbstractStringStorage {
@@ -93,6 +99,16 @@ final internal class _StringStorage: _AbstractStringStorage {
   @nonobjc
   @usableFromInline
   internal var _count: Int
+
+  // Store breadcrumbs for efficient Cocoa interoperability through UTF-16
+  // interfaces.
+  @nonobjc
+  internal var _breadcrumbs: _StringBreadcrumbs?
+
+  // Save the space for the future
+  @nonobjc
+  @usableFromInline
+  internal var _zReserved: AnyObject?
 
   @nonobjc
   @inlinable
@@ -134,6 +150,14 @@ extension _StringStorage {
 
     storage._realCapacity = endAddr - storage.start
     storage._count = count
+    UnsafeMutableRawPointer(
+      Builtin.addressof(&storage._breadcrumbs)
+    ).assumingMemoryBound(
+      to: Optional<_StringBreadcrumbs>.self).initialize(to: nil)
+    UnsafeMutableRawPointer(
+      Builtin.addressof(&storage._zReserved)
+    ).assumingMemoryBound(to: Optional<AnyObject>.self).initialize(to: nil)
+
     _sanityCheck(storage.capacity >= capacity)
     storage.terminator.pointee = 0 // nul-terminated
     storage._invariantCheck()
@@ -240,6 +264,7 @@ extension _StringStorage {
     _sanityCheck(rawSelf + Int(_StringObject.nativeBias) == rawStart)
     _sanityCheck(self._realCapacity > self._count, "no room for nul-terminator")
     _sanityCheck(self.terminator.pointee == 0, "not nul terminated")
+    _sanityCheck(self._zReserved == nil, "shouldn't be used")
     #endif
   }
 }
@@ -296,6 +321,9 @@ final internal class _SharedStringStorage: _AbstractStringStorage {
   @nonobjc
   @usableFromInline
   internal var contents: UnsafeBufferPointer<UInt8>
+
+  @nonobjc
+  internal var _breadcrumbs: _StringBreadcrumbs?
 
   @nonobjc
   @usableFromInline

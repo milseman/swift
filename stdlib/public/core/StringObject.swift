@@ -162,7 +162,7 @@ extension _StringObject.Nibbles {
  ┌────────────┐
  │ nativeBias │
  ├────────────┤
- │     32     │
+ │     48     │
  └────────────┘
 
 
@@ -252,7 +252,7 @@ extension _StringObject.Nibbles {
 
 extension _StringObject {
   @inlinable
-  internal static var nativeBias: UInt { @inline(__always) get { return 32 } }
+  internal static var nativeBias: UInt { @inline(__always) get { return 48 } }
 
   @inlinable
   internal var isImmortal: Bool {
