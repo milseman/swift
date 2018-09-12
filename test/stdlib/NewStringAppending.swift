@@ -63,23 +63,23 @@ var s = "⓪" // start non-empty
 // explicitly request initial capacity.
 s.reserveCapacity(16)
 
-// CHECK-NEXT: String(Native(owner: @[[storage0:[x0-9a-f]+]], count: 3, capacity: 31)) = "⓪"
+// CHECK-NEXT: String(Native(owner: @[[storage0:[x0-9a-f]+]], count: 3, capacity: 23)) = "⓪"
 print("\(repr(s))")
 
-// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 4, capacity: 31)) = "⓪1"
+// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 4, capacity: 23)) = "⓪1"
 s += "1"
 print("\(repr(s))")
 
-// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 10, capacity: 31)) = "⓪1234567"
+// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 10, capacity: 23)) = "⓪1234567"
 s += "234567"
 print("\(repr(s))")
 
-// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 11, capacity: 31)) = "⓪12345678"
+// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 11, capacity: 23)) = "⓪12345678"
 // CHECK-NOT: @[[storage0]],
 s += "8"
 print("\(repr(s))")
 
-// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 18, capacity: 31)) = "⓪123456789012345"
+// CHECK-NEXT: String(Native(owner: @[[storage0]], count: 18, capacity: 23)) = "⓪123456789012345"
 s += "9012345"
 print("\(repr(s))")
 
@@ -95,24 +95,20 @@ print("(expecting reallocation)")
 // more capacity.  It might be better to always grow to a multiple of
 // the current capacity when the capacity is exceeded.
 
-// CHECK-NEXT: String(Native(owner: @[[storage1:[x0-9a-f]+]], count: 54, capacity: 63))
+// CHECK-NEXT: String(Native(owner: @[[storage1:[x0-9a-f]+]], count: 54, capacity: 55))
 // CHECK-NOT: @[[storage1]],
 s += s + s
 print("\(repr(s))")
 
-// CHECK-NEXT: String(Native(owner: @[[storage1]], count: 55, capacity: 63))
+// CHECK-NEXT: String(Native(owner: @[[storage1]], count: 55, capacity: 55))
 s += "C"
-print("\(repr(s))")
-
-// CHECK-NEXT: String(Native(owner: @[[storage1]], count: 63, capacity: 63))
-s += "12345678"
 print("\(repr(s))")
 
 // -- expect a reallocation here
 // CHECK-LABEL: (expecting second reallocation)
 print("(expecting second reallocation)")
 
-// CHECK-NEXT: String(Native(owner: @[[storage2:[x0-9a-f]+]], count: 64, capacity: 127))
+// CHECK-NEXT: String(Native(owner: @[[storage2:[x0-9a-f]+]], count: 56, capacity: 119))
 // CHECK-NOT: @[[storage1]],
 s += "C"
 print("\(repr(s))")
@@ -121,14 +117,14 @@ print("\(repr(s))")
 // CHECK-LABEL: (expecting third reallocation)
 print("(expecting third reallocation)")
 
-// CHECK-NEXT: String(Native(owner: @[[storage3:[x0-9a-f]+]], count: 80, capacity: 127))
+// CHECK-NEXT: String(Native(owner: @[[storage3:[x0-9a-f]+]], count: 72, capacity: 119))
 // CHECK-NOT: @[[storage2]],
 s += "1234567890123456"
 print("\(repr(s))")
 
 var s1 = s
 
-// CHECK-NEXT: String(Native(owner: @[[storage3]], count: 80, capacity: 127))
+// CHECK-NEXT: String(Native(owner: @[[storage3]], count: 72, capacity: 119))
 print("\(repr(s1))")
 
 /// The use of later buffer capacity by another string forces
@@ -137,14 +133,14 @@ print("\(repr(s1))")
 // CHECK-LABEL: (expect copy to trigger reallocation without growth)
 print("(expect copy to trigger reallocation without growth)")
 
-// CHECK-NEXT: String(Native(owner: @[[storage4:[x0-9a-f]+]], count: 81, capacity: 95)) = "{{.*}}X"
+// CHECK-NEXT: String(Native(owner: @[[storage4:[x0-9a-f]+]], count: 73, capacity: 87)) = "{{.*}}X"
 // CHECK-NOT: @[[storage3]],
 s1 += "X"
 print("\(repr(s1))")
 
 /// The original copy is left unchanged
 
-// CHECK-NEXT: String(Native(owner: @[[storage3]], count: 80, capacity: 127))
+// CHECK-NEXT: String(Native(owner: @[[storage3]], count: 72, capacity: 119))
 print("\(repr(s))")
 
 /// Appending to an empty string re-uses the RHS

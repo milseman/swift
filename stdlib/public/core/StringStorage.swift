@@ -84,7 +84,8 @@ extension _AbstractStringStorage {
 
 //
 // TODO(UTF8 merge): Documentation about the runtime layout of these instances,
-// which is growing in complexity
+// which is growing in complexity. For now, the second trailing allocation holds
+// an Optional<_StringBreadcrumbs>.
 //
 
 @_fixed_layout
@@ -99,16 +100,6 @@ final internal class _StringStorage: _AbstractStringStorage {
   @nonobjc
   @usableFromInline
   internal var _count: Int
-
-  // Store breadcrumbs for efficient Cocoa interoperability through UTF-16
-  // interfaces.
-  @nonobjc
-  internal var _breadcrumbs: _StringBreadcrumbs?
-
-  // Save the space for the future
-  @nonobjc
-  @usableFromInline
-  internal var _zReserved: AnyObject?
 
   @nonobjc
   @inlinable
@@ -126,6 +117,32 @@ final internal class _StringStorage: _AbstractStringStorage {
   }
 }
 
+// Determine the actual number of code unit capacity to request from malloc. We
+// round up the nearest multiple of 8 that isn't a mulitple of 16, to fully
+// utilize malloc's small buckets while accounting for the trailing
+// _StringBreadCrumbs.
+//
+// NOTE: We may still under-utilize the spare bytes from the actual allocation
+// for Strings ~1KB or larger, though at this point we're well into our growth
+// curve.
+private func determineCodeUnitCapacity(_ desiredCapacity: Int) -> Int {
+#if arch(i386) || arch(arm)
+    unimplemented_utf8_32bit()
+#else
+
+  // Bigger than _SmallString, and we need 1 extra for nul-terminator
+  let minCap = 1 + Swift.max(desiredCapacity, _SmallUTF8String.capacity)
+  _sanityCheck(minCap < 0x1_0000_0000_0000, "max 48-bit length")
+
+  // Round up to the nearest multiple of 8 that isn't also a multiple of 16
+  let capacity = ((minCap + 7) & -16) + 8
+  _sanityCheck(
+    capacity > desiredCapacity && capacity % 8 == 0 && capacity % 16 != 0)
+  return capacity
+
+#endif
+}
+
 // Creation
 extension _StringStorage {
   @nonobjc
@@ -134,34 +151,27 @@ extension _StringStorage {
   ) -> _StringStorage {
     _sanityCheck(capacity >= count)
 
-    // Reserve enough capacity for a trailing nul character
-    let desiredCapacity = 1 + Swift.max(capacity, _SmallUTF8String.capacity)
-    _sanityCheck(desiredCapacity > count)
+    let codeUnitsCapacity = determineCodeUnitCapacity(capacity)
+    _sanityCheck(codeUnitsCapacity > count)
 
-    let storage = Builtin.allocWithTailElems_1(
+    let storage = Builtin.allocWithTailElems_2(
       _StringStorage.self,
-      desiredCapacity._builtinWordValue, UInt8.self)
+      codeUnitsCapacity._builtinWordValue, UInt8.self,
+      1._builtinWordValue, Optional<_StringBreadcrumbs>.self)
 
-    let storageAddr = UnsafeRawPointer(
-      Builtin.bridgeToRawPointer(storage))
-    let endAddr = (
-      storageAddr + _stdlib_malloc_size(storageAddr)
-    ).assumingMemoryBound(to: UInt8.self)
+    let breadcrumbsAddr = Builtin.getTailAddr_Word(
+      Builtin.projectTailElems(storage, UInt8.self),
+      codeUnitsCapacity._builtinWordValue,
+      UInt8.self,
+      Optional<_StringBreadcrumbs>.self)
 
-    storage._realCapacity = endAddr - storage.start
+    storage._realCapacity = codeUnitsCapacity
     storage._count = count
-    UnsafeMutableRawPointer(
-      Builtin.addressof(&storage._breadcrumbs)
-    ).assumingMemoryBound(
-      to: Optional<_StringBreadcrumbs>.self).initialize(to: nil)
-    UnsafeMutableRawPointer(
-      Builtin.addressof(&storage._zReserved)
-    ).assumingMemoryBound(to: Optional<AnyObject>.self).initialize(to: nil)
+    storage._breadcrumbsAddress.initialize(to: nil)
 
     _sanityCheck(storage.capacity >= capacity)
     storage.terminator.pointee = 0 // nul-terminated
     storage._invariantCheck()
-
     return storage
   }
 
@@ -231,13 +241,26 @@ extension _StringStorage {
     }
   }
 
+  @nonobjc
+  // @opaque
+  internal var _breadcrumbsAddress: UnsafeMutablePointer<_StringBreadcrumbs?> {
+    let raw = Builtin.getTailAddr_Word(
+      start._rawValue,
+      _realCapacity._builtinWordValue,
+      UInt8.self,
+      Optional<_StringBreadcrumbs>.self)
+    return UnsafeMutablePointer(raw)
+  }
+
   // The total capacity available for code units. Note that this excludes the
   // required nul-terminator
   @nonobjc
   internal var capacity: Int { return _realCapacity &- 1 }
 
   // The unused capacity available for appending. Note that this excludes the
-  // required nul-terminator
+  // required nul-terminator.
+  //
+  // NOTE: Callers who wish to mutate this storage should enfore nul-termination
   @nonobjc
   internal var unusedStorage: UnsafeMutableBufferPointer<UInt8> {
     @inline(__always) get {
@@ -264,7 +287,6 @@ extension _StringStorage {
     _sanityCheck(rawSelf + Int(_StringObject.nativeBias) == rawStart)
     _sanityCheck(self._realCapacity > self._count, "no room for nul-terminator")
     _sanityCheck(self.terminator.pointee == 0, "not nul terminated")
-    _sanityCheck(self._zReserved == nil, "shouldn't be used")
     #endif
   }
 }
