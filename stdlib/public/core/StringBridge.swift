@@ -283,12 +283,10 @@ public protocol _NSStringCore: class {}
 
 #endif
 
-extension StringProtocol {
+extension String {
   // Resiliently provide a (barely) amortized random access UTF-16 interface
   //
   @_effects(releasenone)
-  @_specialize(where Self == String)
-  @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _utf16OffsetToIndex(_ offset: Int) -> Index {
     // TODO(UTF8): Track known ASCII
@@ -301,8 +299,6 @@ extension StringProtocol {
   // Resiliently provide a (barely) amortized random access UTF-16 interface
   //
   @_effects(releasenone)
-  @_specialize(where Self == String)
-  @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _utf16OffsetsToRange(_ range: Range<Int>) -> Range<Index> {
     // TODO(UTF8 perf): Can be more efficient for a range
@@ -313,8 +309,6 @@ extension StringProtocol {
   // TODO:
   //
   @_effects(releasenone)
-  @_specialize(where Self == String)
-  @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _indexToUTF16Offset(_ idx: Index) -> Int {
     // TODO(UTF8 perf): More efficient impl
@@ -324,8 +318,6 @@ extension StringProtocol {
   // TODO:
   //
   @_effects(releasenone)
-  @_specialize(where Self == String)
-  @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _rangeToUTF16Offsets(_ range: Range<Index>) -> Range<Int> {
     // TODO(UTF8 perf): Can be more efficient for a range
@@ -337,8 +329,6 @@ extension StringProtocol {
   // Resiliently provide a (barely) amortized random access UTF-16 interface
   //
   @_effects(releasenone)
-  @_specialize(where Self == String)
-  @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _utf16Length() -> Int {
     // TODO(UTF8): Track known ASCII
@@ -352,8 +342,6 @@ extension StringProtocol {
   // Resiliently provide a (barely) amortized `characterAtIndex`
   //
   @_effects(releasenone)
-  @_specialize(where Self == String)
-  @_specialize(where Self == Substring)
   public // SPI(Foundation)
   func _utf16CodeUnitAtOffset(_ offset: Int) -> UInt16 {
     return self.utf16[self._utf16OffsetToIndex(offset)]
