@@ -30,11 +30,12 @@ internal class _AbstractStringStorage: _SwiftNativeNSString, _NSStringCore {
 #if _runtime(_ObjC)
 extension _AbstractStringStorage {
   @objc(length)
-  final internal var length: Int { return asString._utf16Length() }
+  final internal var length: Int { return asString.utf16.count }
 
   @objc(characterAtIndex:)
-  final func character(at index: Int) -> UInt16 {
-    return asString._utf16CodeUnitAtOffset(index)
+  final func character(at offset: Int) -> UInt16 {
+    let str = asString
+    return str.utf16[str._toUTF16Index(offset)]
   }
 
   @objc(getCharacters:range:)
@@ -48,7 +49,8 @@ extension _AbstractStringStorage {
 
     let range = Range(
       uncheckedBounds: (aRange.location, aRange.location+aRange.length))
-    let slice = asString.utf16[asString._utf16OffsetsToRange(range)]
+    let str = asString
+    let slice = str.utf16[str._toUTF16Indices(range)]
     let outputBufPtr = UnsafeMutableBufferPointer(
       start: buffer, count: range.count)
 
@@ -165,12 +167,6 @@ extension _StringStorage {
       _StringStorage.self,
       codeUnitsCapacity._builtinWordValue, UInt8.self,
       1._builtinWordValue, Optional<_StringBreadcrumbs>.self)
-
-    let breadcrumbsAddr = Builtin.getTailAddr_Word(
-      Builtin.projectTailElems(storage, UInt8.self),
-      codeUnitsCapacity._builtinWordValue,
-      UInt8.self,
-      Optional<_StringBreadcrumbs>.self)
 
     storage._realCapacity = codeUnitsCapacity
     storage._count = count

@@ -438,3 +438,11 @@ extension String.Index {
   }
 }
 
+// TODO(UTF8 perf): Breadcrumb-accelerate:
+//   * distance
+//   * index(_:offsetBy) (??? limited by too???)
+//   * count
+//
+
+
+

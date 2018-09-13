@@ -442,24 +442,23 @@ extension String {
   /// Return an `Index` corresponding to the given offset in our UTF-16
   /// representation.
   func _toIndex(_ utf16Index: Int) -> Index {
-    return self._utf16OffsetToIndex(utf16Index)
+    return self._toUTF16Index(utf16Index)
   }
 
   /// Return the UTF-16 code unit offset corresponding to an Index
   func _toOffset(_ idx: String.Index) -> Int {
-    return self._indexToUTF16Offset(idx)
+    return self._toUTF16Offset(idx)
   }
 
   @inlinable
   internal func _toRelativeNSRange(_ r: Range<String.Index>) -> NSRange {
-    let offsetRange = self._rangeToUTF16Offsets(r)
-    return NSRange(offsetRange)
+    return NSRange(self._toUTF16Offsets(r))
   }
 
   /// Return a `Range<Index>` corresponding to the given `NSRange` of
   /// our UTF-16 representation.
   func _toRange(_ r: NSRange) -> Range<Index> {
-    return self._utf16OffsetsToRange(Range(r)!)
+    return self._toUTF16Indices(Range(r)!)
   }
 
   /// Return a `Range<Index>?` corresponding to the given `NSRange` of
