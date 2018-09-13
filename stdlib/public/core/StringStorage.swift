@@ -21,6 +21,9 @@ internal class _AbstractStringStorage: _SwiftNativeNSString, _NSStringCore {
   // Abstract interface
   internal var asString: String { get { Builtin.unreachable() } }
   internal var count: Int { get { Builtin.unreachable() } }
+  internal func getOrComputeBreadcrumbs() -> _StringBreadcrumbs {
+    Builtin.unreachable()
+  }
 }
 
 // ObjC interfaces
@@ -114,6 +117,10 @@ final internal class _StringStorage: _AbstractStringStorage {
   @nonobjc
   internal init(_doNotCallMe: ()) {
     _sanityCheckFailure("Use the create method")
+  }
+
+  deinit {
+    _breadcrumbsAddress.deinitialize(count: 1)
   }
 }
 

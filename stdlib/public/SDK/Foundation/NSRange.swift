@@ -147,6 +147,7 @@ extension NSRange {
   
   public init<R: RangeExpression, S: StringProtocol>(_ region: R, in target: S)
   where R.Bound == S.Index {
+    // FIXME(UTF8): Need to not use encoded offset...
     let r = region.relative(to: target)
     self = NSRange(
       location: r.lowerBound.encodedOffset - target.startIndex.encodedOffset,
@@ -179,6 +180,7 @@ extension Range where Bound == Int {
 
 extension Range where Bound == String.Index {
   public init?(_ range: NSRange, in string: String) {
+    // FIXME(UTF8): Need to not use encoded offset...
     let u = string.utf16
     guard range.location != NSNotFound,
       let start = u.index(u.startIndex, offsetBy: range.location, limitedBy: u.endIndex),
