@@ -100,15 +100,17 @@ final internal class _StringStorage: _AbstractStringStorage {
   // which is not available for overridding.
   @nonobjc
   @usableFromInline
-  internal var _realCapacity: Int
+  internal var _realCapacityAndFlags: Int
 
   @nonobjc
   @usableFromInline
-  internal var _count: Int
+  internal var _countAndFlags: Int
 
   @nonobjc
   @inlinable
-  override internal var count: Int { @inline(__always) get { return _count } }
+  override internal var count: Int {
+    @inline(__always) get { return _countAndFlags & _StringObject.countMask }
+  }
 
   @nonobjc
   @inlinable
@@ -168,8 +170,10 @@ extension _StringStorage {
       codeUnitsCapacity._builtinWordValue, UInt8.self,
       1._builtinWordValue, Optional<_StringBreadcrumbs>.self)
 
-    storage._realCapacity = codeUnitsCapacity
-    storage._count = count
+    // TODO(UTF8 perf): Use or document flags
+    storage._realCapacityAndFlags = codeUnitsCapacity
+    storage._countAndFlags = count
+
     storage._breadcrumbsAddress.initialize(to: nil)
 
     _sanityCheck(storage.capacity >= capacity)
@@ -249,7 +253,7 @@ extension _StringStorage {
   internal var _breadcrumbsAddress: UnsafeMutablePointer<_StringBreadcrumbs?> {
     let raw = Builtin.getTailAddr_Word(
       start._rawValue,
-      _realCapacity._builtinWordValue,
+      realCapacity._builtinWordValue,
       UInt8.self,
       Optional<_StringBreadcrumbs>.self)
     return UnsafeMutablePointer(raw)
@@ -258,7 +262,16 @@ extension _StringStorage {
   // The total capacity available for code units. Note that this excludes the
   // required nul-terminator
   @nonobjc
-  internal var capacity: Int { return _realCapacity &- 1 }
+  internal var capacity: Int {
+    return realCapacity &- 1
+  }
+
+  // The total capacity available for code units. Note that this excludes the
+  // required nul-terminator
+  @nonobjc
+  internal var realCapacity: Int {
+    return _realCapacityAndFlags & _StringObject.countMask
+  }
 
   // The unused capacity available for appending. Note that this excludes the
   // required nul-terminator.
@@ -275,20 +288,18 @@ extension _StringStorage {
   // The capacity available for appending. Note that this excludes the required
   // nul-terminator
   @nonobjc
-  @inlinable
   internal var unusedCapacity: Int {
-    @inline(__always) get { return _realCapacity &- _count &- 1 }
+    get { return realCapacity &- count &- 1 }
   }
 
   @nonobjc
-  @inlinable @inline(__always)
   internal func _invariantCheck() {
     #if INTERNAL_CHECKS_ENABLED
     let rawSelf = UnsafeRawPointer(Builtin.bridgeToRawPointer(self))
     let rawStart = UnsafeRawPointer(start)
     _sanityCheck(unusedCapacity >= 0)
     _sanityCheck(rawSelf + Int(_StringObject.nativeBias) == rawStart)
-    _sanityCheck(self._realCapacity > self._count, "no room for nul-terminator")
+    _sanityCheck(self.realCapacity > self.count, "no room for nul-terminator")
     _sanityCheck(self.terminator.pointee == 0, "not nul terminated")
     #endif
   }
@@ -304,7 +315,7 @@ extension _StringStorage {
     let srcAddr = other.baseAddress._unsafelyUnwrappedUnchecked
     let srcCount = other.count
     self.mutableEnd.initialize(from: srcAddr, count: srcCount)
-    self._count += srcCount
+    self._countAndFlags += srcCount
 
     _sanityCheck(oldTerminator + other.count == self.terminator)
     self.terminator.pointee = 0
@@ -323,7 +334,7 @@ extension _StringStorage {
       unusedStorage[srcCount] = cu
       srcCount += 1
     }
-    self._count += srcCount
+    self._countAndFlags += srcCount
 
     _sanityCheck(oldTerminator + srcCount == self.terminator)
     self.terminator.pointee = 0

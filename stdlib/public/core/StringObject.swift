@@ -445,13 +445,18 @@ extension _StringObject {
 // Extract
 extension _StringObject {
   @inlinable
+  static var countMask: Int {
+    @inline(__always) get { return 0x0000_FFFF_FFFF_FFFF }
+  }
+
+  @inlinable
   internal var largeCount: Int {
     @inline(__always) get {
 #if arch(i386) || arch(arm)
     unimplemented_utf8_32bit()
 #else
       _sanityCheck(isLarge)
-      return Int(bitPattern: (_otherBits & 0x0000_FFFF_FFFF_FFFF))
+      return Int(bitPattern: _otherBits) & _StringObject.countMask
 #endif
     }
     @inline(__always) set {
@@ -459,7 +464,7 @@ extension _StringObject {
     unimplemented_utf8_32bit()
 #else
       _sanityCheck(largeCount == 0)
-      _sanityCheck(newValue == newValue & 0x0000_FFFF_FFFF_FFFF, "too large")
+      _sanityCheck(newValue == newValue & _StringObject.countMask, "too large")
       _otherBits |= UInt(bitPattern: newValue)
       _sanityCheck(newValue == largeCount)
       _invariantCheck()
