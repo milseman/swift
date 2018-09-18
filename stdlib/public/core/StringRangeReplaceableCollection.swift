@@ -121,13 +121,12 @@ extension String: RangeReplaceableCollection {
   /// Appends the characters in the given sequence to the string.
   ///
   /// - Parameter newElements: A sequence of characters.
+  @inlinable // @specializable
   public mutating func append<S : Sequence>(contentsOf newElements: S)
   where S.Iterator.Element == Character {
-    // TODO(UTF8 perf): This is a horribly slow means...
-    let scalars = String(
-      decoding: newElements.map { $0.unicodeScalars }.joined().map { $0.value },
-      as: UTF32.self)
-    self.append(scalars)
+    for c in newElements {
+      self.append(c._str)
+    }
   }
 
   /// Replaces the text within the specified bounds with the given characters.
