@@ -85,7 +85,7 @@ struct StringFauxUTF16Collection: RangeReplaceableCollection, RandomAccessCollec
   var indices: Indices { return startIndex..<endIndex }
 
   subscript(position: Index) -> Element {
-    return _str.utf16[_str._toUTF16Offset(position)]
+    return _str.utf16[_str._toUTF16Index(position)]
   }
 
   mutating func replaceSubrange<C>(
