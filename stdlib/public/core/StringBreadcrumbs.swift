@@ -112,13 +112,3 @@ extension _StringGuts {
       object: UnsafeMutablePointer(mutPtr), desired: crumbs)
   }
 }
-
-//
-// Create the new structure, then do a memory fence, compare-and-swap
-//
-// Custom destructor for _StringStorage checks bit to know if there's an extra
-// tail allocation to destruct...
-//
-// Follow pattern from _stdlib_atomicInitializeARCRef for CAS...
-//
-//

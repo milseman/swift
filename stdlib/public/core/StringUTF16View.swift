@@ -187,7 +187,7 @@ extension String.UTF16View: BidirectionalCollection {
     }
 
     // TODO(UTF8) known-ASCII fast path
-    return __index(i, offsetBy: n)
+    return _index(i, offsetBy: n)
   }
 
   @inlinable @inline(__always)
@@ -199,7 +199,7 @@ extension String.UTF16View: BidirectionalCollection {
     }
 
     // TODO(UTF8) known-ASCII fast paths
-    return __index(i, offsetBy: n, limitedBy: limit)
+    return _index(i, offsetBy: n, limitedBy: limit)
   }
 
   @inlinable
@@ -211,7 +211,7 @@ extension String.UTF16View: BidirectionalCollection {
 
     // A simple heuristic we can always tweak later
     if (end.encodedOffset - start.encodedOffset) < 32 {
-      return __distance(from: start, to: end)
+      return _distance(from: start, to: end)
     }
     return _slowUTF16Distance(from: start, to: end)
   }
@@ -454,7 +454,7 @@ extension String.UTF16View {
     from start: String.Index, to end: String.Index
   ) -> Int {
     guard _guts.hasBreadcrumbs else {
-      return __distance(from: start, to: end)
+      return _distance(from: start, to: end)
     }
 
     let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
@@ -463,7 +463,7 @@ extension String.UTF16View {
     if _fastPath(start == startIndex) {
       lower = 0
     } else {
-      lower = __distance(from: startIndex, to: start)
+      lower = _distance(from: startIndex, to: start)
       // let (offset: offset, bound) = breadcrumbs.lowerBound(start)
       // lower = offset + _distance(from: bound, to: start)
     }
@@ -472,7 +472,7 @@ extension String.UTF16View {
     if _fastPath(end == endIndex) {
       upper = breadcrumbsPtr.pointee.utf16Length
     } else {
-      upper = __distance(from: startIndex, to: end)
+      upper = _distance(from: startIndex, to: end)
       // let (offset: offset, bound) = breadcrumbs.lowerBound(end)
       // upper = offset + _distance(from: bound, to: end)
     }
