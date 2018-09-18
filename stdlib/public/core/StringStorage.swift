@@ -156,14 +156,23 @@ private func determineCodeUnitCapacity(_ desiredCapacity: Int) -> Int {
 
 // Creation
 extension _StringStorage {
+  @_effects(releasenone)
   @nonobjc
-  internal static func create(
-    capacity: Int, count: Int = 0
-  ) -> _StringStorage {
+  private static func create(capacity: Int, count: Int = 0) -> _StringStorage {
     _sanityCheck(capacity >= count)
 
     let codeUnitsCapacity = determineCodeUnitCapacity(capacity)
     _sanityCheck(codeUnitsCapacity > count)
+    return _StringStorage.create(
+      codeUnitsCapacity: codeUnitsCapacity, count: count)
+  }
+
+  @inline(never) // rdar://problem/44542202
+  @_effects(releasenone)
+  @nonobjc
+  private static func create(
+    codeUnitsCapacity: Int, count: Int = 0
+  ) -> _StringStorage {
 
     let storage = Builtin.allocWithTailElems_2(
       _StringStorage.self,
@@ -176,12 +185,13 @@ extension _StringStorage {
 
     storage._breadcrumbsAddress.initialize(to: nil)
 
-    _sanityCheck(storage.capacity >= capacity)
+    _sanityCheck(storage.capacity >= codeUnitsCapacity)
     storage.terminator.pointee = 0 // nul-terminated
     storage._invariantCheck()
     return storage
   }
 
+  @_effects(releasenone)
   @nonobjc
   internal static func create(
     initializingFrom bufPtr: UnsafeBufferPointer<UInt8>, capacity: Int
@@ -195,6 +205,7 @@ extension _StringStorage {
     return storage
   }
 
+  @_effects(releasenone)
   @nonobjc
   internal static func create(
     initializingFrom bufPtr: UnsafeBufferPointer<UInt8>
