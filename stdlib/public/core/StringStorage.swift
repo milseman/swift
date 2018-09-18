@@ -113,13 +113,12 @@ final internal class _StringStorage: _AbstractStringStorage {
   }
 
   @nonobjc
-  @inlinable
   override internal var asString: String {
     @inline(__always) get { return String(_StringGuts(self)) }
   }
 
   @nonobjc
-  internal init(_doNotCallMe: ()) {
+  private init(_doNotCallMe: ()) {
     _sanityCheckFailure("Use the create method")
   }
 
@@ -173,7 +172,6 @@ extension _StringStorage {
   private static func create(
     codeUnitsCapacity: Int, count: Int = 0
   ) -> _StringStorage {
-
     let storage = Builtin.allocWithTailElems_2(
       _StringStorage.self,
       codeUnitsCapacity._builtinWordValue, UInt8.self,
@@ -227,8 +225,7 @@ extension _StringStorage {
     }
   }
   @nonobjc
-  @inlinable
-  internal var mutableEnd: UnsafeMutablePointer<UInt8> {
+  private var mutableEnd: UnsafeMutablePointer<UInt8> {
     @inline(__always) get { return mutableStart + count }
   }
 
@@ -239,21 +236,18 @@ extension _StringStorage {
   }
 
   @nonobjc
-  @inlinable
-  internal final var end: UnsafePointer<UInt8> {
+  private final var end: UnsafePointer<UInt8> {
     @inline(__always) get { return UnsafePointer(mutableEnd) }
   }
 
   // Point to the nul-terminator
   @nonobjc
-  @inlinable
-  internal final var terminator: UnsafeMutablePointer<UInt8> {
+  private final var terminator: UnsafeMutablePointer<UInt8> {
     @inline(__always) get { return mutableEnd }
   }
 
   @nonobjc
-  @inlinable
-  internal var codeUnits: UnsafeBufferPointer<UInt8> {
+  private var codeUnits: UnsafeBufferPointer<UInt8> {
     @inline(__always) get {
       return UnsafeBufferPointer(start: start, count: count)
     }
@@ -280,7 +274,7 @@ extension _StringStorage {
   // The total capacity available for code units. Note that this excludes the
   // required nul-terminator
   @nonobjc
-  internal var realCapacity: Int {
+  private var realCapacity: Int {
     return _realCapacityAndFlags & _StringObject.countMask
   }
 
@@ -289,7 +283,7 @@ extension _StringStorage {
   //
   // NOTE: Callers who wish to mutate this storage should enfore nul-termination
   @nonobjc
-  internal var unusedStorage: UnsafeMutableBufferPointer<UInt8> {
+  private var unusedStorage: UnsafeMutableBufferPointer<UInt8> {
     @inline(__always) get {
       return UnsafeMutableBufferPointer(
         start: mutableEnd, count: capacity)
@@ -304,7 +298,7 @@ extension _StringStorage {
   }
 
   @nonobjc
-  internal func _invariantCheck() {
+  private func _invariantCheck() {
     #if INTERNAL_CHECKS_ENABLED
     let rawSelf = UnsafeRawPointer(Builtin.bridgeToRawPointer(self))
     let rawStart = UnsafeRawPointer(start)
@@ -404,7 +398,6 @@ final internal class _SharedStringStorage: _AbstractStringStorage {
 
 extension _SharedStringStorage {
   @nonobjc
-  @inlinable @inline(__always)
   internal func _invariantCheck() {
     #if INTERNAL_CHECKS_ENABLED
     #endif
