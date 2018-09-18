@@ -18,20 +18,19 @@ internal final class _StringBreadcrumbs {
   var utf16Length: Int
 
   // TODO: does this need to be a pair?.... Can we be smaller than Int?
-  var utf16ToIndex: [String.Index]
+  var crumbs: [String.Index]
 
   // TODO: Does this need to be inout, unique, or how will we be enforcing
   // atomicity?
   init(_ str: String) {
-    self.utf16ToIndex = []
+    self.crumbs = []
     if str.isEmpty {
       self.utf16Length = 0
       return
     }
 
     let stride = _StringBreadcrumbs.breadcrumbStride
-
-    self.utf16ToIndex.reserveCapacity(
+    self.crumbs.reserveCapacity(
       (str._guts.count / 3) / stride)
 
     // TODO(UTF8 perf): More efficient implementation
@@ -42,7 +41,7 @@ internal final class _StringBreadcrumbs {
     var curIdx = utf16.index(after: utf16.startIndex)
     while curIdx != utf16.endIndex {
       if i % stride == 0 { //i.isMultiple(of: stride) {
-        self.utf16ToIndex.append(curIdx)
+        self.crumbs.append(curIdx)
       }
       i = i &+ 1
       curIdx = utf16.index(after: curIdx)
@@ -50,22 +49,68 @@ internal final class _StringBreadcrumbs {
 
     self.utf16Length = i
 
-    _sanityCheck(self.utf16Length == utf16.count)
-    if self.utf16ToIndex.isEmpty {
+    if self.crumbs.isEmpty {
       // Last offset is stride-1, so we don't allocate an array for any length
       // up to and including stride.
       _sanityCheck(self.utf16Length <= stride)
     } else {
-      _sanityCheck(self.utf16ToIndex.count == (self.utf16Length-1) / stride)
+      _sanityCheck(self.crumbs.count == (self.utf16Length-1) / stride)
     }
   }
 }
 
-// Tail-allocate from StringStorage rather than using the header...
-//
-// Checking the pointer should be fine, if it's set then off to the races...
-//
-// Reserve bits/flags in _StringStorage...
+extension _StringBreadcrumbs {
+  var stride: Int {
+    @inline(__always) get { return _StringBreadcrumbs.breadcrumbStride }
+  }
+
+  // Return the stored (utf16Offset, Index) closest to the given index
+  internal func lowerBound(_ i : String.Index) -> (offset: Int, String.Index) {
+    // FIXME: This is... probably off-by-one
+
+    // TODO: Bisect for large input, or at very least search the more narrow
+    // range of (stride * encodedOffset / 3)...(stride * encodedOffset).
+
+    guard let idx = crumbs.lastIndex(where: { i >= $0 }) else {
+      return (0, String.Index(encodedOffset: 0))
+    }
+
+    fatalError("Incorrect implementation")
+    return (idx * stride, crumbs[idx])
+  }
+}
+
+extension _StringGuts {
+  internal func getBreadcrumbs() -> _StringBreadcrumbs {
+    _sanityCheck(hasBreadcrumbs)
+
+    let mutPtr: UnsafeMutablePointer<_StringBreadcrumbs?>
+    if hasNativeStorage {
+      mutPtr = _object.nativeStorage._breadcrumbsAddress
+    } else {
+      mutPtr = UnsafeMutablePointer(
+        Builtin.addressof(&_object.sharedStorage._breadcrumbs))
+    }
+
+    if _slowPath(mutPtr.pointee == nil) {
+      populateBreadcrumbs(mutPtr)
+    }
+
+    _sanityCheck(mutPtr.pointee != nil)
+    return mutPtr.pointee._unsafelyUnwrappedUnchecked
+  }
+
+  @inline(never) // slow-path
+  internal func populateBreadcrumbs(
+    _ mutPtr: UnsafeMutablePointer<_StringBreadcrumbs?>
+  ) {
+    // Thread-safe compare-and-swap
+    let crumbs = _StringBreadcrumbs(String(self))
+    _stdlib_atomicInitializeARCRef(
+      object: UnsafeMutablePointer(mutPtr), desired: crumbs)
+  }
+}
+
 //
 // Create the new structure, then do a memory fence, compare-and-swap
 //

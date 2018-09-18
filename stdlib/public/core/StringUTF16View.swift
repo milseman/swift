@@ -202,14 +202,23 @@ extension String.UTF16View: BidirectionalCollection {
     return __index(i, offsetBy: n, limitedBy: limit)
   }
 
-  @inlinable @inline(__always)
+  @inlinable
   public func distance(from start: Index, to end: Index) -> Int {
     if _slowPath(_guts.isForeign) {
       return _foreignDistance(from: start, to: end)
     }
-
     // TODO(UTF8) known-ASCII fast paths
-    return __distance(from: start, to: end)
+
+    // A simple heuristic we can always tweak later
+    if (end.encodedOffset - start.encodedOffset) < 32 {
+      return __distance(from: start, to: end)
+    }
+    return _slowUTF16Distance(from: start, to: end)
+  }
+
+  @inlinable
+  public var count: Int {
+    @inline(__always) get { return distance(from: startIndex, to: endIndex) }
   }
 
   /// Accesses the code unit at the given position.
@@ -435,6 +444,38 @@ extension String.Index {
 
     // If we're transcoding, we're a UTF-8 view index, not UTF-16.
     return self.transcodedOffset == 0
+  }
+}
+
+extension String.UTF16View {
+  @usableFromInline @inline(never) // opaque slow-path
+  @_effects(releasenone)
+  func _slowUTF16Distance(
+    from start: String.Index, to end: String.Index
+  ) -> Int {
+    guard _guts.hasBreadcrumbs else {
+      return __distance(from: start, to: end)
+    }
+
+    let breadcrumbs = _guts.getBreadcrumbs()
+
+    let lower: Int
+    if _fastPath(start == startIndex) {
+      lower = 0
+    } else {
+      let (offset: offset, bound) = breadcrumbs.lowerBound(start)
+      lower = offset + __distance(from: bound, to: start)
+    }
+
+    let upper: Int
+    if _fastPath(end == endIndex) {
+      upper = breadcrumbs.utf16Length
+    } else {
+      let (offset: offset, bound) = breadcrumbs.lowerBound(end)
+      upper = offset + __distance(from: bound, to: end)
+    }
+
+    return upper - lower
   }
 }
 

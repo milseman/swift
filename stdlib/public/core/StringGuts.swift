@@ -133,6 +133,12 @@ extension _StringGuts {
 
   @inlinable
   internal var hasNativeStorage: Bool { return _object.hasNativeStorage }
+
+  internal var hasSharedStorage: Bool { return _object.hasSharedStorage }
+
+  internal var hasBreadcrumbs: Bool {
+    return hasNativeStorage || hasSharedStorage
+  }
 }
 
 //

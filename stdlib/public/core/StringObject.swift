@@ -739,6 +739,7 @@ extension _StringObject {
     #endif // INTERNAL_CHECKS_ENABLED
   }
 
+  @inline(never)
   internal func _dump() {
     // TODO(UTF8): Print out any useful internal information
     #if INTERNAL_CHECKS_ENABLED
