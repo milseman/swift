@@ -64,7 +64,7 @@ extension Substring {
 }
 
 // A thin wrapper around _StringGuts implementing RangeReplaceableCollection
-struct StringGutsCollection: RangeReplaceableCollection, RandomAccessCollection {
+struct StringFauxUTF16Collection: RangeReplaceableCollection, RandomAccessCollection {
   typealias Element = UTF16.CodeUnit
   typealias Index = Int
   typealias Indices = CountableRange<Int>
@@ -85,7 +85,7 @@ struct StringGutsCollection: RangeReplaceableCollection, RandomAccessCollection 
   var indices: Indices { return startIndex..<endIndex }
 
   subscript(position: Index) -> Element {
-    return _str._utf16CodeUnitAtOffset(position)
+    return _str.utf16[_str._toUTF16Offset(position)]
   }
 
   mutating func replaceSubrange<C>(
@@ -901,7 +901,7 @@ StringTests.test("stringGutsExtensibility")
           + Array(repeatElement(ascii, count: 3*boundary))
           + repeatElement(nonAscii, count: 3*(count - boundary))
           + repeatElement(ascii, count: 2),
-          StringGutsCollection(x.utf16)
+          StringFauxUTF16Collection(x.utf16)
         )
       }
     }
@@ -1016,12 +1016,12 @@ StringTests.test("StringGutsReplace") {
       let g1 = makeStringGuts(s1)
       let g2 = makeStringGuts(s2 + s2)
       checkRangeReplaceable(
-        { StringGutsCollection(g1) },
-        { StringGutsCollection(g2)[0..<$0] }
+        { StringFauxUTF16Collection(g1) },
+        { StringFauxUTF16Collection(g2)[0..<$0] }
       )
       checkRangeReplaceable(
-        { StringGutsCollection(g1) },
-        { Array(StringGutsCollection(g2))[0..<$0] }
+        { StringFauxUTF16Collection(g1) },
+        { Array(StringFauxUTF16Collection(g2))[0..<$0] }
       )
     }
   }
