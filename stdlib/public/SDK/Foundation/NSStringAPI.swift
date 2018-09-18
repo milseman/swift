@@ -438,7 +438,16 @@ extension String {
 
 }
 
-extension String {
+extension StringProtocol where Index == String.Index {
+  //===--- Bridging Helpers -----------------------------------------------===//
+  //===--------------------------------------------------------------------===//
+
+  /// The corresponding `NSString` - a convenience for bridging code.
+  // FIXME(strings): There is probably a better way to bridge Self to NSString
+  var _ns: NSString {
+    return self._ephemeralString._bridgeToObjectiveC()
+  }
+
   /// Return an `Index` corresponding to the given offset in our UTF-16
   /// representation.
   func _toIndex(_ utf16Index: Int) -> Index {
@@ -496,20 +505,6 @@ extension String {
     return result
   }
 
-  /// The corresponding `NSString` - a convenience for bridging code.
-  // FIXME(strings): There is probably a better way to bridge Self to NSString
-  var _ns: NSString {
-    return self._bridgeToObjectiveC()
-  }
-}
-
-extension StringProtocol where Index == String.Index {
-  /// The corresponding `NSString` - a convenience for bridging code.
-  // FIXME(strings): There is probably a better way to bridge Self to NSString
-  var _ephemeralNS: NSString {
-    return self._ephemeralString._ns
-  }
-
   //===--- Instance Methods/Properties-------------------------------------===//
   //===--------------------------------------------------------------------===//
 
@@ -525,7 +520,7 @@ extension StringProtocol where Index == String.Index {
   /// - Returns: `true` if the string can be encoded in `encoding` without loss
   ///   of information; otherwise, `false`.
   public func canBeConverted(to encoding: String.Encoding) -> Bool {
-    return _ephemeralNS.canBeConverted(to: encoding.rawValue)
+    return _ns.canBeConverted(to: encoding.rawValue)
   }
 
   // @property NSString* capitalizedString
@@ -549,7 +544,7 @@ extension StringProtocol where Index == String.Index {
   /// Case transformations aren’t guaranteed to be symmetrical or to produce
   /// strings of the same lengths as the originals.
   public var capitalized: String {
-    return _ephemeralNS.capitalized as String
+    return _ns.capitalized as String
   }
 
   // @property (readonly, copy) NSString *localizedCapitalizedString NS_AVAILABLE(10_11, 9_0);
@@ -558,7 +553,7 @@ extension StringProtocol where Index == String.Index {
   /// using the current locale.
   @available(macOS 10.11, iOS 9.0, *)
   public var localizedCapitalized: String {
-    return _ephemeralNS.localizedCapitalized
+    return _ns.localizedCapitalized
   }
 
   // - (NSString *)capitalizedStringWithLocale:(Locale *)locale
@@ -566,7 +561,7 @@ extension StringProtocol where Index == String.Index {
   /// Returns a capitalized representation of the string
   /// using the specified locale.
   public func capitalized(with locale: Locale?) -> String {
-    return _ephemeralNS.capitalized(with: locale) as String
+    return _ns.capitalized(with: locale) as String
   }
 
   // - (NSComparisonResult)caseInsensitiveCompare:(NSString *)aString
@@ -576,7 +571,7 @@ extension StringProtocol where Index == String.Index {
   public func caseInsensitiveCompare<
     T : StringProtocol
   >(_ aString: T) -> ComparisonResult {
-    return _ephemeralNS.caseInsensitiveCompare(aString._ephemeralString)
+    return _ns.caseInsensitiveCompare(aString._ephemeralString)
   }
 
   //===--- Omitted by agreement during API review 5/20/2014 ---------------===//
@@ -595,8 +590,7 @@ extension StringProtocol where Index == String.Index {
   public func commonPrefix<
     T : StringProtocol
   >(with aString: T, options: String.CompareOptions = []) -> String {
-    return _ephemeralNS.commonPrefix(
-      with: aString._ephemeralString, options: options)
+    return _ns.commonPrefix(with: aString._ephemeralString, options: options)
   }
 
   // - (NSComparisonResult)
@@ -625,25 +619,24 @@ extension StringProtocol where Index == String.Index {
     // dispatching to the minimal selector for the supplied options.
     // So let's do that; the switch should compile away anyhow.
     let aString = aString._ephemeralString
-    let str = self._ephemeralString
-    return locale != nil ? str._ns.compare(
+    return locale != nil ? _ns.compare(
       aString,
       options: mask,
-      range: str._toRelativeNSRange(
+      range: _toRelativeNSRange(
         range ?? startIndex..<endIndex
       ),
       locale: locale?._bridgeToObjectiveC()
     )
 
-    : range != nil ? str._ns.compare(
+    : range != nil ? _ns.compare(
       aString,
       options: mask,
-      range: str._toRelativeNSRange(range!)
+      range: _toRelativeNSRange(range!)
     )
 
-    : !mask.isEmpty ? str._ns.compare(aString, options: mask)
+    : !mask.isEmpty ? _ns.compare(aString, options: mask)
 
-    : str._ns.compare(aString)
+    : _ns.compare(aString)
   }
 
   // - (NSUInteger)
@@ -667,7 +660,7 @@ extension StringProtocol where Index == String.Index {
 #if DEPLOYMENT_RUNTIME_SWIFT
     var outputNamePlaceholder: String?
     var outputArrayPlaceholder = [String]()
-    let res = self._ephemeralNS.completePath(
+    let res = self._ns.completePath(
         into: &outputNamePlaceholder,
         caseSensitive: caseSensitive,
         matchesInto: &outputArrayPlaceholder,
@@ -693,7 +686,7 @@ extension StringProtocol where Index == String.Index {
           outputName, to: AutoreleasingUnsafeMutablePointer<NSString?>.self)
         let outputNonOptionalArray = unsafeBitCast(
           outputArray, to: AutoreleasingUnsafeMutablePointer<NSArray?>.self)
-        return self._ephemeralNS.completePath(
+        return self._ns.completePath(
           into: outputNonOptionalName,
           caseSensitive: caseSensitive,
           matchesInto: outputNonOptionalArray,
@@ -721,7 +714,7 @@ extension StringProtocol where Index == String.Index {
   /// Returns an array containing substrings from the string
   /// that have been divided by characters in the given set.
   public func components(separatedBy separator: CharacterSet) -> [String] {
-    return _ephemeralNS.components(separatedBy: separator)
+    return _ns.components(separatedBy: separator)
   }
 
   // - (NSArray *)componentsSeparatedByString:(NSString *)separator
@@ -759,7 +752,7 @@ extension StringProtocol where Index == String.Index {
   public func components<
     T : StringProtocol
   >(separatedBy separator: T) -> [String] {
-    return _ephemeralNS.components(separatedBy: separator._ephemeralString)
+    return _ns.components(separatedBy: separator._ephemeralString)
   }
 
   // - (const char *)cStringUsingEncoding:(NSStringEncoding)encoding
@@ -767,7 +760,7 @@ extension StringProtocol where Index == String.Index {
   /// Returns a representation of the string as a C string
   /// using a given encoding.
   public func cString(using encoding: String.Encoding) -> [CChar]? {
-    return withExtendedLifetime(self._ephemeralNS) {
+    return withExtendedLifetime(_ns) {
       (s: NSString) -> [CChar]? in
       _persistCString(s.cString(using: encoding.rawValue))
     }
@@ -785,7 +778,7 @@ extension StringProtocol where Index == String.Index {
     using encoding: String.Encoding,
     allowLossyConversion: Bool = false
   ) -> Data? {
-    return _ephemeralNS.data(
+    return _ns.data(
       using: encoding.rawValue,
       allowLossyConversion: allowLossyConversion)
   }
@@ -794,14 +787,14 @@ extension StringProtocol where Index == String.Index {
 
   /// A string created by normalizing the string's contents using Form D.
   public var decomposedStringWithCanonicalMapping: String {
-    return _ephemeralNS.decomposedStringWithCanonicalMapping
+    return _ns.decomposedStringWithCanonicalMapping
   }
 
   // @property NSString* decomposedStringWithCompatibilityMapping;
 
   /// A string created by normalizing the string's contents using Form KD.
   public var decomposedStringWithCompatibilityMapping: String {
-    return _ephemeralNS.decomposedStringWithCompatibilityMapping
+    return _ns.decomposedStringWithCompatibilityMapping
   }
 
   //===--- Importing Foundation should not affect String printing ---------===//
@@ -820,7 +813,7 @@ extension StringProtocol where Index == String.Index {
   public func enumerateLines(
     invoking body: @escaping (_ line: String, _ stop: inout Bool) -> Void
   ) {
-    _ephemeralNS.enumerateLines {
+    _ns.enumerateLines {
       (line: String, stop: UnsafeMutablePointer<ObjCBool>)
     in
       var stop_ = false
@@ -836,7 +829,7 @@ extension StringProtocol where Index == String.Index {
   /// The fastest encoding to which the string can be converted without loss
   /// of information.
   public var fastestEncoding: String.Encoding {
-    return String.Encoding(rawValue: _ephemeralNS.fastestEncoding)
+    return String.Encoding(rawValue: _ns.fastestEncoding)
   }
 
   // - (BOOL)
@@ -850,17 +843,16 @@ extension StringProtocol where Index == String.Index {
   public func getCString(
     _ buffer: inout [CChar], maxLength: Int, encoding: String.Encoding
   ) -> Bool {
-    return _ephemeralNS.getCString(
-      &buffer,
-      maxLength: Swift.min(buffer.count, maxLength),
-      encoding: encoding.rawValue)
+    return _ns.getCString(&buffer,
+                          maxLength: Swift.min(buffer.count, maxLength),
+                          encoding: encoding.rawValue)
   }
 
   // - (NSUInteger)hash
 
   /// An unsigned integer that can be used as a hash table address.
   public var hash: Int {
-    return _ephemeralNS.hash
+    return _ns.hash
   }
 
   // - (NSUInteger)lengthOfBytesUsingEncoding:(NSStringEncoding)enc
@@ -868,7 +860,7 @@ extension StringProtocol where Index == String.Index {
   /// Returns the number of bytes required to store the
   /// `String` in a given encoding.
   public func lengthOfBytes(using encoding: String.Encoding) -> Int {
-    return _ephemeralNS.lengthOfBytes(using: encoding.rawValue)
+    return _ns.lengthOfBytes(using: encoding.rawValue)
   }
 
   // - (NSComparisonResult)localizedCaseInsensitiveCompare:(NSString *)aString
@@ -879,7 +871,7 @@ extension StringProtocol where Index == String.Index {
   func localizedCaseInsensitiveCompare<
     T : StringProtocol
   >(_ aString: T) -> ComparisonResult {
-    return _ephemeralNS.localizedCaseInsensitiveCompare(aString._ephemeralString)
+    return _ns.localizedCaseInsensitiveCompare(aString._ephemeralString)
   }
 
   // - (NSComparisonResult)localizedCompare:(NSString *)aString
@@ -888,14 +880,14 @@ extension StringProtocol where Index == String.Index {
   public func localizedCompare<
     T : StringProtocol
   >(_ aString: T) -> ComparisonResult {
-    return _ephemeralNS.localizedCompare(aString._ephemeralString)
+    return _ns.localizedCompare(aString._ephemeralString)
   }
 
   /// Compares the string and the given string as sorted by the Finder.
   public func localizedStandardCompare<
     T : StringProtocol
   >(_ string: T) -> ComparisonResult {
-    return _ephemeralNS.localizedStandardCompare(string._ephemeralString)
+    return _ns.localizedStandardCompare(string._ephemeralString)
   }
 
   //===--- Omitted for consistency with API review results 5/20/2014 ------===//
@@ -907,7 +899,7 @@ extension StringProtocol where Index == String.Index {
   /// locale.
   @available(macOS 10.11, iOS 9.0, *)
   public var localizedLowercase: String {
-    return _ephemeralNS.localizedLowercase
+    return _ns.localizedLowercase
   }
 
   // - (NSString *)lowercaseStringWithLocale:(Locale *)locale
@@ -916,7 +908,7 @@ extension StringProtocol where Index == String.Index {
   /// converted to lowercase, taking into account the specified
   /// locale.
   public func lowercased(with locale: Locale?) -> String {
-    return _ephemeralNS.lowercased(with: locale)
+    return _ns.lowercased(with: locale)
   }
 
   // - (NSUInteger)maximumLengthOfBytesUsingEncoding:(NSStringEncoding)enc
@@ -925,21 +917,21 @@ extension StringProtocol where Index == String.Index {
   /// `String` in a given encoding.
   public
   func maximumLengthOfBytes(using encoding: String.Encoding) -> Int {
-    return _ephemeralNS.maximumLengthOfBytes(using: encoding.rawValue)
+    return _ns.maximumLengthOfBytes(using: encoding.rawValue)
   }
 
   // @property NSString* precomposedStringWithCanonicalMapping;
 
   /// A string created by normalizing the string's contents using Form C.
   public var precomposedStringWithCanonicalMapping: String {
-    return _ephemeralNS.precomposedStringWithCanonicalMapping
+    return _ns.precomposedStringWithCanonicalMapping
   }
 
   // @property NSString * precomposedStringWithCompatibilityMapping;
 
   /// A string created by normalizing the string's contents using Form KC.
   public var precomposedStringWithCompatibilityMapping: String {
-    return _ephemeralNS.precomposedStringWithCompatibilityMapping
+    return _ns.precomposedStringWithCompatibilityMapping
   }
 
 #if !DEPLOYMENT_RUNTIME_SWIFT
@@ -949,7 +941,7 @@ extension StringProtocol where Index == String.Index {
   /// property list, returning an NSString, NSData, NSArray, or
   /// NSDictionary object, according to the topmost element.
   public func propertyList() -> Any {
-    return _ephemeralNS.propertyList()
+    return _ns.propertyList()
   }
 
   // - (NSDictionary *)propertyListFromStringsFileFormat
@@ -957,7 +949,7 @@ extension StringProtocol where Index == String.Index {
   /// Returns a dictionary object initialized with the keys and
   /// values found in the `String`.
   public func propertyListFromStringsFileFormat() -> [String : String] {
-    return _ephemeralNS.propertyListFromStringsFileFormat() as! [String : String]? ?? [:]
+    return _ns.propertyListFromStringsFileFormat() as! [String : String]? ?? [:]
   }
 #endif
 
@@ -974,7 +966,7 @@ extension StringProtocol where Index == String.Index {
   public func localizedStandardContains<
     T : StringProtocol
   >(_ string: T) -> Bool {
-    return _ephemeralNS.localizedStandardContains(string._ephemeralString)
+    return _ns.localizedStandardContains(string._ephemeralString)
   }
 
   // @property NSStringEncoding smallestEncoding;
@@ -982,7 +974,7 @@ extension StringProtocol where Index == String.Index {
   /// The smallest encoding to which the string can be converted without
   /// loss of information.
   public var smallestEncoding: String.Encoding {
-    return String.Encoding(rawValue: _ephemeralNS.smallestEncoding)
+    return String.Encoding(rawValue: _ns.smallestEncoding)
   }
 
   // - (NSString *)
@@ -1003,7 +995,7 @@ extension StringProtocol where Index == String.Index {
     // <rdar://problem/17901698> Docs for -[NSString
     // stringByAddingPercentEncodingWithAllowedCharacters] don't precisely
     // describe when return value is nil
-    return _ephemeralNS.addingPercentEncoding(withAllowedCharacters:
+    return _ns.addingPercentEncoding(withAllowedCharacters:
       allowedCharacters
     )
   }
@@ -1017,7 +1009,7 @@ extension StringProtocol where Index == String.Index {
   >(
     _ format: T, _ arguments: CVarArg...
   ) -> String {
-    return _ephemeralNS.appending(
+    return _ns.appending(
       String(format: format._ephemeralString, arguments: arguments))
   }
 
@@ -1028,7 +1020,7 @@ extension StringProtocol where Index == String.Index {
   public func appending<
     T : StringProtocol
   >(_ aString: T) -> String {
-    return _ephemeralNS.appending(aString._ephemeralString)
+    return _ns.appending(aString._ephemeralString)
   }
 
   /// Returns a string with the given character folding options
@@ -1036,7 +1028,7 @@ extension StringProtocol where Index == String.Index {
   public func folding(
     options: String.CompareOptions = [], locale: Locale?
   ) -> String {
-    return _ephemeralNS.folding(options: options, locale: locale)
+    return _ns.folding(options: options, locale: locale)
   }
 
   // - (NSString *)stringByPaddingToLength:(NSUInteger)newLength
@@ -1053,7 +1045,7 @@ extension StringProtocol where Index == String.Index {
     withPad padString: T,
     startingAt padIndex: Int
   ) -> String {
-    return _ephemeralNS.padding(
+    return _ns.padding(
       toLength: newLength,
       withPad: padString._ephemeralString,
       startingAt: padIndex)
@@ -1064,7 +1056,7 @@ extension StringProtocol where Index == String.Index {
   /// A new string made from the string by replacing all percent encoded
   /// sequences with the matching UTF-8 characters.
   public var removingPercentEncoding: String? {
-    return _ephemeralNS.removingPercentEncoding
+    return _ns.removingPercentEncoding
   }
 
   // - (NSString *)
@@ -1076,9 +1068,8 @@ extension StringProtocol where Index == String.Index {
   public func replacingCharacters<
     T : StringProtocol, R : RangeExpression
   >(in range: R, with replacement: T) -> String where R.Bound == Index {
-    let str = self._ephemeralString
-    return str._ns.replacingCharacters(
-      in: str._toRelativeNSRange(range.relative(to: self)),
+    return _ns.replacingCharacters(
+      in: _toRelativeNSRange(range.relative(to: self)),
       with: replacement._ephemeralString)
   }
 
@@ -1106,17 +1097,16 @@ extension StringProtocol where Index == String.Index {
   ) -> String {
     let target = target._ephemeralString
     let replacement = replacement._ephemeralString
-    let str = self._ephemeralString
     return (searchRange != nil) || (!options.isEmpty)
-    ? str._ns.replacingOccurrences(
+    ? _ns.replacingOccurrences(
       of: target,
       with: replacement,
       options: options,
-      range: str._toRelativeNSRange(
+      range: _toRelativeNSRange(
         searchRange ?? startIndex..<endIndex
       )
     )
-    : str._ns.replacingOccurrences(of: target, with: replacement)
+    : _ns.replacingOccurrences(of: target, with: replacement)
   }
 
 #if !DEPLOYMENT_RUNTIME_SWIFT
@@ -1131,7 +1121,7 @@ extension StringProtocol where Index == String.Index {
   public func replacingPercentEscapes(
     using encoding: String.Encoding
   ) -> String? {
-    return _ephemeralNS.replacingPercentEscapes(using: encoding.rawValue)
+    return _ns.replacingPercentEscapes(using: encoding.rawValue)
   }
 #endif
 
@@ -1140,7 +1130,7 @@ extension StringProtocol where Index == String.Index {
   /// Returns a new string made by removing from both ends of
   /// the `String` characters contained in a given character set.
   public func trimmingCharacters(in set: CharacterSet) -> String {
-    return _ephemeralNS.trimmingCharacters(in: set)
+    return _ns.trimmingCharacters(in: set)
   }
 
   // @property (readonly, copy) NSString *localizedUppercaseString NS_AVAILABLE(10_11, 9_0);
@@ -1149,7 +1139,7 @@ extension StringProtocol where Index == String.Index {
   /// locale.
   @available(macOS 10.11, iOS 9.0, *)
   public var localizedUppercase: String {
-    return _ephemeralNS.localizedUppercase as String
+    return _ns.localizedUppercase as String
   }
 
   // - (NSString *)uppercaseStringWithLocale:(Locale *)locale
@@ -1158,7 +1148,7 @@ extension StringProtocol where Index == String.Index {
   /// converted to uppercase, taking into account the specified
   /// locale.
   public func uppercased(with locale: Locale?) -> String {
-    return _ephemeralNS.uppercased(with: locale)
+    return _ns.uppercased(with: locale)
   }
 
   //===--- Omitted due to redundancy with "utf8" property -----------------===//
@@ -1178,7 +1168,7 @@ extension StringProtocol where Index == String.Index {
     toFile path: T, atomically useAuxiliaryFile: Bool,
     encoding enc: String.Encoding
   ) throws {
-    try _ephemeralNS.write(
+    try _ns.write(
       toFile: path._ephemeralString,
       atomically: useAuxiliaryFile,
       encoding: enc.rawValue)
@@ -1196,7 +1186,7 @@ extension StringProtocol where Index == String.Index {
     to url: URL, atomically useAuxiliaryFile: Bool,
     encoding enc: String.Encoding
   ) throws {
-    try _ephemeralNS.write(
+    try _ns.write(
       to: url, atomically: useAuxiliaryFile, encoding: enc.rawValue)
   }
 
@@ -1208,7 +1198,7 @@ extension StringProtocol where Index == String.Index {
   public func applyingTransform(
     _ transform: StringTransform, reverse: Bool
   ) -> String? {
-    return _ephemeralNS.applyingTransform(transform, reverse: reverse)
+    return _ns.applyingTransform(transform, reverse: reverse)
   }
 
   // - (void)
@@ -1236,15 +1226,14 @@ extension StringProtocol where Index == String.Index {
       (String, Range<Index>, Range<Index>, inout Bool) -> Void
   ) where R.Bound == Index {
     let range = range.relative(to: self)
-    let str = self._ephemeralString
-    str._ns.enumerateLinguisticTags(
-      in: str._toRelativeNSRange(range),
+    _ns.enumerateLinguisticTags(
+      in: _toRelativeNSRange(range),
       scheme: tagScheme._ephemeralString,
       options: opts,
       orthography: orthography != nil ? orthography! : nil
     ) {
       var stop_ = false
-      body($0, str._toRange($1), str._toRange($2), &stop_)
+      body($0, self._toRange($1), self._toRange($2), &stop_)
       if stop_ {
         $3.pointee = true
       }
@@ -1302,14 +1291,13 @@ extension StringProtocol where Index == String.Index {
       _ enclosingRange: Range<Index>, inout Bool
     ) -> Void
   ) where R.Bound == Index {
-    let str = self._ephemeralString
-    str._ns.enumerateSubstrings(
-      in: str._toRelativeNSRange(range.relative(to: self)), options: opts) {
+    _ns.enumerateSubstrings(
+      in: _toRelativeNSRange(range.relative(to: self)), options: opts) {
       var stop_ = false
 
       body($0,
-        str._toRange($1),
-        str._toRange($2),
+        self._toRange($1),
+        self._toRange($2),
         &stop_)
 
       if stop_ {
@@ -1370,15 +1358,14 @@ extension StringProtocol where Index == String.Index {
     range: R,
     remaining leftover: UnsafeMutablePointer<Range<Index>>
   ) -> Bool where R.Bound == Index {
-    let str = self._ephemeralString
-    return str._withOptionalOutParameter(leftover) {
-      str._ns.getBytes(
+    return _withOptionalOutParameter(leftover) {
+      self._ns.getBytes(
         &buffer,
         maxLength: Swift.min(buffer.count, maxBufferCount),
         usedLength: usedBufferCount,
         encoding: encoding.rawValue,
         options: options,
-        range: str._toRelativeNSRange(range.relative(to: self)),
+        range: _toRelativeNSRange(range.relative(to: self)),
         remaining: $0)
     }
   }
@@ -1399,14 +1386,13 @@ extension StringProtocol where Index == String.Index {
     contentsEnd: UnsafeMutablePointer<Index>,
     for range: R
   ) where R.Bound == Index {
-    let str = self._ephemeralString
-    str._withOptionalOutParameter(start) {
-      start in str._withOptionalOutParameter(end) {
-        end in str._withOptionalOutParameter(contentsEnd) {
-          contentsEnd in str._ns.getLineStart(
+    _withOptionalOutParameter(start) {
+      start in self._withOptionalOutParameter(end) {
+        end in self._withOptionalOutParameter(contentsEnd) {
+          contentsEnd in self._ns.getLineStart(
             start, end: end,
             contentsEnd: contentsEnd,
-            for: str._toRelativeNSRange(range.relative(to: self)))
+            for: _toRelativeNSRange(range.relative(to: self)))
         }
       }
     }
@@ -1428,14 +1414,13 @@ extension StringProtocol where Index == String.Index {
     contentsEnd: UnsafeMutablePointer<Index>,
     for range: R
   ) where R.Bound == Index {
-    let str = self._ephemeralString
-    str._withOptionalOutParameter(start) {
-      start in str._withOptionalOutParameter(end) {
-        end in str._withOptionalOutParameter(contentsEnd) {
-          contentsEnd in str._ns.getParagraphStart(
+    _withOptionalOutParameter(start) {
+      start in self._withOptionalOutParameter(end) {
+        end in self._withOptionalOutParameter(contentsEnd) {
+          contentsEnd in self._ns.getParagraphStart(
             start, end: end,
             contentsEnd: contentsEnd,
-            for: str._toRelativeNSRange(range.relative(to: self)))
+            for: _toRelativeNSRange(range.relative(to: self)))
         }
       }
     }
@@ -1462,9 +1447,8 @@ extension StringProtocol where Index == String.Index {
   public func lineRange<
     R : RangeExpression
   >(for aRange: R) -> Range<Index> where R.Bound == Index {
-    let str = self._ephemeralString
-    return str._toRange(str._ns.lineRange(
-      for: str._toRelativeNSRange(aRange.relative(to: self))))
+    return _toRange(_ns.lineRange(
+      for: _toRelativeNSRange(aRange.relative(to: self))))
   }
 
 #if !DEPLOYMENT_RUNTIME_SWIFT
@@ -1486,11 +1470,10 @@ extension StringProtocol where Index == String.Index {
     orthography: NSOrthography? = nil,
     tokenRanges: UnsafeMutablePointer<[Range<Index>]>? = nil // FIXME:Can this be nil?
   ) -> [String] where R.Bound == Index {
-    let str = self._ephemeralString
     var nsTokenRanges: NSArray?
     let result = tokenRanges._withNilOrAddress(of: &nsTokenRanges) {
-      str._ns.linguisticTags(
-        in: str._toRelativeNSRange(range.relative(to: self)),
+      self._ns.linguisticTags(
+        in: _toRelativeNSRange(range.relative(to: self)),
         scheme: tagScheme._ephemeralString,
         options: opts,
         orthography: orthography,
@@ -1499,7 +1482,7 @@ extension StringProtocol where Index == String.Index {
 
     if let nsTokenRanges = nsTokenRanges {
       tokenRanges?.pointee = (nsTokenRanges as [AnyObject]).map {
-        str._toRange($0.rangeValue)
+        self._toRange($0.rangeValue)
       }
     }
 
@@ -1513,10 +1496,8 @@ extension StringProtocol where Index == String.Index {
   public func paragraphRange<
     R : RangeExpression
   >(for aRange: R) -> Range<Index> where R.Bound == Index {
-    let str = self._ephemeralString
-    return str._toRange(
-      str._ns.paragraphRange(
-        for: str._toRelativeNSRange(aRange.relative(to: self))))
+    return _toRange(
+      _ns.paragraphRange(for: _toRelativeNSRange(aRange.relative(to: self))))
   }
 #endif
 
@@ -1539,12 +1520,11 @@ extension StringProtocol where Index == String.Index {
     options mask: String.CompareOptions = [],
     range aRange: Range<Index>? = nil
   ) -> Range<Index>? {
-    let str = self._ephemeralString
-    return str._optionalRange(
-      str._ns.rangeOfCharacter(
+    return _optionalRange(
+      _ns.rangeOfCharacter(
         from: aSet,
         options: mask,
-        range: str._toRelativeNSRange(
+        range: _toRelativeNSRange(
           aRange ?? startIndex..<endIndex
         )
       )
@@ -1557,9 +1537,8 @@ extension StringProtocol where Index == String.Index {
   /// character sequence located at a given index.
   public
   func rangeOfComposedCharacterSequence(at anIndex: Index) -> Range<Index> {
-    let str = self._ephemeralString
-    return str._toRange(
-      str._ns.rangeOfComposedCharacterSequence(at: str._toOffset(anIndex)))
+    return _toRange(
+      _ns.rangeOfComposedCharacterSequence(at: _toOffset(anIndex)))
   }
 
   // - (NSRange)rangeOfComposedCharacterSequencesForRange:(NSRange)range
@@ -1574,10 +1553,9 @@ extension StringProtocol where Index == String.Index {
     // Theoretically, this will be the identity function.  In practice
     // I think users will be able to observe differences in the input
     // and output ranges due (if nothing else) to locale changes
-    let str = self._ephemeralString
-    return str._toRange(
-      str._ns.rangeOfComposedCharacterSequences(
-        for: str._toRelativeNSRange(range.relative(to: self))))
+    return _toRange(
+      _ns.rangeOfComposedCharacterSequences(
+        for: _toRelativeNSRange(range.relative(to: self))))
   }
 
   // - (NSRange)rangeOfString:(NSString *)aString
@@ -1607,22 +1585,21 @@ extension StringProtocol where Index == String.Index {
     range searchRange: Range<Index>? = nil,
     locale: Locale? = nil
   ) -> Range<Index>? {
-    let str = self._ephemeralString
     let aString = aString._ephemeralString
-    return str._optionalRange(
-      locale != nil ? str._ns.range(
+    return _optionalRange(
+      locale != nil ? _ns.range(
         of: aString,
         options: mask,
-        range: str._toRelativeNSRange(
+        range: _toRelativeNSRange(
           searchRange ?? startIndex..<endIndex
         ),
         locale: locale
       )
-      : searchRange != nil ? str._ns.range(
-        of: aString, options: mask, range: str._toRelativeNSRange(searchRange!)
+      : searchRange != nil ? _ns.range(
+        of: aString, options: mask, range: _toRelativeNSRange(searchRange!)
       )
-      : !mask.isEmpty ? str._ns.range(of: aString, options: mask)
-      : str._ns.range(of: aString)
+      : !mask.isEmpty ? _ns.range(of: aString, options: mask)
+      : _ns.range(of: aString)
     )
   }
 
@@ -1640,9 +1617,8 @@ extension StringProtocol where Index == String.Index {
   public func localizedStandardRange<
     T : StringProtocol
   >(of string: T) -> Range<Index>? {
-    let str = self._ephemeralString
-    return str._optionalRange(
-      str._ns.localizedStandardRange(of: string._ephemeralString))
+    return _optionalRange(
+      _ns.localizedStandardRange(of: string._ephemeralString))
   }
 
 #if !DEPLOYMENT_RUNTIME_SWIFT
@@ -1657,7 +1633,7 @@ extension StringProtocol where Index == String.Index {
   public func addingPercentEscapes(
     using encoding: String.Encoding
   ) -> String? {
-    return _ephemeralNS.addingPercentEscapes(using: encoding.rawValue)
+    return _ns.addingPercentEscapes(using: encoding.rawValue)
   }
 #endif
 
@@ -1672,7 +1648,7 @@ extension StringProtocol where Index == String.Index {
   public func contains<T : StringProtocol>(_ other: T) -> Bool {
     let r = self.range(of: other) != nil
     if #available(macOS 10.10, iOS 8.0, *) {
-      assert(r == _ephemeralNS.contains(other._ephemeralString))
+      assert(r == _ns.contains(other._ephemeralString))
     }
     return r
   }
@@ -1696,7 +1672,7 @@ extension StringProtocol where Index == String.Index {
     ) != nil
     if #available(macOS 10.10, iOS 8.0, *) {
       assert(r ==
-        _ephemeralNS.localizedCaseInsensitiveContains(other._ephemeralString))
+        _ns.localizedCaseInsensitiveContains(other._ephemeralString))
     }
     return r
   }
@@ -1711,8 +1687,7 @@ extension StringProtocol where Index == String.Index {
   @available(swift, deprecated: 4.0,
     message: "Please use String slicing subscript with a 'partial range from' operator.")
   public func substring(from index: Index) -> String {
-    let str = self._ephemeralString
-    return str._ns.substring(from: str._toOffset(index))
+    return _ns.substring(from: _toOffset(index))
   }
 
   // - (NSString *)substringToIndex:(NSUInteger)anIndex
@@ -1722,8 +1697,7 @@ extension StringProtocol where Index == String.Index {
   @available(swift, deprecated: 4.0,
     message: "Please use String slicing subscript with a 'partial range upto' operator.")
   public func substring(to index: Index) -> String {
-    let str = self._ephemeralString
-    return str._ns.substring(to: str._toOffset(index))
+    return _ns.substring(to: _toOffset(index))
   }
 
   // - (NSString *)substringWithRange:(NSRange)aRange
@@ -1733,8 +1707,7 @@ extension StringProtocol where Index == String.Index {
   @available(swift, deprecated: 4.0,
     message: "Please use String slicing subscript.")
   public func substring(with aRange: Range<Index>) -> String {
-    let str = self._ephemeralString
-    return str._ns.substring(with: str._toRelativeNSRange(aRange))
+    return _ns.substring(with: _toRelativeNSRange(aRange))
   }
 }
 
