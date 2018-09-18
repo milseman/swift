@@ -132,7 +132,7 @@ extension _StringObject {
 */
 extension _StringObject.Nibbles {
   // The canonical empty sting is an empty small string
-  @usableFromInline
+  @inlinable
   internal static var emptyString: UInt {
     @inline(__always) get { return _StringObject.Nibbles.small(isASCII: true) }
   }

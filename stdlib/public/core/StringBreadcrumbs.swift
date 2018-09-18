@@ -23,22 +23,23 @@ internal final class _StringBreadcrumbs {
   // TODO: Does this need to be inout, unique, or how will we be enforcing
   // atomicity?
   init(_ str: String) {
+    let stride = _StringBreadcrumbs.breadcrumbStride
+
     self.crumbs = []
+
     if str.isEmpty {
       self.utf16Length = 0
       return
     }
 
-    let stride = _StringBreadcrumbs.breadcrumbStride
     self.crumbs.reserveCapacity(
       (str._guts.count / 3) / stride)
 
     // TODO(UTF8 perf): More efficient implementation
 
     let utf16 = str.utf16
-
-    var i = 1
-    var curIdx = utf16.index(after: utf16.startIndex)
+    var i = 0
+    var curIdx = utf16.startIndex
     while curIdx != utf16.endIndex {
       if i % stride == 0 { //i.isMultiple(of: stride) {
         self.crumbs.append(curIdx)
@@ -46,16 +47,8 @@ internal final class _StringBreadcrumbs {
       i = i &+ 1
       curIdx = utf16.index(after: curIdx)
     }
-
     self.utf16Length = i
-
-    if self.crumbs.isEmpty {
-      // Last offset is stride-1, so we don't allocate an array for any length
-      // up to and including stride.
-      _sanityCheck(self.utf16Length <= stride)
-    } else {
-      _sanityCheck(self.crumbs.count == (self.utf16Length-1) / stride)
-    }
+    _sanityCheck(self.crumbs.count == 1 + ((self.utf16Length-1) / stride))
   }
 }
 

@@ -160,30 +160,28 @@ extension _StringStorage {
   private static func create(capacity: Int, count: Int = 0) -> _StringStorage {
     _sanityCheck(capacity >= count)
 
-    let codeUnitsCapacity = determineCodeUnitCapacity(capacity)
-    _sanityCheck(codeUnitsCapacity > count)
+    let realCapacity = determineCodeUnitCapacity(capacity)
+    _sanityCheck(realCapacity > capacity)
     return _StringStorage.create(
-      codeUnitsCapacity: codeUnitsCapacity, count: count)
+      realCodeUnitCapacity: realCapacity, count: count)
   }
 
   @inline(never) // rdar://problem/44542202
   @_effects(releasenone)
   @nonobjc
   private static func create(
-    codeUnitsCapacity: Int, count: Int = 0
+    realCodeUnitCapacity: Int, count: Int = 0
   ) -> _StringStorage {
     let storage = Builtin.allocWithTailElems_2(
       _StringStorage.self,
-      codeUnitsCapacity._builtinWordValue, UInt8.self,
+      realCodeUnitCapacity._builtinWordValue, UInt8.self,
       1._builtinWordValue, Optional<_StringBreadcrumbs>.self)
 
     // TODO(UTF8 perf): Use or document flags
-    storage._realCapacityAndFlags = codeUnitsCapacity
+    storage._realCapacityAndFlags = realCodeUnitCapacity
     storage._countAndFlags = count
 
     storage._breadcrumbsAddress.initialize(to: nil)
-
-    _sanityCheck(storage.capacity >= codeUnitsCapacity)
     storage.terminator.pointee = 0 // nul-terminated
     storage._invariantCheck()
     return storage
