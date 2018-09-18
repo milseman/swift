@@ -210,13 +210,14 @@ extension String: BidirectionalCollection {
     // Fast check if it's already been measured, otherwise check resiliently
     if let d = i.characterStride { return d }
 
-    // TODO: Known-single-scalar-grapheme fast path
     _boundsCheck(i)
+    // TODO: Known-single-scalar-grapheme fast path
     return _guts._opaqueCharacterStride(startingAt: i.encodedOffset)
   }
 
   @inlinable @inline(__always)
   internal func _characterStride(endingAt i: Index) -> Int {
+    _precondition(i.encodedOffset > 0, "String index is out of bounds")
     // TODO: Known-single-scalar-grapheme fast path
     return _guts._opaqueCharacterStride(endingAt: i.encodedOffset)
   }
