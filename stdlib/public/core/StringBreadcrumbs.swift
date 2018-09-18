@@ -13,7 +13,7 @@
 
 // @opaque
 internal final class _StringBreadcrumbs {
-  static var breadcrumbStride: Int { return 64 }
+  static var breadcrumbStride: Int { return 32 }
 
   var utf16Length: Int
 
