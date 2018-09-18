@@ -457,22 +457,24 @@ extension String.UTF16View {
       return __distance(from: start, to: end)
     }
 
-    let breadcrumbs = _guts.getBreadcrumbs()
+    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
 
     let lower: Int
     if _fastPath(start == startIndex) {
       lower = 0
     } else {
-      let (offset: offset, bound) = breadcrumbs.lowerBound(start)
-      lower = offset + __distance(from: bound, to: start)
+      lower = __distance(from: startIndex, to: start)
+      // let (offset: offset, bound) = breadcrumbs.lowerBound(start)
+      // lower = offset + _distance(from: bound, to: start)
     }
 
     let upper: Int
     if _fastPath(end == endIndex) {
-      upper = breadcrumbs.utf16Length
+      upper = breadcrumbsPtr.pointee.utf16Length
     } else {
-      let (offset: offset, bound) = breadcrumbs.lowerBound(end)
-      upper = offset + __distance(from: bound, to: end)
+      upper = __distance(from: startIndex, to: end)
+      // let (offset: offset, bound) = breadcrumbs.lowerBound(end)
+      // upper = offset + _distance(from: bound, to: end)
     }
 
     return upper - lower

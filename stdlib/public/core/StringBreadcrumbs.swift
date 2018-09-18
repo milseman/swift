@@ -81,7 +81,8 @@ extension _StringBreadcrumbs {
 }
 
 extension _StringGuts {
-  internal func getBreadcrumbs() -> _StringBreadcrumbs {
+  @_effects(releasenone)
+  internal func getBreadcrumbsPtr() -> UnsafePointer<_StringBreadcrumbs> {
     _sanityCheck(hasBreadcrumbs)
 
     let mutPtr: UnsafeMutablePointer<_StringBreadcrumbs?>
@@ -97,10 +98,11 @@ extension _StringGuts {
     }
 
     _sanityCheck(mutPtr.pointee != nil)
-    return mutPtr.pointee._unsafelyUnwrappedUnchecked
+    return UnsafePointer(mutPtr)
   }
 
   @inline(never) // slow-path
+  @_effects(releasenone)
   internal func populateBreadcrumbs(
     _ mutPtr: UnsafeMutablePointer<_StringBreadcrumbs?>
   ) {
