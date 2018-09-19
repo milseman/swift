@@ -474,15 +474,14 @@ extension String.UTF16View {
     if _fastPath(idx == startIndex) {
       lowerOffset = 0
     } else {
-      // TODO(UTF8 perf): Use breadcrumbs to accelerate
       lowerOffset = distance(from: startIndex, to: idx)
     }
 
     let totalOffset = lowerOffset + n
-    let crumb = breadcrumbsPtr.pointee.crumbs[
-      totalOffset / _StringBreadcrumbs.breadcrumbStride]
-    return _index(
-      crumb, offsetBy: totalOffset % _StringBreadcrumbs.breadcrumbStride)
+
+    let (crumb, remaining) = breadcrumbsPtr.pointee.getBreadcrumb(
+      forOffset: totalOffset)
+    return _index(crumb, offsetBy: remaining)
   }
 
   @usableFromInline @inline(never) // opaque slow-path

@@ -47,8 +47,14 @@ internal final class _StringBreadcrumbs {
       i = i &+ 1
       curIdx = utf16.index(after: curIdx)
     }
+
+    // Corner case: index(_:offsetBy:) can produce the endIndex
+    if i % stride == 0 {
+      self.crumbs.append(utf16.endIndex)
+    }
+
     self.utf16Length = i
-    _sanityCheck(self.crumbs.count == 1 + ((self.utf16Length-1) / stride))
+    _sanityCheck(self.crumbs.count == 1 + (self.utf16Length / stride))
   }
 }
 
@@ -70,6 +76,14 @@ extension _StringBreadcrumbs {
 
     fatalError("Incorrect implementation")
     return (idx * stride, crumbs[idx])
+  }
+
+  // Fetch the lower-bound index corresponding to the given offset, returning
+  // the index and the remaining offset to adjust
+  internal func getBreadcrumb(
+    forOffset offset: Int
+  ) -> (lowerBound: String.Index, remaining: Int) {
+    return (crumbs[offset / stride], offset % stride)
   }
 }
 
