@@ -5200,7 +5200,6 @@
       "location": "",
       "moduleName": "Swift",
       "conformingProtocols": [
-        "_ExpressibleByBuiltinUTF16ExtendedGraphemeClusterLiteral",
         "ExpressibleByExtendedGraphemeClusterLiteral",
         "_ExpressibleByBuiltinExtendedGraphemeClusterLiteral",
         "ExpressibleByUnicodeScalarLiteral",
@@ -87388,7 +87387,6 @@
         "Hashable",
         "_ExpressibleByBuiltinUnicodeScalarLiteral",
         "_ExpressibleByBuiltinExtendedGraphemeClusterLiteral",
-        "_ExpressibleByBuiltinUTF16StringLiteral",
         "_ExpressibleByBuiltinStringLiteral",
         "ExpressibleByStringLiteral",
         "ExpressibleByExtendedGraphemeClusterLiteral",
