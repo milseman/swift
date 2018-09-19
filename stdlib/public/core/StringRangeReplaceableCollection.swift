@@ -138,7 +138,7 @@ extension String: RangeReplaceableCollection {
 
   public mutating func append(contentsOf newElements: Substring) {
     // TODO(UTF8 perf): This is a horribly slow means...
-    self.append(String(newElements))
+    self.append(newElements._ephemeralString)
   }
 
   /// Appends the characters in the given sequence to the string.
@@ -173,10 +173,7 @@ extension String: RangeReplaceableCollection {
     _ bounds: Range<Index>,
     with newElements: C
   ) where C : Collection, C.Iterator.Element == Character {
-    // TODO(UTF8 perf): This is a horribly slow means...
-    let prefix = self[..<bounds.lowerBound]
-    let suffix = self[bounds.upperBound...]
-    self = prefix + String(newElements) + suffix
+    _guts.replaceSubrange(bounds, with: newElements)
   }
 
   /// Inserts a new character at the specified position.
