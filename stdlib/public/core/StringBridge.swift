@@ -99,7 +99,7 @@ internal var kCFStringEncodingUTF8 : _swift_shims_CFStringEncoding {
 }
 
 // Resiliently write a tagged cocoa string's contents into a buffer
-@_effects(readonly) // @opaque
+@_effects(releasenone) // @opaque
 internal func _bridgeTagged(
   _ cocoa: _CocoaString,
   intoUTF8 bufPtr: UnsafeMutableBufferPointer<UInt8>
