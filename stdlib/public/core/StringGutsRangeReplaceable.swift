@@ -169,5 +169,50 @@ extension _StringGuts {
     // Reset the count
     _object.nativeStorage.clear()
     self = _StringGuts(_object.nativeStorage)
-  }  
+  }
+
+  @inline(__always) // Always-specialize
+  internal mutating func replaceSubrange<C>(
+    _ bounds: Range<Index>,
+    with newElements: C
+  ) where C : Collection, C.Iterator.Element == Character {
+    if isUniqueNative {
+      if let replStr = newElements as? String, replStr._guts.isFastUTF8 {
+        replStr._guts.withFastUTF8 {
+          uniqueNativeReplaceSubrange(bounds, with: $0)
+        }
+        return
+      }
+      // TODO(UTF8 perf): Probably also worth checking contiguous Substring
+    }
+
+    var result = String()
+    let selfStr = String(self)
+    result.append(contentsOf: selfStr[..<bounds.lowerBound])
+    result.append(contentsOf: newElements)
+    result.append(contentsOf: selfStr[bounds.upperBound...])
+    self = result._guts
+  }
+
+  internal mutating func uniqueNativeReplaceSubrange(
+    _ bounds: Range<Index>,
+    with codeUnits: UnsafeBufferPointer<UInt8>
+  ) {
+    let neededCapacity =
+      bounds.lowerBound.encodedOffset
+      + codeUnits.count + (self.count - bounds.upperBound.encodedOffset)
+
+    // TODO(UTF8 perf): efficient implementation
+    var result = String()
+    let selfStr = String(self)
+    let prefix = selfStr[..<bounds.lowerBound]
+    let suffix = selfStr[bounds.upperBound...]
+    result.append(contentsOf: prefix)
+    result._guts.append(_StringGuts(codeUnits, isKnownASCII: false))
+    result.append(contentsOf: suffix)
+    self = result._guts
+  }
 }
+
+
+
