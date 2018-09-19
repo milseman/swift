@@ -272,12 +272,11 @@ extension String: RangeReplaceableCollection {
   ///   optimization when you're planning to grow the string again. The
   ///   default value is `false`.
   public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
-    guard keepCapacity || _guts.uniqueNativeCapacity != nil else {
-      self = String()
+    guard keepCapacity else {
+      self = ""
       return
     }
-
-    unimplemented_utf8()
+    _guts.clear()
   }
 }
 
