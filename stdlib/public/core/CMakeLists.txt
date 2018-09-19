@@ -132,6 +132,7 @@ set(SWIFTLIB_ESSENTIAL
   StringComparison.swift
   StringCreate.swift
   StringGuts.swift
+  StringGutsRangeReplaceable.swift
   StringGutsVisitor.swift
   StringObject.swift
   StringProtocol.swift

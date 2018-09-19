@@ -344,6 +344,12 @@ extension _StringStorage {
 
     _invariantCheck()
   }
+
+  @nonobjc
+  internal func clear() {
+    // TODO(UTF8 perf flags): Clear or restore flags
+    self._countAndFlags &= ~_StringObject.countMask
+  }
 }
 
 // For bridging literals

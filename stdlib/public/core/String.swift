@@ -667,47 +667,6 @@ extension String: CustomDebugStringConvertible {
   }
 }
 
-// Support for copy-on-write
-extension String {
-  /// Appends the given string to this string.
-  ///
-  /// The following example builds a customized greeting by using the
-  /// `append(_:)` method:
-  ///
-  ///     var greeting = "Hello, "
-  ///     if let name = getUserName() {
-  ///         greeting.append(name)
-  ///     } else {
-  ///         greeting.append("friend")
-  ///     }
-  ///     print(greeting)
-  ///     // Prints "Hello, friend"
-  ///
-  /// - Parameter other: Another string.
-  public mutating func append(_ other: String) {
-    if self.isEmpty && !_guts.hasNativeStorage {
-      self = other
-      return
-    }
-    self._guts.append(other._guts)
-  }
-
-  @inline(__always) // Eliminate dynamic type check when possible
-  internal mutating func append<S: StringProtocol>(_ other: S) {
-    if let contigBytes = other as? _HasContiguousBytes {
-      contigBytes.withUnsafeBytes {
-        // TODO(UTF8 perf): track ASCIIness
-        let immortalBytes = _StringGuts($0._asUInt8, isKnownASCII: false)
-        self._guts.append(immortalBytes)
-      }
-      return
-    }
-
-    unimplemented_utf8()
-  }
-}
-
-
 extension String {
   @_effects(readonly) @_semantics("string.concat")
   public static func + (lhs: String, rhs: String) -> String {
@@ -770,17 +729,17 @@ extension Sequence where Element: StringProtocol {
     result.reserveCapacity(understimatedCap)
     if separator.isEmpty {
       for x in self {
-        result.append(x)
+        result.append(x._ephemeralString)
       }
       return result
     }
 
     var iter = makeIterator()
     if let first = iter.next() {
-      result.append(first)
+      result.append(first._ephemeralString)
       while let next = iter.next() {
         result.append(separator)
-        result.append(next)
+        result.append(next._ephemeralString)
       }
     }
     return result
