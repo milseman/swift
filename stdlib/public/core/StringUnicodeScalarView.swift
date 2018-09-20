@@ -103,66 +103,6 @@ extension _StringGuts {
   }
 }
 
-extension String {
-  /// A view of a string's contents as a collection of Unicode scalar values.
-  ///
-  /// You can access a string's view of Unicode scalar values by using its
-  /// `unicodeScalars` property. Unicode scalar values are the 21-bit codes
-  /// that are the basic unit of Unicode. Each scalar value is represented by
-  /// a `Unicode.Scalar` instance and is equivalent to a UTF-32 code unit.
-  ///
-  ///     let flowers = "Flowers 💐"
-  ///     for v in flowers.unicodeScalars {
-  ///         print(v.value)
-  ///     }
-  ///     // 70
-  ///     // 108
-  ///     // 111
-  ///     // 119
-  ///     // 101
-  ///     // 114
-  ///     // 115
-  ///     // 32
-  ///     // 128144
-  ///
-  /// Some characters that are visible in a string are made up of more than one
-  /// Unicode scalar value. In that case, a string's `unicodeScalars` view
-  /// contains more elements than the string itself.
-  ///
-  ///     let flag = "🇵🇷"
-  ///     for c in flag {
-  ///         print(c)
-  ///     }
-  ///     // 🇵🇷
-  ///
-  ///     for v in flag.unicodeScalars {
-  ///         print(v.value)
-  ///     }
-  ///     // 127477
-  ///     // 127479
-  ///
-  /// You can convert a `String.UnicodeScalarView` instance back into a string
-  /// using the `String` type's `init(_:)` initializer.
-  ///
-  ///     let favemoji = "My favorite emoji is 🎉"
-  ///     if let i = favemoji.unicodeScalars.firstIndex(where: { $0.value >= 128 }) {
-  ///         let asciiPrefix = String(favemoji.unicodeScalars[..<i])
-  ///         print(asciiPrefix)
-  ///     }
-  ///     // Prints "My favorite emoji is "
-  @_fixed_layout
-  public struct UnicodeScalarView {
-    @usableFromInline
-    internal var _guts: _StringGuts
-
-    @inlinable @inline(__always)
-    internal init(_ _guts: _StringGuts) {
-      self._guts = _guts
-      _invariantCheck()
-    }
-  }
-}
-
 extension String.UnicodeScalarView {
   @inlinable @inline(__always)
   internal func _invariantCheck() {
