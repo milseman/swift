@@ -65,17 +65,7 @@ extension _StringBreadcrumbs {
 
   // Return the stored (utf16Offset, Index) closest to the given index
   internal func lowerBound(_ i : String.Index) -> (offset: Int, String.Index) {
-    // FIXME: This is... probably off-by-one
-
-    // TODO: Bisect for large input, or at very least search the more narrow
-    // range of (stride * encodedOffset / 3)...(stride * encodedOffset).
-
-    guard let idx = crumbs.lastIndex(where: { i >= $0 }) else {
-      return (0, String.Index(encodedOffset: 0))
-    }
-
     fatalError("Incorrect implementation")
-    return (idx * stride, crumbs[idx])
   }
 
   // Fetch the lower-bound index corresponding to the given offset, returning
