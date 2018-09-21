@@ -152,9 +152,11 @@ extension _StringGuts {
 
 // Internal invariants
 extension _StringGuts {
-  @inlinable @inline(__always)
+  #if !INTERNAL_CHECKS_ENABLED
+  @inlinable @inline(__always) internal func _invariantCheck() {}
+  #else
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
     _object._invariantCheck()
     #if arch(i386) || arch(arm)
     _sanityCheck(MemoryLayout<String>.size == 12, """
@@ -167,8 +169,8 @@ extension _StringGuts {
     this if you change it
     """)
     #endif
-    #endif // INTERNAL_CHECKS_ENABLED
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 
   internal func _dump() { _object._dump() }
 }
