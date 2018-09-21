@@ -171,6 +171,25 @@ extension _StringGuts {
     self = _StringGuts(_object.nativeStorage)
   }
 
+  internal mutating func remove(from lower: Index, to upper: Index) {
+    let lowerOffset = lower.encodedOffset
+    let upperOffset = upper.encodedOffset
+    _sanityCheck(lower.transcodedOffset == 0 && upper.transcodedOffset == 0)
+    _sanityCheck(lowerOffset <= upperOffset && upperOffset <= self.count)
+
+    if isUniqueNative {
+      _object.nativeStorage.remove(from: lowerOffset, to: upperOffset)
+      return
+    }
+
+    // TODO(UTF8 perf): Add append on guts taking range, use that
+    var result = String()
+    result.reserveCapacity(self.count &- (upperOffset &- lowerOffset))
+    result.append(contentsOf: String(self)[..<lower])
+    result.append(contentsOf: String(self)[upper...])
+    self = result._guts
+  }
+
   @inline(__always) // Always-specialize
   internal mutating func replaceSubrange<C>(
     _ bounds: Range<Index>,

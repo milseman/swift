@@ -211,8 +211,6 @@ extension _StringStorage {
   }
 }
 
-// TODO(UTF8 perf): Append helpers, which can keep nul-termination
-
 // Usage
 extension _StringStorage {
   @nonobjc
@@ -351,6 +349,21 @@ extension _StringStorage {
   internal func clear() {
     // TODO(UTF8 perf flags): Clear or restore flags
     self._countAndFlags &= ~_StringObject.countMask
+  }
+}
+
+// Removing
+extension _StringStorage {
+  @nonobjc
+  internal func remove(from lower: Int, to upper: Int) {
+    _sanityCheck(lower <= upper)
+
+    let lowerPtr = mutableStart + lower
+    let upperPtr = mutableStart + upper
+    let tailCount = mutableEnd - upperPtr
+    lowerPtr.moveInitialize(from: upperPtr, count: tailCount)
+    self._countAndFlags -= (upper &- lower)
+    _invariantCheck()
   }
 }
 
