@@ -107,20 +107,19 @@ extension _SmallString {
 
 // Internal invariants
 extension _SmallString {
-  @inlinable @inline(__always)
+  #if !INTERNAL_CHECKS_ENABLED
+  @inlinable @inline(__always) internal func _invariantCheck() {}
+  #else
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
-    _sanityCheck(count <= _SmallString.capacity)
-
-    if self.isASCII {
-      _sanityCheck(computeIsASCII())
-      _sanityCheck(self.allSatisfy { $0 <= 0x7F })
-    } else {
-      _sanityCheck(!computeIsASCII())
-    }
-
-    #endif // INTERNAL_CHECKS_ENABLED
+    // Avoid `asStringObject`, which triggers more invariant checks (runtime)
+    var _object = _StringObject(zero:())
+    _object._otherBits = _storage.0
+    _object._object = Builtin.reinterpretCast(_storage.1)
+    _sanityCheck(_object.smallCount <= _SmallString.capacity)
+    _sanityCheck(_object.smallIsASCII == computeIsASCII())
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 
   internal func _dump() {
     #if INTERNAL_CHECKS_ENABLED

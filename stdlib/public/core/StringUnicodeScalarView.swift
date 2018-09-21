@@ -11,11 +11,14 @@
 //===----------------------------------------------------------------------===//
 
 extension String.UnicodeScalarView {
-  @inlinable @inline(__always)
+  #if !INTERNAL_CHECKS_ENABLED
+  @inlinable @inline(__always) internal func _invariantCheck() {}
+  #else
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
-    #endif
+    // TODO: Assert start/end are scalar aligned
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 }
 
 extension String.UnicodeScalarView: BidirectionalCollection {

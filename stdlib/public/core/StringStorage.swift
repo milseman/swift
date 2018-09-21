@@ -295,17 +295,19 @@ extension _StringStorage {
     get { return realCapacity &- count &- 1 }
   }
 
-  @nonobjc
-  private func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
+  #if !INTERNAL_CHECKS_ENABLED
+  @nonobjc @inline(__always) internal func _invariantCheck() {}
+  #else
+  @nonobjc @inline(never) @_effects(releasenone)
+  internal func _invariantCheck() {
     let rawSelf = UnsafeRawPointer(Builtin.bridgeToRawPointer(self))
     let rawStart = UnsafeRawPointer(start)
     _sanityCheck(unusedCapacity >= 0)
     _sanityCheck(rawSelf + Int(_StringObject.nativeBias) == rawStart)
     _sanityCheck(self.realCapacity > self.count, "no room for nul-terminator")
     _sanityCheck(self.terminator.pointee == 0, "not nul terminated")
-    #endif
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 }
 
 // Appending
@@ -401,11 +403,13 @@ final internal class _SharedStringStorage: _AbstractStringStorage {
 }
 
 extension _SharedStringStorage {
-  @nonobjc
+  #if !INTERNAL_CHECKS_ENABLED
+  @nonobjc @inline(__always) internal func _invariantCheck() {}
+  #else
+  @nonobjc @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
-    #endif
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 }
 
 

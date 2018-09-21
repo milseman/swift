@@ -712,12 +712,14 @@ public struct String {
 }
 
 extension String {
-  @inlinable @inline(__always)
+  #if !INTERNAL_CHECKS_ENABLED
+  @inlinable @inline(__always) internal func _invariantCheck() {}
+  #else
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
     _guts._invariantCheck()
-    #endif
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 
   public func _dump() {
     #if INTERNAL_CHECKS_ENABLED

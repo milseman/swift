@@ -11,11 +11,14 @@
 //===----------------------------------------------------------------------===//
 
 extension String.UTF8View {
-  @inlinable @inline(__always)
+  #if !INTERNAL_CHECKS_ENABLED
+  @inlinable @inline(__always) internal func _invariantCheck() {}
+  #else
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
-    #endif
+    // TODO: Ensure index alignment
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 }
 
 extension String.UTF8View: BidirectionalCollection {
