@@ -83,8 +83,8 @@ extension LazyDropWhileSequence: Sequence {
   /// Returns an iterator over the elements of this sequence.
   ///
   /// - Complexity: O(1).
-  @inlinable // FIXME(sil-serialize-all)
-  public func makeIterator() -> Iterator {
+  @inlinable // lazy-performance
+  public __consuming func makeIterator() -> Iterator {
     return Iterator(_base: _base.makeIterator(), predicate: _predicate)
   }
 }
@@ -101,8 +101,8 @@ extension LazySequenceProtocol {
   ///   its argument and returns `true` if the element should be skipped or
   ///   `false` otherwise. Once `predicate` returns `false` it will not be
   ///   called again.
-  @inlinable // FIXME(sil-serialize-all)
-  public func drop(
+  @inlinable // lazy-performance
+  public __consuming func drop(
     while predicate: @escaping (Elements.Element) -> Bool
   ) -> LazyDropWhileSequence<Self.Elements> {
     return LazyDropWhileSequence(_base: self.elements, predicate: predicate)
@@ -141,8 +141,8 @@ extension LazyDropWhileCollection: Sequence {
   /// Returns an iterator over the elements of this sequence.
   ///
   /// - Complexity: O(1).
-  @inlinable // FIXME(sil-serialize-all)
-  public func makeIterator() -> Iterator {
+  @inlinable // lazy-performance
+  public __consuming func makeIterator() -> Iterator {
     return Iterator(_base: _base.makeIterator(), predicate: _predicate)
   }
 }
@@ -247,8 +247,8 @@ extension LazyCollectionProtocol {
   ///   as its argument and returns `true` if the element should be skipped or
   ///   `false` otherwise. Once `predicate` returns `false` it will not be
   ///   called again.
-  @inlinable // FIXME(sil-serialize-all)
-  public func drop(
+  @inlinable // lazy-performance
+  public __consuming func drop(
     while predicate: @escaping (Elements.Element) -> Bool
   ) -> LazyDropWhileCollection<Self.Elements> {
     return LazyDropWhileCollection(

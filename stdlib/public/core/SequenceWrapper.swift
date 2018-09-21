@@ -41,8 +41,8 @@ extension _SequenceWrapper  {
 }
 
 extension _SequenceWrapper where Iterator == Base.Iterator {
-  @inlinable // FIXME(sil-serialize-all)
-  public func makeIterator() -> Iterator {
+  @inlinable // generic-performance
+  public __consuming func makeIterator() -> Iterator {
     return self._base.makeIterator()
   }
   
@@ -63,8 +63,8 @@ extension _SequenceWrapper {
     return try _base.map(transform)
   }
   
-  @inlinable // FIXME(sil-serialize-all)
-  public func filter(
+  @inlinable // generic-performance
+  public __consuming func filter(
     _ isIncluded: (Element) throws -> Bool
   ) rethrows -> [Element] {
     return try _base.filter(isIncluded)
@@ -82,47 +82,47 @@ extension _SequenceWrapper {
     return _base._customContainsEquatableElement(element)
   }
   
-  @inlinable // FIXME(sil-serialize-all)
-  public func _copyToContiguousArray()
+  @inlinable // generic-performance
+  public __consuming func _copyToContiguousArray()
     -> ContiguousArray<Element> {
     return _base._copyToContiguousArray()
   }
 }
 
 extension _SequenceWrapper where SubSequence == Base.SubSequence {
-  @inlinable // FIXME(sil-serialize-all)
-  public func dropFirst(_ n: Int) -> SubSequence {
+  @inlinable // generic-performance
+  public __consuming func dropFirst(_ n: Int) -> SubSequence {
     return _base.dropFirst(n)
   }
-  @inlinable // FIXME(sil-serialize-all)
-  public func dropLast(_ n: Int) -> SubSequence {
+  @inlinable // generic-performance
+  public __consuming func dropLast(_ n: Int) -> SubSequence {
     return _base.dropLast(n)
   }
-  @inlinable // FIXME(sil-serialize-all)
-  public func prefix(_ maxLength: Int) -> SubSequence {
+  @inlinable // generic-performance
+  public __consuming func prefix(_ maxLength: Int) -> SubSequence {
     return _base.prefix(maxLength)
   }
-  @inlinable // FIXME(sil-serialize-all)
-  public func suffix(_ maxLength: Int) -> SubSequence {
+  @inlinable // generic-performance
+  public __consuming func suffix(_ maxLength: Int) -> SubSequence {
     return _base.suffix(maxLength)
   }
 
-  @inlinable // FIXME(sil-serialize-all)
-  public func drop(
+  @inlinable // generic-performance
+  public __consuming func drop(
     while predicate: (Element) throws -> Bool
   ) rethrows -> SubSequence {
     return try _base.drop(while: predicate)
   }
 
-  @inlinable // FIXME(sil-serialize-all)
-  public func prefix(
+  @inlinable // generic-performance
+  public __consuming func prefix(
     while predicate: (Element) throws -> Bool
   ) rethrows -> SubSequence {
     return try _base.prefix(while: predicate)
   }
   
-  @inlinable // FIXME(sil-serialize-all)
-  public func split(
+  @inlinable // generic-performance
+  public __consuming func split(
     maxSplits: Int, omittingEmptySubsequences: Bool,
     whereSeparator isSeparator: (Element) throws -> Bool
   ) rethrows -> [SubSequence] {
