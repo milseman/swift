@@ -133,12 +133,14 @@ extension Substring {
     return Range(uncheckedBounds: (start.encodedOffset, end.encodedOffset))
   }
 
-  @inlinable @inline(__always)
+  #if !INTERNAL_CHECKS_ENABLED
+  @inlinable @inline(__always) internal func _invariantCheck() {}
+  #else
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    #if INTERNAL_CHECKS_ENABLED
     self.wholeString._invariantCheck()
-    #endif
   }
+  #endif // INTERNAL_CHECKS_ENABLED
 }
 
 extension Substring: StringProtocol {
