@@ -1163,7 +1163,7 @@ extension Dictionary {
   }
 
   @available(swift, obsoleted: 4.0)
-  public func filter(
+  public __consuming func filter(
     _ isIncluded: (Element) throws -> Bool, obsoletedInSwift4: () = ()
   ) rethrows -> [Element] {
     var result: [Element] = []
@@ -1178,7 +1178,7 @@ extension Dictionary {
 
 extension Set {
   @available(swift, obsoleted: 4.0)
-  public func filter(
+  public __consuming func filter(
     _ isIncluded: (Element) throws -> Bool, obsoletedInSwift4: () = ()
   ) rethrows -> [Element] {
     var result: [Element] = []

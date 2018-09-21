@@ -139,8 +139,8 @@ extension Zip2Sequence: Sequence {
   public typealias Element = (Sequence1.Element, Sequence2.Element)
 
   /// Returns an iterator over the elements of this sequence.
-  @inlinable // FIXME(sil-serialize-all)
-  public func makeIterator() -> Iterator {
+  @inlinable // generic-performance
+  public __consuming func makeIterator() -> Iterator {
     return Iterator(
       _sequence1.makeIterator(),
       _sequence2.makeIterator())

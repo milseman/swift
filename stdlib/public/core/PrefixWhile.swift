@@ -74,8 +74,8 @@ extension LazyPrefixWhileSequence.Iterator: IteratorProtocol, Sequence {
 extension LazyPrefixWhileSequence: Sequence {
   public typealias SubSequence = AnySequence<Element> // >:(
   
-  @inlinable // FIXME(sil-serialize-all)
-  public func makeIterator() -> Iterator {
+  @inlinable // lazy-performance
+  public __consuming func makeIterator() -> Iterator {
     return Iterator(_base: _base.makeIterator(), predicate: _predicate)
   }
 }
@@ -92,8 +92,8 @@ extension LazySequenceProtocol {
   ///   its argument and returns `true` if the element should be included or
   ///   `false` otherwise. Once `predicate` returns `false` it will not be
   ///   called again.
-  @inlinable // FIXME(sil-serialize-all)
-  public func prefix(
+  @inlinable // lazy-performance
+  public __consuming func prefix(
     while predicate: @escaping (Elements.Element) -> Bool
   ) -> LazyPrefixWhileSequence<Self.Elements> {
     return LazyPrefixWhileSequence(_base: self.elements, predicate: predicate)
@@ -129,8 +129,8 @@ public struct LazyPrefixWhileCollection<Base: Collection> {
 extension LazyPrefixWhileCollection: Sequence {
   public typealias Iterator = LazyPrefixWhileSequence<Base>.Iterator
   
-  @inlinable // FIXME(sil-serialize-all)
-  public func makeIterator() -> Iterator {
+  @inlinable // lazy-performance
+  public __consuming func makeIterator() -> Iterator {
     return Iterator(_base: _base.makeIterator(), predicate: _predicate)
   }
 }
@@ -303,8 +303,8 @@ extension LazyCollectionProtocol {
   ///   as its argument and returns `true` if the element should be included
   ///   or `false` otherwise. Once `predicate` returns `false` it will not be
   ///   called again.
-  @inlinable // FIXME(sil-serialize-all)
-  public func prefix(
+  @inlinable // lazy-performance
+  public __consuming func prefix(
     while predicate: @escaping (Element) -> Bool
   ) -> LazyPrefixWhileCollection<Elements> {
     return LazyPrefixWhileCollection(
