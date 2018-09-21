@@ -237,10 +237,9 @@ extension String: RangeReplaceableCollection {
   /// - Returns: The character that was removed.
   @discardableResult
   public mutating func remove(at i: Index) -> Character {
-    // TODO(UTF8 perf): Operate on storage directly, sliding down elements
-    let c = self[i]
-    self.removeSubrange(i..<self.index(after: i))
-    return c
+    let result = self[i]
+    _guts.remove(from: i, to: self.index(after: i))
+    return result
   }
 
   /// Removes the characters in the given range.
@@ -254,9 +253,7 @@ extension String: RangeReplaceableCollection {
   /// - Parameter bounds: The range of the elements to remove. The upper and
   ///   lower bounds of `bounds` must be valid indices of the string.
   public mutating func removeSubrange(_ bounds: Range<Index>) {
-    // TODO(UTF8 perf): Operate on storage directly, sliding down elements
-    // TODO(UTF8 merge): replace with literal
-    self.replaceSubrange(bounds, with: String())
+    _guts.remove(from: bounds.lowerBound, to: bounds.upperBound)
   }
 
   /// Replaces this string with the empty string.
