@@ -663,11 +663,13 @@ StringTests.test("appendToSubstringBug")
 
 StringTests.test("COW/removeSubrange/start") {
   var str = "12345678"
+  str.reserveCapacity(1024) // Ensure on heap
   let literalIdentity = str.bufferID
 
   // Check literal-to-heap reallocation.
   do {
     let slice = str
+    expectNotNil(literalIdentity)
     expectEqual(literalIdentity, str.bufferID)
     expectEqual(literalIdentity, slice.bufferID)
     expectEqual("12345678", str)
@@ -692,9 +694,11 @@ StringTests.test("COW/removeSubrange/start") {
   // Check heap-to-heap reallocation.
   expectEqual("345678", str)
   do {
+    str.reserveCapacity(1024) // Ensure on heap
     let heapStrIdentity1 = str.bufferID
 
     let slice = str
+    expectNotNil(heapStrIdentity1)
     expectEqual(heapStrIdentity1, str.bufferID)
     expectEqual(heapStrIdentity1, slice.bufferID)
     expectEqual("345678", str)
@@ -719,12 +723,14 @@ StringTests.test("COW/removeSubrange/start") {
 
 StringTests.test("COW/removeSubrange/end") {
   var str = "12345678"
+  str.reserveCapacity(1024) // Ensure on heap
   let literalIdentity = str.bufferID
 
   // Check literal-to-heap reallocation.
   expectEqual("12345678", str)
   do {
     let slice = str
+    expectNotNil(literalIdentity)
     expectEqual(literalIdentity, str.bufferID)
     expectEqual(literalIdentity, slice.bufferID)
     expectEqual("12345678", str)
@@ -758,9 +764,11 @@ StringTests.test("COW/removeSubrange/end") {
   // Check heap-to-heap reallocation.
   expectEqual("123456", str)
   do {
+    str.reserveCapacity(1024) // Ensure on heap
     let heapStrIdentity1 = str.bufferID
 
     let slice = str
+    expectNotNil(heapStrIdentity1)
     expectEqual(heapStrIdentity1, str.bufferID)
     expectEqual(heapStrIdentity1, slice.bufferID)
     expectEqual("123456", str)
@@ -795,10 +803,12 @@ StringTests.test("COW/removeSubrange/end") {
 StringTests.test("COW/replaceSubrange/end") {
   // Check literal-to-heap reallocation.
   do {
-    let str = "12345678"
+    var str = "12345678"
+    str.reserveCapacity(1024) // Ensure on heap
     let literalIdentity = str.bufferID
 
     var slice = str[str.startIndex..<str.index(_nth: 7)]
+    expectNotNil(literalIdentity)
     expectEqual(literalIdentity, str.bufferID)
     expectEqual(literalIdentity, slice.bufferID)
     expectEqual("12345678", str)
@@ -831,6 +841,7 @@ StringTests.test("COW/replaceSubrange/end") {
     str.reserveCapacity(32)
     expectNotEqual(literalIdentity, str.bufferID)
     let heapStrIdentity1 = str.bufferID
+    expectNotNil(heapStrIdentity1)
 
     // FIXME: We have to use Swift 4's Substring to get the desired storage
     // semantics; in Swift 3 mode, self-sliced strings get allocated a new
