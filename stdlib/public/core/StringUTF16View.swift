@@ -109,11 +109,13 @@ extension String.UTF16View: BidirectionalCollection {
     let iOffset = _getOffset(for: i)
     let limitOffset = _getOffset(for: limit)
 
-    if _slowPath(limitOffset < iOffset + n) {
-      //  If distance > 0, limit has no effect if it is less than i. Likewise,
-      //  if distance < 0, limit has no effect if it is greater than i.
-      if n > 0 && limitOffset >= iOffset { return nil }
-      if n < 0 && limitOffset <= iOffset { return nil }
+    // If distance < 0, limit has no effect if it is greater than i.
+    if _slowPath(n < 0 && limit <= i && limitOffset > iOffset + n) {
+      return nil
+    }
+    //  If distance > 0, limit has no effect if it is less than i. Likewise,
+    if _slowPath(n >= 0 && limit >= i && limitOffset < iOffset + n) {
+      return nil
     }
 
     let result = _getIndex(for: iOffset + n)
