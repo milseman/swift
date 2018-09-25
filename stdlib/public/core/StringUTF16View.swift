@@ -395,34 +395,26 @@ extension String.UTF16View {
     guard _guts.hasBreadcrumbs else {
       return _distance(from: start, to: end)
     }
-
-    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
-
-    let lower: Int
-    if _fastPath(start == startIndex) {
-      lower = 0
-    } else {
-      // TODO(UTF8 perf): Use breadcrumbs to accelerate
-      //
-      // let (offset: offset, bound) = breadcrumbs.lowerBound(start)
-      // lower = offset + _distance(from: bound, to: start)
-
-      lower = _distance(from: startIndex, to: start)
-    }
-
-    let upper: Int
-    if _fastPath(end == endIndex) {
-      upper = breadcrumbsPtr.pointee.utf16Length
-    } else {
-      // TODO(UTF8 perf): Use breadcrumbs to accelerate
-      //
-      // let (offset: offset, bound) = breadcrumbs.lowerBound(end)
-      // upper = offset + _distance(from: bound, to: end)
-
-      upper = _distance(from: startIndex, to: end)
-    }
-
+    let lower = _getOffsetViaBreadcrumbs(for: start)
+    let upper = _getOffsetViaBreadcrumbs(for: end)
     return upper - lower
+  }
+
+  @_effects(releasenone)
+  internal func _getOffsetViaBreadcrumbs(for idx: Index) -> Int {
+    _sanityCheck(_guts.hasBreadcrumbs)
+
+    // Trivial and common: start
+    if idx == startIndex { return 0 }
+
+    // Simple and common: endIndex aka `length`.
+    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
+    if idx == endIndex { return breadcrumbsPtr.pointee.utf16Length }
+
+    // Otherwise, find the nearest lower-bound breadcrumb and count from there
+    let (crumb, crumbOffset) = breadcrumbsPtr.pointee.getBreadcrumb(
+      forIndex: idx)
+    return crumbOffset + _distance(from: crumb, to: idx)
   }
 }
 
