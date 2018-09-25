@@ -132,8 +132,12 @@ extension String.UTF16View: BidirectionalCollection {
     return upper &- lower
   }
 
+  @inlinable
   public var count: Int {
-    return distance(from: startIndex, to: endIndex)
+    if _slowPath(_guts.isForeign) {
+      return _foreignCount()
+    }
+    return _getOffset(for: endIndex)
   }
 
   /// Accesses the code unit at the given position.
@@ -349,6 +353,13 @@ extension String.UTF16View {
     _sanityCheck(_guts.isForeign)
     return Index(encodedOffset: i.encodedOffset + n)
   }
+
+  @usableFromInline @inline(never)
+  @_effects(releasenone)
+  internal func _foreignCount() -> Int {
+    _sanityCheck(_guts.isForeign)
+    return endIndex.encodedOffset - startIndex.encodedOffset
+  }
 }
 
 extension String.Index {
@@ -368,6 +379,7 @@ extension String.UTF16View {
   @inlinable
   internal var _shortHeuristic: Int {  @inline(__always) get { return 32 } }
 
+  @usableFromInline
   @_effects(releasenone)
   internal func _getOffset(for idx: Index) -> Int {
     // Trivial and common: start
@@ -387,6 +399,7 @@ extension String.UTF16View {
     return crumbOffset + _distance(from: crumb, to: idx)
   }
 
+  @usableFromInline
   @_effects(releasenone)
   internal func _getIndex(for offset: Int) -> Index {
     // Trivial and common: start
