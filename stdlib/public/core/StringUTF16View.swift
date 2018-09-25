@@ -85,21 +85,18 @@ extension String.UTF16View: BidirectionalCollection {
     return Index(encodedOffset: i.encodedOffset &- len)
   }
 
-  @inlinable @inline(__always)
   public func index(_ i: Index, offsetBy n: Int) -> Index {
     if _slowPath(_guts.isForeign) {
       return _foreignIndex(i, offsetBy: n)
     }
 
     // TODO(UTF8) known-ASCII fast path
-    if n < String.UTF16View._shortHeuristic {
-      return _index(i, offsetBy: n)
-    }
 
-    return _slowIndex(i, offsetBy: n)
+    let lowerOffset = _getOffset(for: i)
+    let result = _getIndex(for: lowerOffset + n)
+    return result
   }
 
-  @inlinable @inline(__always)
   public func index(
     _ i: Index, offsetBy n: Int, limitedBy limit: Index
   ) -> Index? {
@@ -107,28 +104,36 @@ extension String.UTF16View: BidirectionalCollection {
       return _foreignIndex(i, offsetBy: n, limitedBy: limit)
     }
 
-    // TODO(UTF8) known-ASCII fast paths
-    return _index(i, offsetBy: n, limitedBy: limit)
+    // TODO(UTF8) known-ASCII fast path
+
+    let iOffset = _getOffset(for: i)
+    let limitOffset = _getOffset(for: limit)
+
+    if _slowPath(limitOffset < iOffset + n) {
+      //  If distance > 0, limit has no effect if it is less than i. Likewise,
+      //  if distance < 0, limit has no effect if it is greater than i.
+      if n > 0 && limitOffset >= iOffset { return nil }
+      if n < 0 && limitOffset <= iOffset { return nil }
+    }
+
+    let result = _getIndex(for: iOffset + n)
+    return result
   }
 
-  @inlinable
   public func distance(from start: Index, to end: Index) -> Int {
     if _slowPath(_guts.isForeign) {
       return _foreignDistance(from: start, to: end)
     }
 
     // TODO(UTF8) known-ASCII fast paths
-    if (end.encodedOffset - start.encodedOffset)
-      < String.UTF16View._shortHeuristic
-    {
-      return _distance(from: start, to: end)
-    }
-    return _slowDistance(from: start, to: end)
+
+    let lower = _getOffset(for: start)
+    let upper = _getOffset(for: end)
+    return upper &- lower
   }
 
-  @inlinable
   public var count: Int {
-    @inline(__always) get { return distance(from: startIndex, to: endIndex) }
+    return distance(from: startIndex, to: endIndex)
   }
 
   /// Accesses the code unit at the given position.
@@ -361,51 +366,16 @@ extension String.Index {
 extension String.UTF16View {
   // A simple heuristic we can always tweak later. Not needed for correctness
   @inlinable
-  internal static var _shortHeuristic: Int {
-    @inline(__always) get { return 32 }
-  }
-
-  @usableFromInline @inline(never) // opaque slow-path
-  @_effects(releasenone)
-  func _slowIndex(_ idx: Index, offsetBy n: Int) -> Index {
-    if _slowPath(!_guts.hasBreadcrumbs || n <= 0) {
-      // TODO(UTF8 perf): Accelerate for negative offsets
-      return _index(idx, offsetBy: n)
-    }
-
-    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
-
-    let lowerOffset: Int
-    if _fastPath(idx == startIndex) {
-      lowerOffset = 0
-    } else {
-      lowerOffset = distance(from: startIndex, to: idx)
-    }
-
-    let totalOffset = lowerOffset + n
-
-    let (crumb, remaining) = breadcrumbsPtr.pointee.getBreadcrumb(
-      forOffset: totalOffset)
-    return _index(crumb, offsetBy: remaining)
-  }
-
-  @usableFromInline @inline(never) // opaque slow-path
-  @_effects(releasenone)
-  func _slowDistance(from start: Index, to end: Index) -> Int {
-    guard _guts.hasBreadcrumbs else {
-      return _distance(from: start, to: end)
-    }
-    let lower = _getOffsetViaBreadcrumbs(for: start)
-    let upper = _getOffsetViaBreadcrumbs(for: end)
-    return upper - lower
-  }
+  internal var _shortHeuristic: Int {  @inline(__always) get { return 32 } }
 
   @_effects(releasenone)
-  internal func _getOffsetViaBreadcrumbs(for idx: Index) -> Int {
-    _sanityCheck(_guts.hasBreadcrumbs)
-
+  internal func _getOffset(for idx: Index) -> Int {
     // Trivial and common: start
     if idx == startIndex { return 0 }
+
+    if idx.encodedOffset < _shortHeuristic || !_guts.hasBreadcrumbs {
+      return _distance(from: startIndex, to: idx)
+    }
 
     // Simple and common: endIndex aka `length`.
     let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
@@ -415,6 +385,25 @@ extension String.UTF16View {
     let (crumb, crumbOffset) = breadcrumbsPtr.pointee.getBreadcrumb(
       forIndex: idx)
     return crumbOffset + _distance(from: crumb, to: idx)
+  }
+
+  @_effects(releasenone)
+  internal func _getIndex(for offset: Int) -> Index {
+    // Trivial and common: start
+    if offset == 0 { return startIndex }
+
+    if offset < _shortHeuristic || !_guts.hasBreadcrumbs {
+      return _index(startIndex, offsetBy: offset)
+    }
+
+    // Simple and common: endIndex aka `length`.
+    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
+    if offset == breadcrumbsPtr.pointee.utf16Length { return endIndex }
+
+    // Otherwise, find the nearest lower-bound breadcrumb and advance that
+    let (crumb, remaining) = breadcrumbsPtr.pointee.getBreadcrumb(
+      forOffset: offset)
+    return _index(crumb, offsetBy: remaining)
   }
 }
 
