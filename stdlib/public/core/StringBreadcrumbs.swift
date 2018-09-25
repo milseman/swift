@@ -63,17 +63,34 @@ extension _StringBreadcrumbs {
     @inline(__always) get { return _StringBreadcrumbs.breadcrumbStride }
   }
 
-  // Return the stored (utf16Offset, Index) closest to the given index
-  internal func lowerBound(_ i : String.Index) -> (offset: Int, String.Index) {
-    fatalError("Incorrect implementation")
-  }
-
   // Fetch the lower-bound index corresponding to the given offset, returning
   // the index and the remaining offset to adjust
   internal func getBreadcrumb(
     forOffset offset: Int
   ) -> (lowerBound: String.Index, remaining: Int) {
     return (crumbs[offset / stride], offset % stride)
+  }
+
+  // Fetch the lower-bound offset corresponding to the given index, returning
+  // the lower-bound and its offset
+  internal func getBreadcrumb(
+    forIndex idx: String.Index
+  ) -> (lowerBound: String.Index, offset: Int) {
+    var lowerBound = idx.encodedOffset / 3 / stride
+    var upperBound = Swift.min(1 + (idx.encodedOffset / stride), crumbs.count)
+    _sanityCheck(crumbs[lowerBound] <= idx)
+    _sanityCheck(upperBound == crumbs.count || crumbs[upperBound] >= idx)
+
+    while (upperBound &- lowerBound) > 1 {
+      let mid = lowerBound + ((upperBound &- lowerBound) / 2)
+      if crumbs[mid] <= idx { lowerBound = mid } else { upperBound = mid }
+    }
+
+    let crumb = crumbs[lowerBound]
+    _sanityCheck(crumb <= idx)
+    _sanityCheck(lowerBound == crumbs.count-1 || crumbs[lowerBound+1] > idx)
+
+    return (crumb, lowerBound &* stride)
   }
 }
 
