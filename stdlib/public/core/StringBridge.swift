@@ -311,10 +311,7 @@ extension StringProtocol {
   public // SPI(Foundation)
   func _toUTF16Indices(_ range: Range<Int>) -> Range<Index> {
     let lowerbound = _toUTF16Index(range.lowerBound)
-
-    // TODO(UTF8 perf): Switch to incremental offsetBy, when that's efficient
-
-    let upperbound = _toUTF16Index(range.upperBound)
+    let upperbound = self.utf16.index(lowerbound, offsetBy: range.count)
     return Range(uncheckedBounds: (lower: lowerbound, upper: upperbound))
   }
 }
