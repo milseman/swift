@@ -14,8 +14,6 @@
 // NOTE: This is a prototype, it does not have e.g. 32-bit support yet.
 //
 
-@usableFromInline typealias _SmallUTF8String = _SmallString
-
 @_fixed_layout @usableFromInline
 internal struct _SmallString {
   @usableFromInline
@@ -164,6 +162,7 @@ extension _SmallString: RandomAccessCollection {
     }
   }
 
+  @usableFromInline // testable
   internal subscript(_ bounds: Range<Index>) -> SubSequence {
     @inline(__always) get {
       // TODO(UTF8 perf): In-register; just a couple shifts...
@@ -242,6 +241,7 @@ extension _SmallString {
 
 
   // Appending
+  @usableFromInline // testable
   internal init?(base: _StringGuts, appending other: _StringGuts) {
     guard (base.utf8Count + other.utf8Count) <= _SmallString.capacity else {
       return nil
@@ -264,6 +264,7 @@ extension _SmallString {
   // Resiliently create from a tagged cocoa string
   //
   @_effects(readonly) // @opaque
+  @usableFromInline // testable
   internal init(taggedCocoa cocoa: AnyObject) {
     self.init()
     self.withMutableCapacity {
