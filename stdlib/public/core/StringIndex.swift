@@ -108,7 +108,7 @@ extension String.Index {
   #if !INTERNAL_CHECKS_ENABLED
   @inlinable @inline(__always) internal func _invariantCheck() {}
   #else
-  @usableFromInline @inline(never)
+  @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
     _sanityCheck(encodedOffset >= 0)
   }
