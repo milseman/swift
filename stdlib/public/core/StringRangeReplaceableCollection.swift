@@ -51,9 +51,18 @@ extension String: RangeReplaceableCollection {
   ///
   /// - Parameter other: A string instance or another sequence of
   ///   characters.
-  @inlinable // FIXME(sil-serialize-all)
+  @_specialize(where S == String)
+  @_specialize(where S == Substring)
   public init<S : Sequence & LosslessStringConvertible>(_ other: S)
   where S.Element == Character {
+    if let str = other as? String {
+      self.init(str)
+      return
+    }
+    if let subStr = other as? Substring {
+      self.init(subStr)
+      return
+    }
     self = other.description
   }
 
@@ -72,9 +81,19 @@ extension String: RangeReplaceableCollection {
   ///
   /// - Parameter characters: A string instance or another sequence of
   ///   characters.
-  @inlinable // specialize
+  @_specialize(where S == String)
+  @_specialize(where S == Substring)
+  @_specialize(where S == Array<Character>)
   public init<S : Sequence>(_ characters: S)
   where S.Iterator.Element == Character {
+    if let str = characters as? String {
+      self.init(str)
+      return
+    }
+    if let subStr = characters as? Substring {
+      self.init(subStr)
+      return
+    }
     self = ""
     self.append(contentsOf: characters)
   }
