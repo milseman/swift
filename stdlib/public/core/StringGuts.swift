@@ -70,15 +70,6 @@ extension _StringGuts {
   }
 
   internal init(_ storage: _SharedStringStorage) {
-    // TODO(UTF8 perf): Is it better, or worse, to throw the object away if
-    // immortal? We could avoid having to ARC the object itself when owner is
-    // nil, at the cost of repeatedly creating a new one when this string is
-    // bridged back-and-forth to ObjC. For now, we're choosing to keep the
-    // object allocation, perform some ARC, and require a dependent load for
-    // literals that have bridged back in from ObjC. Long term, we will likely
-    // emit some kind of "immortal" object for literals with efficient bridging
-    // anyways, so this may be a short-term decision.
-
     // TODO(UTF8): We should probably store perf flags in the object
     self.init(_StringObject(storage, isASCII: false))
   }

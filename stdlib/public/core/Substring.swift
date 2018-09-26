@@ -723,11 +723,11 @@ extension Substring : RangeReplaceableCollection {
   public init<S : Sequence>(_ elements: S)
   where S.Element == Character {
     if let str = elements as? String {
-      self.init(str)
+      self = str[...]
       return
     }
     if let subStr = elements as? Substring {
-      self.init(subStr)
+      self = subStr
       return
     }
     self = String(elements)[...]
