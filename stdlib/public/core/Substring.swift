@@ -717,8 +717,19 @@ extension Substring.UnicodeScalarView : RangeReplaceableCollection {
 }
 
 extension Substring : RangeReplaceableCollection {
+  @_specialize(where S == String)
+  @_specialize(where S == Substring)
+  @_specialize(where S == Array<Character>)
   public init<S : Sequence>(_ elements: S)
   where S.Element == Character {
+    if let str = elements as? String {
+      self.init(str)
+      return
+    }
+    if let subStr = elements as? Substring {
+      self.init(subStr)
+      return
+    }
     self = String(elements)[...]
   }
 
