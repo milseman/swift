@@ -70,9 +70,11 @@ extension _StringGuts {
     _sanityCheck(
       self.uniqueNativeCapacity == nil || self.uniqueNativeCapacity! < n)
 
+    let growthTarget = Swift.max(n, (self.uniqueNativeCapacity ?? 0) * 2)
+
     if _fastPath(isFastUTF8) {
       let storage = self.withFastUTF8 {
-        _StringStorage.create(initializingFrom: $0, capacity: n)
+        _StringStorage.create(initializingFrom: $0, capacity: growthTarget)
       }
 
       // TODO(UTF8): Track known ascii
@@ -80,7 +82,7 @@ extension _StringGuts {
       return
     }
 
-    _foreignGrow(n)
+    _foreignGrow(growthTarget)
   }
 
   @inline(never) // slow-path
