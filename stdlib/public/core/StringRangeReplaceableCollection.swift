@@ -56,11 +56,7 @@ extension String: RangeReplaceableCollection {
   public init<S : Sequence & LosslessStringConvertible>(_ other: S)
   where S.Element == Character {
     if let str = other as? String {
-      self.init(str)
-      return
-    }
-    if let subStr = other as? Substring {
-      self.init(subStr)
+      self = str
       return
     }
     self = other.description
@@ -87,7 +83,7 @@ extension String: RangeReplaceableCollection {
   public init<S : Sequence>(_ characters: S)
   where S.Iterator.Element == Character {
     if let str = characters as? String {
-      self.init(str)
+      self = str
       return
     }
     if let subStr = characters as? Substring {
