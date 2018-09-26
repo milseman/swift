@@ -222,16 +222,16 @@ extension _StringGuts {
     let neededCapacity =
       bounds.lowerBound.encodedOffset
       + codeUnits.count + (self.count - bounds.upperBound.encodedOffset)
+    reserveCapacity(neededCapacity)
 
-    // TODO(UTF8 perf): efficient implementation
-    var result = String()
-    let selfStr = String(self)
-    let prefix = selfStr[..<bounds.lowerBound]
-    let suffix = selfStr[bounds.upperBound...]
-    result.append(contentsOf: prefix)
-    result._guts.append(_StringGuts(codeUnits, isKnownASCII: false))
-    result.append(contentsOf: suffix)
-    self = result._guts
+    _sanityCheck(bounds.lowerBound.transcodedOffset == 0)
+    _sanityCheck(bounds.upperBound.transcodedOffset == 0)
+
+    _object.nativeStorage.replace(
+      from: bounds.lowerBound.encodedOffset,
+      to: bounds.upperBound.encodedOffset,
+      with: codeUnits)
+    self = _StringGuts(_object.nativeStorage)
   }
 }
 

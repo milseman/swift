@@ -188,7 +188,6 @@ extension String: RangeReplaceableCollection {
   ///
   /// - Complexity: O(*n*), where *n* is the length of the string.
   public mutating func insert(_ newElement: Character, at i: Index) {
-    // TODO(UTF8 perf): Operate on storage direclty, sliding down elements
     self.replaceSubrange(i..<i, with: newElement._str)
   }
 
@@ -212,9 +211,7 @@ extension String: RangeReplaceableCollection {
   public mutating func insert<S : Collection>(
     contentsOf newElements: S, at i: Index
   ) where S.Element == Character {
-    // TODO(UTF8 perf): Operate on storage direclty, sliding down elements
-    // TODO(UTF8 perf): This is a horribly slow means...
-    self.replaceSubrange(i..<i, with: String(newElements))
+    self.replaceSubrange(i..<i, with: newElements)
   }
 
   /// Removes and returns the character at the specified position.
