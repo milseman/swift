@@ -144,9 +144,19 @@ extension String: RangeReplaceableCollection {
   /// Appends the characters in the given sequence to the string.
   ///
   /// - Parameter newElements: A sequence of characters.
-  @inlinable // @specializable
+  @_specialize(where S == String)
+  @_specialize(where S == Substring)
+  @_specialize(where S == Array<Character>)
   public mutating func append<S : Sequence>(contentsOf newElements: S)
   where S.Iterator.Element == Character {
+    if let str = newElements as? String {
+      self.append(str)
+      return
+    }
+    if let substr = newElements as? Substring {
+      self.append(contentsOf: substr)
+      return
+    }
     for c in newElements {
       self.append(c._str)
     }
