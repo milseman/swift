@@ -131,7 +131,7 @@ class Foo {
   }
 
   // CHECK-LABEL: sil hidden @$S17default_arguments3FooCyS2icig
-  // CHECK:         string_literal utf8 "subscript(_:)"
+  // CHECK:         string_literal utf8 "subscript"(_:)
   subscript(x: Int) -> Int {
     testMagicLiterals()
     closure { testMagicLiterals() }
