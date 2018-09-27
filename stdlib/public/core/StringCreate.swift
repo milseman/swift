@@ -12,11 +12,28 @@
 // String Creation Helpers
 //===----------------------------------------------------------------------===//
 
+internal func _allASCII(_ input: UnsafeBufferPointer<UInt8>) -> Bool {
+  // NOTE: Avoiding for-in syntax to avoid bounds checks
+  //
+  // TODO(UTF8 perf): Vectorize and/or incorporate into validity checking,
+  // perhaps both.
+  //
+  let ptr = input.baseAddress._unsafelyUnwrappedUnchecked
+  var i = 0
+  while i < input.count {
+    guard ptr[i] <= 0x7F else { return false }
+    i &+= 1
+  }
+  return true
+}
+
 extension String {
   @usableFromInline
   internal static func _fromASCII(
     _ input: UnsafeBufferPointer<UInt8>
   ) -> String {
+    _sanityCheck(_allASCII(input), "not actually ASCII")
+
     if let smol = _SmallString(input) {
       return String(_StringGuts(smol))
     }
@@ -103,15 +120,12 @@ extension String {
   internal func _withUnsafeBufferPointerToUTF8<R>(
     _ body: (UnsafeBufferPointer<UTF8.CodeUnit>) throws -> R
   ) rethrows -> R {
-    if isEmpty {
-      var nothing: UInt8 = 0
-      return try body(UnsafeBufferPointer(start: &nothing, count: 0))
+    return try self.withUnsafeBytes { rawBufPtr in
+      let rawPtr = rawBufPtr.baseAddress._unsafelyUnwrappedUnchecked
+      return try body(UnsafeBufferPointer(
+        start: rawPtr.assumingMemoryBound(to: UInt8.self),
+        count: rawBufPtr.count))
     }
-    if _fastPath(_guts.isFastUTF8) {
-      return try _guts.withFastUTF8(body)
-    }
-
-    unimplemented_utf8()
   }
 
   @usableFromInline @inline(never) // slow-path
