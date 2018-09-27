@@ -898,6 +898,7 @@ extension String: CustomDebugStringConvertible {
 }
 
 extension String {
+  @inlinable // Forward inlinability to append
   @_effects(readonly) @_semantics("string.concat")
   public static func + (lhs: String, rhs: String) -> String {
     var result = lhs
@@ -906,6 +907,7 @@ extension String {
   }
 
   // String append
+  @inlinable // Forward inlinability to append
   public static func += (lhs: inout String, rhs: String) {
     lhs.append(rhs)
   }
