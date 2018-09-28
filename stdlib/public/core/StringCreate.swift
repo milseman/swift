@@ -38,8 +38,7 @@ extension String {
       return String(_StringGuts(smol))
     }
 
-    // TODO(UTF8): Do we want to do remember ASCII-ness?
-    let storage = _StringStorage.create(initializingFrom: input)
+    let storage = _StringStorage.create(initializingFrom: input, isASCII: true)
     return storage.asString
   }
 
@@ -90,8 +89,9 @@ extension String {
       return String(_StringGuts(smol))
     }
 
-    // TODO(UTF8): Do we want to do an ascii scan?
-    let storage = _StringStorage.create(initializingFrom: input)
+    let isASCII = false // TODO: _allASCII(input)
+    let storage = _StringStorage.create(
+      initializingFrom: input, isASCII: isASCII)
     return storage.asString
   }
 
