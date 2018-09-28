@@ -51,7 +51,7 @@ internal func _compareStringsLess(_ lhs: String, _ rhs: String) -> Bool {
 
 extension UnsafeBufferPointer where Element == UInt8 {
   @inlinable // FIXME(sil-serialize-all)
-  internal func compareASCII(to other: UnsafeBufferPointer<UInt8>) -> Int {
+  internal func _binaryCompare(to other: UnsafeBufferPointer<UInt8>) -> Int {
     if self.baseAddress == other.baseAddress {
       return (self.count &- other.count).signum()
     }
@@ -88,10 +88,10 @@ internal func _compareStringsCanonical(
     return .equal
   }
   
-  if left.isASCII && right.isASCII {
+  if left.isNFC && right.isNFC {
     return left.withFastUTF8 { l in
       return right.withFastUTF8 { r in 
-        return _StringComparison(signedNotation: l.compareASCII(to: r))
+        return _StringComparison(signedNotation: l._binaryCompare(to: r))
       }
     }
   }

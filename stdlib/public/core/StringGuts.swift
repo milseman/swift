@@ -100,6 +100,11 @@ extension _StringGuts {
   }
 
   @inlinable
+  internal var isNFC: Bool  {
+    @inline(__always) get { return _object.isNFC }
+  }
+
+  @inlinable
   internal var hasNativeStorage: Bool { return _object.hasNativeStorage }
 
   internal var hasSharedStorage: Bool { return _object.hasSharedStorage }
