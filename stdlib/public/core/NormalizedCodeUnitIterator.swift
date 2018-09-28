@@ -188,7 +188,7 @@ internal struct _NormalizedUTF8CodeUnitIterator: IteratorProtocol {
 
   internal mutating func compare(
     with other: _NormalizedUTF8CodeUnitIterator
-  ) -> _StringComparison {
+  ) -> _StringComparisonResult {
     var mutableOther = other
 
     for cu in self {
@@ -240,7 +240,7 @@ struct _NormalizedCodeUnitIterator: IteratorProtocol {
 
   mutating func compare(
     with other: _NormalizedCodeUnitIterator
-  ) -> _StringComparison {
+  ) -> _StringComparisonResult {
     var mutableOther = other
     for cu in IteratorSequence(self) {
       if let otherCU = mutableOther.next() {
