@@ -81,10 +81,9 @@ extension Substring: _HasContiguousBytes {
   func withUnsafeBytes<R>(
     _ body: (UnsafeRawBufferPointer) throws -> R
   ) rethrows -> R {
-    // TODO(UTF8): less error prone to have Substring and/or slice provide a
-    // sliced fastUTF8
-    if _fastPath(self._isFastUTF8) {
-      return try self._withFastUTF8 {
+    let sliced = self._slicedGuts
+    if _fastPath(sliced.isFastUTF8) {
+      return try sliced.withFastUTF8 {
         return try body(UnsafeRawBufferPointer($0))
       }
     }
