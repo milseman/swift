@@ -114,23 +114,34 @@ public struct Substring {
 
 extension Substring {
   @inlinable
-  internal var wholeGuts: _StringGuts {
+  internal var _wholeGuts: _StringGuts {
     @inline(__always) get { return _slice.base._guts }
   }
   @inlinable
-  internal var wholeString: String {
-    @inline(__always) get { return String(self.wholeGuts) }
+  internal var _wholeString: String {
+    @inline(__always) get { return String(self._wholeGuts) }
   }
-  @usableFromInline // TODO(UTF8 merge): for testing, drop this decl after merge
-  internal var _wholeString: String { return wholeString }
 
   @inlinable
-  internal var offsetRange: Range<Int> {
-    let start = _slice.startIndex
-    let end = _slice.endIndex
-    _sanityCheck(start.transcodedOffset == 0 && end.transcodedOffset == 0)
+  internal var _offsetRange: Range<Int> {
+    @inline(__always) get {
+      let start = _slice.startIndex
+      let end = _slice.endIndex
+      _sanityCheck(start.transcodedOffset == 0 && end.transcodedOffset == 0)
 
-    return Range(uncheckedBounds: (start.encodedOffset, end.encodedOffset))
+      return Range(uncheckedBounds: (start.encodedOffset, end.encodedOffset))
+    }
+  }
+
+  @inlinable
+  internal var _isFastUTF8: Bool {
+    @inline(__always) get { return _wholeGuts.isFastUTF8 }
+  }
+  @inlinable @inline(__always)
+  internal func _withFastUTF8<R>(
+    _ f: (UnsafeBufferPointer<UInt8>) throws -> R
+  ) rethrows -> R {
+    return try _wholeGuts.withFastUTF8(range: _offsetRange, f)
   }
 
   #if !INTERNAL_CHECKS_ENABLED
@@ -138,7 +149,7 @@ extension Substring {
   #else
   @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    self.wholeString._invariantCheck()
+    self._wholeString._invariantCheck()
   }
   #endif // INTERNAL_CHECKS_ENABLED
 }
@@ -425,7 +436,7 @@ extension Substring {
   @inlinable
   public var utf8: UTF8View {
     get {
-      return wholeString.utf8[startIndex..<endIndex]
+      return _wholeString.utf8[startIndex..<endIndex]
     }
     set {
       self = Substring(newValue)
@@ -551,7 +562,7 @@ extension Substring {
   @inlinable
   public var utf16: UTF16View {
     get {
-      return wholeString.utf16[startIndex..<endIndex]
+      return _wholeString.utf16[startIndex..<endIndex]
     }
     set {
       self = Substring(newValue)
@@ -677,7 +688,7 @@ extension Substring {
   @inlinable
   public var unicodeScalars: UnicodeScalarView {
     get {
-      return wholeString.unicodeScalars[startIndex..<endIndex]
+      return _wholeString.unicodeScalars[startIndex..<endIndex]
     }
     set {
       self = Substring(newValue)
