@@ -89,7 +89,7 @@ extension String {
       return String(_StringGuts(smol))
     }
 
-    let isASCII = false // TODO: _allASCII(input)
+    let isASCII = _allASCII(input)
     let storage = _StringStorage.create(
       initializingFrom: input, isASCII: isASCII)
     return storage.asString
