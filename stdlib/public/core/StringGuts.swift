@@ -105,6 +105,12 @@ extension _StringGuts {
   }
 
   @inlinable
+  internal var isNFCFastUTF8: Bool  {
+    // TODO(UTF8 perf): Consider a dedicated bit for this...
+    @inline(__always) get { return _object.isNFC && isFastUTF8 }
+  }
+
+  @inlinable
   internal var hasNativeStorage: Bool { return _object.hasNativeStorage }
 
   internal var hasSharedStorage: Bool { return _object.hasSharedStorage }
@@ -140,17 +146,6 @@ extension _StringGuts {
 
     defer { _fixLifetime(self) }
     return try f(_object.fastUTF8)
-  }
-
-  @inlinable @inline(__always)
-  internal func withFastUTF8<R>(
-    range: Range<Int>, _ f: (UnsafeBufferPointer<UInt8>) throws -> R
-  ) rethrows -> R {
-    _sanityCheck(isFastUTF8)
-    return try self.withFastUTF8 { wholeUTF8 in
-      let slicedUTF8 = UnsafeBufferPointer(rebasing: wholeUTF8[range])
-      return try f(slicedUTF8)
-    }
   }
 
   @inlinable @inline(__always)
@@ -284,3 +279,62 @@ extension _StringGuts {
     @inline(__always) get { return Index(encodedOffset: self.count) }
   }
 }
+
+// A sliced _StringGuts, convenient for unifying String/Substring comparison,
+// hashing, and RRC.
+@_fixed_layout
+@usableFromInline
+internal struct _SlicedStringGuts {
+  @usableFromInline
+  internal var _guts: _StringGuts
+
+  @usableFromInline
+  internal var _offsetRange: Range<Int>
+
+  @inlinable @inline(__always)
+  internal init(_ guts: _StringGuts) {
+    self._guts = guts
+    self._offsetRange = 0..<self._guts.count
+  }
+
+  @inlinable @inline(__always)
+  internal init(_ guts: _StringGuts, _ offsetRange: Range<Int>) {
+    self._guts = guts
+    self._offsetRange = offsetRange
+  }
+
+  @inlinable
+  internal var count: Int {
+    @inline(__always) get { return _offsetRange.count }
+  }
+
+  @inlinable
+  internal var isNFCFastUTF8: Bool {
+    @inline(__always) get { return _guts.isNFCFastUTF8 }
+  }
+
+  @inlinable
+  internal var isFastUTF8: Bool {
+    @inline(__always) get { return _guts.isFastUTF8 }
+  }
+
+  @inlinable
+  internal var range: Range<String.Index> {
+    @inline(__always) get {
+      return String.Index(encodedOffset: _offsetRange.lowerBound)
+         ..< String.Index(encodedOffset: _offsetRange.upperBound)
+    }
+  }
+
+  @inlinable @inline(__always)
+  internal func withFastUTF8<R>(
+    _ f: (UnsafeBufferPointer<UInt8>) throws -> R
+  ) rethrows -> R {
+    return try _guts.withFastUTF8 { wholeUTF8 in
+      let slicedUTF8 = UnsafeBufferPointer(rebasing: wholeUTF8[_offsetRange])
+      return try f(slicedUTF8)
+    }
+  }
+}
+
+
