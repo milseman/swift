@@ -133,17 +133,6 @@ extension Substring {
     }
   }
 
-  @inlinable
-  internal var _isFastUTF8: Bool {
-    @inline(__always) get { return _wholeGuts.isFastUTF8 }
-  }
-  @inlinable @inline(__always)
-  internal func _withFastUTF8<R>(
-    _ f: (UnsafeBufferPointer<UInt8>) throws -> R
-  ) rethrows -> R {
-    return try _wholeGuts.withFastUTF8(range: _offsetRange, f)
-  }
-
   #if !INTERNAL_CHECKS_ENABLED
   @inlinable @inline(__always) internal func _invariantCheck() {}
   #else
