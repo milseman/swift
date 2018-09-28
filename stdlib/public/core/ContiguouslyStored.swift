@@ -74,7 +74,7 @@ extension String: _HasContiguousBytes {
 extension Substring: _HasContiguousBytes {
   @inlinable
   var _providesContiguousBytesNoCopy: Bool {
-    @inline(__always) get { return self.wholeGuts.isFastUTF8 }
+    @inline(__always) get { return self._wholeGuts.isFastUTF8 }
   }
 
   @inlinable @inline(__always)
@@ -83,10 +83,9 @@ extension Substring: _HasContiguousBytes {
   ) rethrows -> R {
     // TODO(UTF8): less error prone to have Substring and/or slice provide a
     // sliced fastUTF8
-    if _fastPath(self.wholeGuts.isFastUTF8) {
-      return try self.wholeGuts.withFastUTF8() {
-        try body(UnsafeRawBufferPointer(UnsafeBufferPointer(rebasing:
-          $0[self.startIndex.encodedOffset..<self.endIndex.encodedOffset])))
+    if _fastPath(self._isFastUTF8) {
+      return try self._withFastUTF8 {
+        return try body(UnsafeRawBufferPointer($0))
       }
     }
 
