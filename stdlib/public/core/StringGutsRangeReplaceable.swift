@@ -73,8 +73,10 @@ extension _StringGuts {
     let growthTarget = Swift.max(n, (self.uniqueNativeCapacity ?? 0) * 2)
 
     if _fastPath(isFastUTF8) {
+      let isASCII = self.isASCII
       let storage = self.withFastUTF8 {
-        _StringStorage.create(initializingFrom: $0, capacity: growthTarget)
+        _StringStorage.create(
+          initializingFrom: $0, capacity: growthTarget, isASCII: isASCII)
       }
 
       // TODO(UTF8): Track known ascii
@@ -91,7 +93,7 @@ extension _StringGuts {
     let selfUTF8 = Array(String(self).utf8)
     selfUTF8.withUnsafeBufferPointer {
       self = _StringGuts(_StringStorage.create(
-        initializingFrom: $0, capacity: n))
+        initializingFrom: $0, capacity: n, isASCII: self.isASCII))
     }
   }
 
@@ -135,14 +137,17 @@ extension _StringGuts {
       "growth should produce uniqueness")
 
     if other.isFastUTF8 {
-      other.withFastUTF8 { self.appendInPlace($0) }
+      let otherIsASCII = other.isASCII
+      other.withFastUTF8 { self.appendInPlace($0, isASCII: otherIsASCII) }
       return
     }
     _foreignAppendInPlace(other)
   }
 
-  internal mutating func appendInPlace(_ other: UnsafeBufferPointer<UInt8>) {
-    self._object.nativeStorage.appendInPlace(other)
+  internal mutating func appendInPlace(
+    _ other: UnsafeBufferPointer<UInt8>, isASCII: Bool
+  ) {
+    self._object.nativeStorage.appendInPlace(other, isASCII: isASCII)
 
     // We re-initialize from the modified storage to pick up new count, flags,
     // etc.
@@ -155,7 +160,7 @@ extension _StringGuts {
     _sanityCheck(self.uniqueNativeUnusedCapacity != nil)
 
     var iter = String(other).utf8.makeIterator()
-    self._object.nativeStorage.appendInPlace(&iter)
+    self._object.nativeStorage.appendInPlace(&iter, isASCII: other.isASCII)
 
     // We re-initialize from the modified storage to pick up new count, flags,
     // etc.
@@ -200,7 +205,8 @@ extension _StringGuts {
     if isUniqueNative {
       if let replStr = newElements as? String, replStr._guts.isFastUTF8 {
         replStr._guts.withFastUTF8 {
-          uniqueNativeReplaceSubrange(bounds, with: $0)
+          uniqueNativeReplaceSubrange(
+            bounds, with: $0, isASCII: replStr._guts.isASCII)
         }
         return
       }
@@ -217,7 +223,8 @@ extension _StringGuts {
 
   internal mutating func uniqueNativeReplaceSubrange(
     _ bounds: Range<Index>,
-    with codeUnits: UnsafeBufferPointer<UInt8>
+    with codeUnits: UnsafeBufferPointer<UInt8>,
+    isASCII: Bool
   ) {
     let neededCapacity =
       bounds.lowerBound.encodedOffset
@@ -230,7 +237,8 @@ extension _StringGuts {
     _object.nativeStorage.replace(
       from: bounds.lowerBound.encodedOffset,
       to: bounds.upperBound.encodedOffset,
-      with: codeUnits)
+      with: codeUnits,
+      isASCII: isASCII)
     self = _StringGuts(_object.nativeStorage)
   }
 }
