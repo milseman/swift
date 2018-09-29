@@ -671,8 +671,8 @@ extension _StringObject {
     @inline(__always) get {
       if isSmall {
         // TODO(UTF8 perf): Worth implementing more sophisiticated check, or
-        // else performing normalization on-construction, or else dedicating a
-        // small string bit to this. For now, approximate it with isASCII
+        // else performing normalization on-construction. For now, approximate
+        // it with isASCII
         return smallIsASCII
       }
       return _countAndFlags.isNFC
