@@ -35,6 +35,7 @@ internal enum _StringComparisonResult: Int {
 
 extension _SlicedStringGuts {
   @inline(__always)
+  @_effects(readonly)
   internal func withNFCCodeUnits<R>(
     _ f: (_NormalizedUTF8CodeUnitIterator) throws -> R
   ) rethrows -> R {
