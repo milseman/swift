@@ -17,11 +17,13 @@ extension StringProtocol {
   @_specialize(where Self == String, R == Substring)
   @_specialize(where Self == Substring, R == String)
   @_specialize(where Self == Substring, R == Substring)
+  @_effects(readonly)
   public static func == <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
     return lhs._slicedGuts.compare(with: rhs._slicedGuts) == .equal
   }
 
   @inlinable @inline(__always) // forward to other operator
+  @_effects(readonly)
   public static func != <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
     return !(lhs == rhs)
   }
@@ -30,21 +32,25 @@ extension StringProtocol {
   @_specialize(where Self == String, R == Substring)
   @_specialize(where Self == Substring, R == String)
   @_specialize(where Self == Substring, R == Substring)
+  @_effects(readonly)
   public static func < <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
     return lhs._slicedGuts.compare(with: rhs._slicedGuts) == .less
   }
 
   @inlinable @inline(__always) // forward to other operator
+  @_effects(readonly)
   public static func > <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
     return rhs < lhs
   }
 
   @inlinable @inline(__always) // forward to other operator
+  @_effects(readonly)
   public static func <= <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
     return !(rhs < lhs)
   }
 
   @inlinable @inline(__always) // forward to other operator
+  @_effects(readonly)
   public static func >= <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
     return !(lhs < rhs)
   }
@@ -52,6 +58,7 @@ extension StringProtocol {
 
 extension String : Equatable {
   @inlinable @inline(__always) // For the bitwise comparision
+  @_effects(readonly)
   public static func ==(lhs: String, rhs: String) -> Bool {
     if lhs._guts.rawBits == rhs._guts.rawBits { return true }
     return lhs._slicedGuts.compare(with: rhs._slicedGuts) == .equal
@@ -60,6 +67,7 @@ extension String : Equatable {
 
 extension String : Comparable {
   @inlinable @inline(__always) // For the bitwise comparision
+  @_effects(readonly)
   public static func < (lhs: String, rhs: String) -> Bool {
     if lhs._guts.rawBits == rhs._guts.rawBits { return false }
     return lhs._slicedGuts.compare(with: rhs._slicedGuts) == .less
