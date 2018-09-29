@@ -59,8 +59,17 @@ extension StringProtocol {
 extension String : Equatable {
   @inlinable @inline(__always) // For the bitwise comparision
   @_effects(readonly)
-  public static func ==(lhs: String, rhs: String) -> Bool {
+  public static func == (lhs: String, rhs: String) -> Bool {
     if lhs._guts.rawBits == rhs._guts.rawBits { return true }
+    if _fastPath(lhs._guts.isNFCFastUTF8 && rhs._guts.isNFCFastUTF8) {
+      Builtin.onFastPath() // aggressively inline / optimize
+      return lhs._guts.withFastUTF8 { nfcSelf in
+        return rhs._guts.withFastUTF8 { nfcOther in
+          return _binaryCompare(nfcSelf, nfcOther) == 0
+        }
+      }
+    }
+
     return lhs._slicedGuts.compare(with: rhs._slicedGuts) == .equal
   }
 }
@@ -70,6 +79,15 @@ extension String : Comparable {
   @_effects(readonly)
   public static func < (lhs: String, rhs: String) -> Bool {
     if lhs._guts.rawBits == rhs._guts.rawBits { return false }
+    if _fastPath(lhs._guts.isNFCFastUTF8 && rhs._guts.isNFCFastUTF8) {
+      Builtin.onFastPath() // aggressively inline / optimize
+      return lhs._guts.withFastUTF8 { nfcSelf in
+        return rhs._guts.withFastUTF8 { nfcOther in
+          return _binaryCompare(nfcSelf, nfcOther) < 0
+        }
+      }
+    }
+
     return lhs._slicedGuts.compare(with: rhs._slicedGuts) == .less
   }
 }

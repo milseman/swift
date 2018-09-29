@@ -55,41 +55,55 @@ extension _SlicedStringGuts {
   }
 }
 
+// Perform a binary comparison of bytes in memory. Return value is negative if
+// less, 0 if equal, positive if greater.
+@inlinable @inline(__always) // Memcmp wrapper
+internal func _binaryCompare<UInt8>(
+  _ lhs: UnsafeBufferPointer<UInt8>, _ rhs: UnsafeBufferPointer<UInt8>
+) -> Int {
+  var cmp = Int(truncatingIfNeeded:
+    _stdlib_memcmp(
+      lhs.baseAddress._unsafelyUnwrappedUnchecked,
+      rhs.baseAddress._unsafelyUnwrappedUnchecked,
+      Swift.min(lhs.count, rhs.count)))
+  if cmp == 0 {
+    cmp = lhs.count &- rhs.count
+  }
+  return cmp
+}
+
 // Double dispatch functions
 extension _SlicedStringGuts {
-  //
-  // TODO(UTF8 cleanup): After adapating _NormalizedUTF8CodeUnitIterator to
-  // support isNFC contents, move all this to _NormalizedUTF8CodeUnitIterator.
-  //
-  @usableFromInline // opaque
+  @usableFromInline
   @_effects(readonly)
   internal func compare(
     with other: _SlicedStringGuts
   ) -> _StringComparisonResult {
-    if self.isNFCFastUTF8 && other.isNFCFastUTF8 {
-      return self.withFastUTF8 { nfcSelf in 
+    if _fastPath(self.isNFCFastUTF8 && other.isNFCFastUTF8) {
+      Builtin.onFastPath() // aggressively inline / optimize
+      return self.withFastUTF8 { nfcSelf in
         return other.withFastUTF8 { nfcOther in
-          Builtin.onFastPath() // aggressively inline / optimize
-          var cmp = Int(truncatingIfNeeded:
-            _stdlib_memcmp(
-              nfcSelf.baseAddress._unsafelyUnwrappedUnchecked,
-              nfcOther.baseAddress._unsafelyUnwrappedUnchecked,
-              Swift.min(nfcSelf.count, nfcOther.count)))
-          if cmp == 0 {
-            cmp = self.count &- other.count
-          }
-          return _StringComparisonResult(signedNotation: cmp.signum())
+          return _StringComparisonResult(
+            signedNotation: _binaryCompare(nfcSelf, nfcOther))
         }
       }
     }
 
+    return _slowCompare(with: other)
+  }
+
+  @inline(never) // opaque slow-path
+  @_effects(readonly)
+  internal func _slowCompare(
+    with other: _SlicedStringGuts
+  ) -> _StringComparisonResult {
     return self.withNFCCodeUnits {
       var selfIter = $0
       return other.withNFCCodeUnits {
         var otherIter = $0
         return selfIter.compare(with: otherIter)
       }
-    }    
+    }
   }
 }
 
