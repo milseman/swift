@@ -100,6 +100,11 @@ extension _StringGuts {
   }
 
   @inlinable
+  internal var isFastASCII: Bool  {
+    @inline(__always) get { return isFastUTF8 && _object.isASCII }
+  }
+
+  @inlinable
   internal var isNFC: Bool  {
     @inline(__always) get { return _object.isNFC }
   }
