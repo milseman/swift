@@ -149,6 +149,17 @@ extension _StringGuts {
   }
 
   @inlinable @inline(__always)
+  internal func withFastUTF8<R>(
+    range: Range<Int>,
+    _ f: (UnsafeBufferPointer<UInt8>) throws -> R
+  ) rethrows -> R {
+    return try self.withFastUTF8 { wholeUTF8 in
+      let slicedUTF8 = UnsafeBufferPointer(rebasing: wholeUTF8[range])
+      return try f(slicedUTF8)
+    }
+  }
+
+  @inlinable @inline(__always)
   internal func withUTF8IfAvailable<R>(
     _ f: (UnsafeBufferPointer<UInt8>) throws -> R
   ) rethrows -> R? {
@@ -330,10 +341,7 @@ internal struct _SlicedStringGuts {
   internal func withFastUTF8<R>(
     _ f: (UnsafeBufferPointer<UInt8>) throws -> R
   ) rethrows -> R {
-    return try _guts.withFastUTF8 { wholeUTF8 in
-      let slicedUTF8 = UnsafeBufferPointer(rebasing: wholeUTF8[_offsetRange])
-      return try f(slicedUTF8)
-    }
+    return try _guts.withFastUTF8(range: _offsetRange, f)
   }
 }
 
