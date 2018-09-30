@@ -242,6 +242,7 @@ extension _SmallString {
 
   // Appending
   @usableFromInline // testable
+  @_effects(releasenone)
   internal init?(base: _StringGuts, appending other: _StringGuts) {
     guard (base.utf8Count + other.utf8Count) <= _SmallString.capacity else {
       return nil
