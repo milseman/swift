@@ -122,13 +122,28 @@ extension StringProtocol {
 
 extension String {
   public func hasPrefix(_ prefix: String) -> Bool {
-    // TODO(UTF8 perf): fast path
+    if _fastPath(self._guts.isNFCFastUTF8 && prefix._guts.isNFCFastUTF8) {
+      return prefix._guts.withFastUTF8 { nfcPrefix in
+        let prefixEnd = nfcPrefix.count
+        return self._guts.withFastUTF8(range: 0..<prefixEnd) { nfcSlicedSelf in
+          return _binaryCompare(nfcSlicedSelf, nfcPrefix) == 0
+        }
+      }
+    }
+
     return starts(with: prefix)
   }
 
   public func hasSuffix(_ suffix: String) -> Bool {
-    // TODO(UTF8 perf): fast path
-    // TODO(UTF8 perf): faster bidi ends(with:)
+    if _fastPath(self._guts.isNFCFastUTF8 && suffix._guts.isNFCFastUTF8) {
+      return suffix._guts.withFastUTF8 { nfcSuffix in
+        let suffixStart = self._guts.count - nfcSuffix.count
+        return self._guts.withFastUTF8(range: suffixStart..<self._guts.count) {
+          nfcSlicedSelf in return _binaryCompare(nfcSlicedSelf, nfcSuffix) == 0
+        }
+      }
+    }
+
     return self.reversed().starts(with: suffix.reversed())
   }
 }
