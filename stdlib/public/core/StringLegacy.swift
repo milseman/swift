@@ -123,6 +123,7 @@ extension StringProtocol {
 extension String {
   public func hasPrefix(_ prefix: String) -> Bool {
     if _fastPath(self._guts.isNFCFastUTF8 && prefix._guts.isNFCFastUTF8) {
+      guard prefix._guts.count <= self._guts.count else { return false }
       return prefix._guts.withFastUTF8 { nfcPrefix in
         let prefixEnd = nfcPrefix.count
         return self._guts.withFastUTF8(range: 0..<prefixEnd) { nfcSlicedSelf in
@@ -136,6 +137,7 @@ extension String {
 
   public func hasSuffix(_ suffix: String) -> Bool {
     if _fastPath(self._guts.isNFCFastUTF8 && suffix._guts.isNFCFastUTF8) {
+      guard suffix._guts.count <= self._guts.count else { return false }
       return suffix._guts.withFastUTF8 { nfcSuffix in
         let suffixStart = self._guts.count - nfcSuffix.count
         return self._guts.withFastUTF8(range: suffixStart..<self._guts.count) {
