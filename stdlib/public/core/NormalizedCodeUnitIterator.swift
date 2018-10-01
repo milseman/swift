@@ -142,7 +142,8 @@ internal struct _NormalizedUTF8CodeUnitIterator: IteratorProtocol {
   var bufferIndex = 0
   var bufferCount = 0
 
-  internal init(_ guts: _StringGuts, range: Range<String.Index>) {
+  internal init(foreign guts: _StringGuts, range: Range<String.Index>) {
+    _sanityCheck(guts.isForeign)
     utf16Iterator = _NormalizedCodeUnitIterator(guts, range)
   }
 
