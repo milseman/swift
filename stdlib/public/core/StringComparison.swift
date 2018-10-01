@@ -51,7 +51,7 @@ extension _SlicedStringGuts {
       }
     }
     return try f(_NormalizedUTF8CodeUnitIterator(
-      self._guts, range: self.range))
+      foreign: self._guts, range: self.range))
   }
 }
 
