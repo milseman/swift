@@ -186,7 +186,9 @@ extension _StringStorage {
 
     storage._breadcrumbsAddress.initialize(to: nil)
     storage.terminator.pointee = 0 // nul-terminated
-    storage._invariantCheck()
+
+    // NOTE: We can't _invariantCheck() now, because code units have not been
+    // initialized. But, _StringGuts's initializer will.
     return storage
   }
 
