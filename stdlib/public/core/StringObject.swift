@@ -78,7 +78,7 @@ extension _StringObject {
   @inlinable @inline(__always)
   internal init(raw bits: RawBitPattern) {
     self.init(zero:())
-    self._countAndFlags = CountAndFlags(raw: bits.0)
+    self._countAndFlags = Builtin.reinterpretCast(bits.0)
     self._object = Builtin.reinterpretCast(bits.1)
     _sanityCheck(self.rawBits == bits)
     _invariantCheck()
