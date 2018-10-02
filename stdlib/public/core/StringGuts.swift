@@ -65,7 +65,6 @@ extension _StringGuts {
 
   @inlinable @inline(__always)
   internal init(_ storage: _StringStorage) {
-    // TODO(UTF8): We should probably store perf flags on the storage's capacity
     self.init(_StringObject(storage))
   }
 
@@ -232,53 +231,17 @@ extension _StringGuts {
   // Contents of the buffer are unspecified if nil is returned.
   @inlinable
   internal func copyUTF8(into mbp: UnsafeMutableBufferPointer<UInt8>) -> Int? {
-    let ptr = mbp.baseAddress._unsafelyUnwrappedUnchecked
-    if _fastPath(self.isFastUTF8) {
-      return self.withFastUTF8 { utf8 in
-        guard utf8.count <= mbp.count else { return nil }
-
-        let utf8Start = utf8.baseAddress._unsafelyUnwrappedUnchecked
-        ptr.initialize(from: utf8Start, count: utf8.count)
-        return utf8.count
-      }
-    }
-
-    return _foreignCopyUTF8(into: mbp)
-  }
-
-  @_effects(releasenone)
-  @usableFromInline @inline(never) // slow-path
-  internal func _foreignCopyUTF8(
-    into mbp: UnsafeMutableBufferPointer<UInt8>
-  ) -> Int? {
-    var ptr = mbp.baseAddress._unsafelyUnwrappedUnchecked
-    var numWritten = 0
-    for cu in String(self).utf8 {
-      guard numWritten < mbp.count else { return nil }
-      ptr.initialize(to: cu)
-      ptr += 1
-      numWritten += 1
-    }
-
-    return numWritten
+    // TODO(UTF8 perf): minor perf win by avoiding slicing if fast...
+    return _SlicedStringGuts(self).copyUTF8(into: mbp)
   }
 
   internal var utf8Count: Int {
     @inline(__always) get {
-      // TODO: Might be worth burning a bit for count-is-UTF-8, regardless of
-      // fast status.
-      if _fastPath(self.isFastUTF8) {
-        return self.count
-      }
-      return _foreignUTF8Count()
+      if _fastPath(self.isFastUTF8) { return count }
+      return _SlicedStringGuts(self).utf8Count
     }
   }
 
-  @_effects(releasenone)
-  @inline(never) // slow-path
-  internal func _foreignUTF8Count() -> Int {
-    return String(self).utf8.count
-  }
 }
 
 // Index
@@ -330,8 +293,22 @@ internal struct _SlicedStringGuts {
   }
 
   @inlinable
+  internal var isASCII: Bool {
+    @inline(__always) get { return _guts.isASCII }
+  }
+
+  @inlinable
   internal var isFastUTF8: Bool {
     @inline(__always) get { return _guts.isFastUTF8 }
+  }
+
+  internal var utf8Count: Int {
+    @inline(__always) get {
+      if _fastPath(self.isFastUTF8) {
+        return _offsetRange.count
+      }
+      return Substring(self).utf8.count
+    }
   }
 
   @inlinable
@@ -348,6 +325,39 @@ internal struct _SlicedStringGuts {
   ) rethrows -> R {
     return try _guts.withFastUTF8(range: _offsetRange, f)
   }
+
+  // Copy UTF-8 contents. Returns number written or nil if not enough space.
+  // Contents of the buffer are unspecified if nil is returned.
+  @inlinable
+  internal func copyUTF8(into mbp: UnsafeMutableBufferPointer<UInt8>) -> Int? {
+    let ptr = mbp.baseAddress._unsafelyUnwrappedUnchecked
+    if _fastPath(self.isFastUTF8) {
+      return self.withFastUTF8 { utf8 in
+        guard utf8.count <= mbp.count else { return nil }
+
+        let utf8Start = utf8.baseAddress._unsafelyUnwrappedUnchecked
+        ptr.initialize(from: utf8Start, count: utf8.count)
+        return utf8.count
+      }
+    }
+
+    return _foreignCopyUTF8(into: mbp)
+  }
+
+  @_effects(releasenone)
+  @usableFromInline @inline(never) // slow-path
+  internal func _foreignCopyUTF8(
+    into mbp: UnsafeMutableBufferPointer<UInt8>
+  ) -> Int? {
+    var ptr = mbp.baseAddress._unsafelyUnwrappedUnchecked
+    var numWritten = 0
+    for cu in Substring(self).utf8 {
+      guard numWritten < mbp.count else { return nil }
+      ptr.initialize(to: cu)
+      ptr += 1
+      numWritten += 1
+    }
+
+    return numWritten
+  }
 }
-
-

@@ -105,6 +105,11 @@ public struct Substring {
     _invariantCheck()
   }
 
+  @inline(__always)
+  internal init(_ slice: _SlicedStringGuts) {
+    self.init(String(slice._guts)[slice.range])
+  }
+
   /// Creates an empty substring.
   @inlinable @inline(__always)
   public init() {
