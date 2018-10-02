@@ -65,7 +65,11 @@ extension String {
   @usableFromInline
   internal static func _fromUTF8Repairing(
     _ input: UnsafeBufferPointer<UInt8>
-  ) -> (String, Bool) {
+  ) -> (result: String, repairsMade: Bool) {
+    if _allASCII(input) {
+      return (String._uncheckedFromUTF8(input, asciiPreScanResult: true), false)
+    }
+
     // TODO(UTF8 perf): More efficient validation
 
     // TODO(UTF8 perf): Skip intermediary array
@@ -90,6 +94,21 @@ extension String {
     }
 
     let isASCII = _allASCII(input)
+    let storage = _StringStorage.create(
+      initializingFrom: input, isASCII: isASCII)
+    return storage.asString
+  }
+
+  // If we've already pre-scanned for ASCII, just supply the result
+  @usableFromInline
+  internal static func _uncheckedFromUTF8(
+    _ input: UnsafeBufferPointer<UInt8>, asciiPreScanResult: Bool
+  ) -> String {
+    if let smol = _SmallString(input) {
+      return String(_StringGuts(smol))
+    }
+
+    let isASCII = asciiPreScanResult
     let storage = _StringStorage.create(
       initializingFrom: input, isASCII: isASCII)
     return storage.asString
