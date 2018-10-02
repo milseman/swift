@@ -157,19 +157,6 @@ private func determineCodeUnitCapacity(_ desiredCapacity: Int) -> Int {
 
 // Creation
 extension _StringStorage {
-  @_effects(releasenone)
-  @nonobjc
-  private static func create(
-    capacity: Int, countAndFlags: CountAndFlags
-  ) -> _StringStorage {
-    _sanityCheck(capacity >= countAndFlags.count)
-
-    let realCapacity = determineCodeUnitCapacity(capacity)
-    _sanityCheck(realCapacity > capacity)
-    return _StringStorage.create(
-      realCodeUnitCapacity: realCapacity, countAndFlags: countAndFlags)
-  }
-
   @inline(never) // rdar://problem/44542202
   @_effects(releasenone)
   @nonobjc
@@ -190,6 +177,19 @@ extension _StringStorage {
     // NOTE: We can't _invariantCheck() now, because code units have not been
     // initialized. But, _StringGuts's initializer will.
     return storage
+  }
+
+  @_effects(releasenone)
+  @nonobjc
+  private static func create(
+    capacity: Int, countAndFlags: CountAndFlags
+  ) -> _StringStorage {
+    _sanityCheck(capacity >= countAndFlags.count)
+
+    let realCapacity = determineCodeUnitCapacity(capacity)
+    _sanityCheck(realCapacity > capacity)
+    return _StringStorage.create(
+      realCodeUnitCapacity: realCapacity, countAndFlags: countAndFlags)
   }
 
   @_effects(releasenone)
