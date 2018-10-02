@@ -243,7 +243,18 @@ extension _SmallString {
   // Appending
   @usableFromInline // testable
   @_effects(releasenone)
-  internal init?(base: _StringGuts, appending other: _StringGuts) {
+  internal init?(
+    base: __shared _StringGuts, appending other: __shared _StringGuts
+  ) {
+    self.init(
+      base: _SlicedStringGuts(base), appending: _SlicedStringGuts(other))
+  }
+
+  // Appending
+  @_effects(releasenone)
+  internal init?(
+    base: __shared _SlicedStringGuts, appending other: __shared _SlicedStringGuts
+  ) {
     guard (base.utf8Count + other.utf8Count) <= _SmallString.capacity else {
       return nil
     }

@@ -152,8 +152,7 @@ extension String: RangeReplaceableCollection {
   }
 
   public mutating func append(contentsOf newElements: Substring) {
-    // TODO(UTF8 perf): This is a horribly slow means...
-    self.append(newElements._ephemeralString)
+    self._guts.append(newElements._slicedGuts)
   }
 
   /// Appends the characters in the given sequence to the string.

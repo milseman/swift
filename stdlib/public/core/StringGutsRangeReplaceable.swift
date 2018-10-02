@@ -64,7 +64,7 @@ extension _StringGuts {
   }
 
   // Grow to accomodate at least `n` code units
-  internal mutating func grow(_ n: Int) {
+  private mutating func grow(_ n: Int) {
     defer { self._invariantCheck() }
 
     _sanityCheck(
@@ -79,7 +79,6 @@ extension _StringGuts {
           initializingFrom: $0, capacity: growthTarget, isASCII: isASCII)
       }
 
-      // TODO(UTF8): Track known ascii
       self = _StringGuts(storage)
       return
     }
@@ -88,7 +87,7 @@ extension _StringGuts {
   }
 
   @inline(never) // slow-path
-  internal mutating func _foreignGrow(_ n: Int) {
+  private mutating func _foreignGrow(_ n: Int) {
     // TODO(UTF8 perf): skip the intermediary arrays
     let selfUTF8 = Array(String(self).utf8)
     selfUTF8.withUnsafeBufferPointer {
@@ -97,54 +96,78 @@ extension _StringGuts {
     }
   }
 
-  internal mutating func append(_ other: _StringGuts) {
-    defer { self._invariantCheck() }
-
-    // Try to form a small string if possible
-    if !hasNativeStorage {
-      if let smol = _SmallString(base: self, appending: other) {
-        self = _StringGuts(smol)
-        return
-      }
+  // Ensure unique native storage with sufficient capacity for the following
+  // append.
+  private mutating func prepareForAppendInPlace(
+    otherUTF8Count otherCount: Int
+  ) {
+    defer {
+      _sanityCheck(self.uniqueNativeUnusedCapacity != nil,
+        "growth should produce uniqueness")
+      _sanityCheck(self.uniqueNativeUnusedCapacity! >= self.count + otherCount,
+        "growth should produce enough capacity")
     }
 
     // See if we can accomodate without growing or copying. If we have
     // sufficient capacity, we do not need to grow, and we can skip the copy if
     // unique. Otherwise, growth is required.
-    let otherUTF8Count = other.utf8Count
     let sufficientCapacity: Bool
-    if let unused = self.nativeUnusedCapacity, unused >= otherUTF8Count {
+    if let unused = self.nativeUnusedCapacity, unused >= otherCount {
       sufficientCapacity = true
     } else {
       sufficientCapacity = false
     }
-    if !self.isUniqueNative || !sufficientCapacity {
-      let totalCount = self.utf8Count + otherUTF8Count
-
-      // Non-unique storage: just make a copy of the appropriate size, otherwise
-      // grow like an array.
-      let growthTarget: Int
-      if sufficientCapacity {
-        growthTarget = totalCount
-      } else {
-        growthTarget = Swift.max(
-          totalCount, _growArrayCapacity(nativeCapacity ?? 0))
-      }
-      self.grow(growthTarget)
-    }
-
-    _sanityCheck(self.uniqueNativeUnusedCapacity != nil,
-      "growth should produce uniqueness")
-
-    if other.isFastUTF8 {
-      let otherIsASCII = other.isASCII
-      other.withFastUTF8 { self.appendInPlace($0, isASCII: otherIsASCII) }
+    if self.isUniqueNative && sufficientCapacity {
       return
     }
-    _foreignAppendInPlace(other)
+
+    let totalCount = self.utf8Count + otherCount
+
+    // Non-unique storage: just make a copy of the appropriate size, otherwise
+    // grow like an array.
+    let growthTarget: Int
+    if sufficientCapacity {
+      growthTarget = totalCount
+    } else {
+      growthTarget = Swift.max(
+        totalCount, _growArrayCapacity(nativeCapacity ?? 0))
+    }
+    self.grow(growthTarget)
   }
 
-  internal mutating func appendInPlace(
+  internal mutating func append(_ other: _StringGuts) {
+    // TODO(UTF8 perf): Minor potential perf win to elevating smol fast-path
+    // prior to slicing.
+    append(_SlicedStringGuts(other))
+  }
+
+  internal mutating func append(_ slicedOther: _SlicedStringGuts) {
+    defer { self._invariantCheck() }
+
+    // Try to form a small string if possible
+    if !hasNativeStorage {
+      if let smol = _SmallString(
+        base: _SlicedStringGuts(self), appending: slicedOther
+      ) {
+        self = _StringGuts(smol)
+        return
+      }
+    }
+
+    prepareForAppendInPlace(otherUTF8Count: slicedOther.utf8Count)
+
+    if slicedOther.isFastUTF8 {
+      let otherIsASCII = slicedOther.isASCII
+      slicedOther.withFastUTF8 { otherUTF8 in
+        self.appendInPlace(otherUTF8, isASCII: otherIsASCII)
+      }
+      return
+    }
+
+    _foreignAppendInPlace(slicedOther)
+  }
+
+  private mutating func appendInPlace(
     _ other: UnsafeBufferPointer<UInt8>, isASCII: Bool
   ) {
     self._object.nativeStorage.appendInPlace(other, isASCII: isASCII)
@@ -155,11 +178,11 @@ extension _StringGuts {
   }
 
   @inline(never) // slow-path
-  internal mutating func _foreignAppendInPlace(_ other: _StringGuts) {
+  private mutating func _foreignAppendInPlace(_ other: _SlicedStringGuts) {
     _sanityCheck(!other.isFastUTF8)
     _sanityCheck(self.uniqueNativeUnusedCapacity != nil)
 
-    var iter = String(other).utf8.makeIterator()
+    var iter = Substring(other).utf8.makeIterator()
     self._object.nativeStorage.appendInPlace(&iter, isASCII: other.isASCII)
 
     // We re-initialize from the modified storage to pick up new count, flags,
