@@ -104,7 +104,7 @@ extension _StringGuts {
     defer {
       _sanityCheck(self.uniqueNativeUnusedCapacity != nil,
         "growth should produce uniqueness")
-      _sanityCheck(self.uniqueNativeUnusedCapacity! >= self.count + otherCount,
+      _sanityCheck(self.uniqueNativeUnusedCapacity! >= otherCount,
         "growth should produce enough capacity")
     }
 
