@@ -378,10 +378,3 @@ extension _StringGuts {
     return String.Index(encodedOffset: idx.encodedOffset &- 1)
   }
 }
-
-extension String.Index {
-  internal func _next() -> String.Index {
-    let offset = self.encodedOffset
-    return String.Index(encodedOffset: offset + 1)
-  }
-}
