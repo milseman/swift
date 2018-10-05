@@ -39,6 +39,7 @@ extension _SlicedStringGuts {
   internal func withNFCCodeUnitsIterator<R>(
     _ f: (_NormalizedUTF8CodeUnitIterator) throws -> R
   ) rethrows -> R {
+    defer { _fixLifetime(self) }
     if self.isNFCFastUTF8 {
       // TODO(UTF8 perf): Faster iterator if we're already normal
       return try self.withFastUTF8 {
@@ -52,6 +53,14 @@ extension _SlicedStringGuts {
     }
     return try f(_NormalizedUTF8CodeUnitIterator(
       foreign: self._guts, range: self.range))
+  }
+  @inline(__always)
+  @_effects(readonly)
+  internal func withNFCCodeUnitsIterator_2<R>(
+    _ f: (_NormalizedUTF8CodeUnitIterator_2) throws -> R
+  ) rethrows -> R {
+    defer { _fixLifetime(self) }
+    return try f(_NormalizedUTF8CodeUnitIterator_2(self))
   }
 }
 
@@ -97,10 +106,10 @@ extension _SlicedStringGuts {
   internal func _slowCompare(
     with other: _SlicedStringGuts
   ) -> _StringComparisonResult {
-    return self.withNFCCodeUnitsIterator {
+    return withNFCCodeUnitsIterator_2 {
       var selfIter = $0
-      return other.withNFCCodeUnitsIterator {
-        let otherIter = $0
+      return withNFCCodeUnitsIterator_2 {
+        var otherIter = $0
         return selfIter.compare(with: otherIter)
       }
     }
