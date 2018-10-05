@@ -127,7 +127,8 @@
     "Builtin.swift",
     "VarArgs.swift",
     "CTypes.swift",
-    "MemoryLayout.swift"
+    "MemoryLayout.swift",
+    "SmallBuffer.swift"
   ],
   "KeyPaths": [
     "KeyPath.swift"

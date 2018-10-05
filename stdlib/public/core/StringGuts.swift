@@ -283,6 +283,15 @@ internal struct _SlicedStringGuts {
   }
 
   @inlinable
+  internal var start: Int {
+    @inline(__always) get { return _offsetRange.lowerBound }
+  }
+  @inlinable
+  internal var end: Int {
+    @inline(__always) get { return _offsetRange.upperBound }
+  }
+
+  @inlinable
   internal var count: Int {
     @inline(__always) get { return _offsetRange.count }
   }
