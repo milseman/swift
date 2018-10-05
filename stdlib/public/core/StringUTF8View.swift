@@ -50,7 +50,7 @@ extension String.UTF8View: BidirectionalCollection {
   @inlinable @inline(__always)
   public func index(after i: Index) -> Index {
     if _fastPath(_guts.isFastUTF8) {
-      return Index(encodedOffset: i.encodedOffset &+ 1)
+      return i.nextEncoded
     }
 
     return _foreignIndex(after: i)
@@ -60,7 +60,7 @@ extension String.UTF8View: BidirectionalCollection {
   public func index(before i: Index) -> Index {
     precondition(!i.isZeroPosition)
     if _fastPath(_guts.isFastUTF8) {
-      return Index(encodedOffset: i.encodedOffset &- 1)
+      return i.priorEncoded
     }
 
     return _foreignIndex(before: i)
@@ -69,9 +69,8 @@ extension String.UTF8View: BidirectionalCollection {
   @inlinable @inline(__always)
   public func index(_ i: Index, offsetBy n: Int) -> Index {
     if _fastPath(_guts.isFastUTF8) {
-      let offset = i.encodedOffset + n
-      _precondition(offset >= 0 && offset <= _guts.count)
-      return Index(encodedOffset: offset)
+      _precondition(n + i.encodedOffset <= _guts.count)
+      return i.encoded(offsetBy: n)
     }
 
     return _foreignIndex(i, offsetBy: n)
@@ -354,16 +353,16 @@ extension String.UTF8View {
 
     if utf8Len == 1 {
       _sanityCheck(i.transcodedOffset == 0)
-      return Index(encodedOffset: i.encodedOffset + 1)
+      return i.nextEncoded
     }
 
     // Check if we're still transcoding sub-scalar
     if i.transcodedOffset < utf8Len - 1 {
-      return Index(transcodedAfter: i)
+      return i.nextTranscoded
     }
 
     // Skip to the next scalar
-    return Index(encodedOffset: i.encodedOffset + utf16Len)
+    return i.encoded(offsetBy: utf16Len)
   }
 
   @usableFromInline @inline(never)
@@ -372,15 +371,13 @@ extension String.UTF8View {
     _sanityCheck(_guts.isForeign)
     if i.transcodedOffset != 0 {
       _sanityCheck((1...3) ~= i.transcodedOffset)
-      return Index(transcodedBefore: i)
+      return i.priorTranscoded
     }
 
     let scalar = _guts.foreignErrorCorrectedScalar(endingAt: i)
     let utf8Len = _numUTF8CodeUnits(scalar)
     let utf16Len = _numUTF16CodeUnits(scalar)
-    return Index(
-      encodedOffset: i.encodedOffset &- utf16Len,
-      transcodedOffset: utf8Len &- 1)
+    return i.encoded(offsetBy: -utf16Len).transcoded(withOffset: utf8Len &- 1)
   }
 
   @usableFromInline @inline(never)
@@ -436,7 +433,7 @@ extension String.Index {
     // Currently, foreign means UTF-16.
 
     // If we're transcoding, we're already a UTF8 view index.
-    if self.encodedOffset != 0 { return true }
+    if self.transcodedOffset != 0 { return true }
 
     // Otherwise, we must be scalar-aligned, i.e. not pointing at a trailing
     // surrogate.

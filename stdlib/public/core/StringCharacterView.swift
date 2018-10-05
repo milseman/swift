@@ -83,8 +83,7 @@ extension String: BidirectionalCollection {
     // TODO: known-ASCII fast path, single-scalar-grapheme fast path, etc.
     let stride = _characterStride(endingAt: i)
     let priorOffset = i.encodedOffset &- stride
-    return Index(
-      encodedOffset: priorOffset, characterStride: stride)
+    return Index(encodedOffset: priorOffset, characterStride: stride)
   }
   /// Returns an index that is the specified distance from the given index.
   ///
