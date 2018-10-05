@@ -360,7 +360,7 @@ struct _NormalizedCodeUnitIterator: IteratorProtocol {
 
         let cu = guts.foreignErrorCorrectedUTF16CodeUnit(at: index)
         output[outputIndex] = cu
-        index = index._next()
+        index = index.nextEncoded
         outputIndex += 1
       } while !guts.foreignHasNormalizationBoundary(before: index)
 
