@@ -191,7 +191,7 @@ extension _StringGuts {
   }
 
   internal mutating func clear() {
-    guard hasNativeStorage else {
+    guard isUniqueNative else {
       self = _StringGuts()
       return
     }
@@ -233,7 +233,9 @@ extension _StringGuts {
         }
         return
       }
-      // TODO(UTF8 perf): Probably also worth checking contiguous Substring
+      // TODO(UTF8 perf): Iterate and insert
+      // TODO(UTF8 merge): Needed for `reserveCapacity` test in
+      //   validation-test/stdlib/String.swift
     }
 
     var result = String()
