@@ -81,7 +81,7 @@ struct StringFauxUTF16Collection: RangeReplaceableCollection, RandomAccessCollec
   var _guts: _StringGuts { return _str._guts }
 
   var startIndex: Index { return 0 }
-  var endIndex: Index { return _guts.count }
+  var endIndex: Index { return _str.utf16.count }
   var indices: Indices { return startIndex..<endIndex }
 
   subscript(position: Index) -> Element {
@@ -1056,6 +1056,7 @@ StringTests.test("UnicodeScalarViewReplace") {
   }
 }
 
+// TODO(UTF8): Fails until we have more efficient insert from non-String
 StringTests.test("reserveCapacity") {
   var s = ""
   let id0 = s.bufferID
@@ -1065,11 +1066,11 @@ StringTests.test("reserveCapacity") {
   expectNotEqual(id0, s.bufferID)
   s = ""
   print("empty capacity \(s.capacity)")
-  s.reserveCapacity(oldCap + 18)
-  print("reserving \(oldCap + 18) -> \(s.capacity), width = \(s.byteWidth)")
+  s.reserveCapacity(oldCap + 2)
+  print("reserving \(oldCap + 2) [actual capacity: \(s.capacity)]")
   let id1 = s.bufferID
-  s.insert(contentsOf: repeatElement(x, count: oldCap + 18), at: s.endIndex)
-  print("extending by \(oldCap + 18) -> \(s.capacity), width = \(s.byteWidth)")
+  s.insert(contentsOf: repeatElement(x, count: oldCap + 2), at: s.endIndex)
+  print("extending by \(oldCap + 2) [actual capacity: \(s.capacity)]")
   expectEqual(id1, s.bufferID)
   s.insert(contentsOf: repeatElement(x, count: s.capacity + 100), at: s.endIndex)
   expectNotEqual(id1, s.bufferID)
@@ -1768,7 +1769,7 @@ struct COWStringTest {
 
 var testCases: [COWStringTest] {
   return [ COWStringTest(test: "abcdefghijklmnopqrxtuvwxyz", name: "ASCII"),
-           COWStringTest(test: "🐮🐄🤠", name: "Unicode") 
+           COWStringTest(test: "🐮🐄🤠👢🐴", name: "Unicode")
          ]
 }
 
