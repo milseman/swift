@@ -346,10 +346,9 @@ extension String.UTF8View {
   internal func _foreignIndex(after i: Index) -> Index {
     _sanityCheck(_guts.isForeign)
 
-    let scalar = _guts.foreignErrorCorrectedScalar(
+    let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
       startingAt: i.strippingTranscoding)
     let utf8Len = _numUTF8CodeUnits(scalar)
-    let utf16Len = _numUTF16CodeUnits(scalar)
 
     if utf8Len == 1 {
       _sanityCheck(i.transcodedOffset == 0)
@@ -362,7 +361,7 @@ extension String.UTF8View {
     }
 
     // Skip to the next scalar
-    return i.encoded(offsetBy: utf16Len)
+    return i.encoded(offsetBy: scalarLen)
   }
 
   @usableFromInline @inline(never)
@@ -374,10 +373,10 @@ extension String.UTF8View {
       return i.priorTranscoded
     }
 
-    let scalar = _guts.foreignErrorCorrectedScalar(endingAt: i)
+    let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
+      endingAt: i)
     let utf8Len = _numUTF8CodeUnits(scalar)
-    let utf16Len = _numUTF16CodeUnits(scalar)
-    return i.encoded(offsetBy: -utf16Len).transcoded(withOffset: utf8Len &- 1)
+    return i.encoded(offsetBy: -scalarLen).transcoded(withOffset: utf8Len &- 1)
   }
 
   @usableFromInline @inline(never)
@@ -386,7 +385,7 @@ extension String.UTF8View {
     _sanityCheck(_guts.isForeign)
 
     let scalar = _guts.foreignErrorCorrectedScalar(
-      startingAt: _guts.scalarAlign(i))
+      startingAt: _guts.scalarAlign(i)).0
     let encoded = Unicode.UTF8.encode(scalar)._unsafelyUnwrappedUnchecked
     _sanityCheck(i.transcodedOffset < 1+encoded.count)
 

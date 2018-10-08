@@ -55,7 +55,7 @@ extension String.UTF16View: BidirectionalCollection {
     if len == 4 && i.transcodedOffset == 0 {
       return i.nextTranscoded
     }
-    return i.encoded(offsetBy: len)
+    return i.strippingTranscoding.encoded(offsetBy: len)
   }
 
   @inlinable @inline(__always)

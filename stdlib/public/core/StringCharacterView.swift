@@ -243,7 +243,7 @@ extension String {
     //   ICU treats isolated surrogates as isolated graphemes
     if distance == 1 {
       return Character(
-        String(_guts.foreignErrorCorrectedScalar(startingAt: position)))
+        String(_guts.foreignErrorCorrectedScalar(startingAt: position).0))
     }
 
     let start = position.encodedOffset
