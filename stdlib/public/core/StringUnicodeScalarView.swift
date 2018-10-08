@@ -383,6 +383,6 @@ extension String.UnicodeScalarView {
     _sanityCheck(_guts.isOnUnicodeScalarBoundary(i),
       "should of been aligned prior")
 
-    return _guts.foreignErrorCorrectedScalar(startingAt: i)
+    return _guts.foreignErrorCorrectedScalar(startingAt: i).0
   }
 }
