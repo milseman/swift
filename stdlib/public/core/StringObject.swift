@@ -19,6 +19,8 @@
 // String struct.
 //
 
+// TODO: Word-level diagram
+
 @_fixed_layout @usableFromInline
 internal struct _StringObject {
   // Abstract the count and performance-flags containing word
@@ -173,6 +175,9 @@ extension _StringObject.Nibbles {
  cannot be treated as "shared". Such strings may provide access to contiguous
  UTF-16, or may be discontiguous in storage. Accessing foreign strings should
  remain behind a resilience barrier for future evolution.
+
+ Shared and foreign strings are always created and accessed behind a resilience
+ barrier, providing flexibility for the future.
 
  ┌────────────┐
  │ nativeBias │
