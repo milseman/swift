@@ -51,7 +51,9 @@ extension String: BidirectionalCollection {
 
   /// The number of characters in a string.
   public var count: Int {
-    @inline(__always) get { return distance(from: startIndex, to: endIndex) }
+    @inline(__always) get {
+      return distance(from: startIndex, to: endIndex)
+    }
   }
 
   /// Returns the position immediately after the given index.
