@@ -86,19 +86,34 @@ extension _StringGutsSlice {
   @usableFromInline
   @_effects(readonly)
   internal func compare(
-    with other: _StringGutsSlice
-  ) -> _StringComparisonResult {
+    with other: _StringGutsSlice, expecting: _StringComparisonResult
+  ) -> Bool {
+    if self._guts.rawBits == other._guts.rawBits
+    && self._offsetRange == other._offsetRange {
+      return expecting == .equal
+    }
+
     if _fastPath(self.isNFCFastUTF8 && other.isNFCFastUTF8) {
       Builtin.onFastPath() // aggressively inline / optimize
       return self.withFastUTF8 { nfcSelf in
         return other.withFastUTF8 { nfcOther in
-          return _StringComparisonResult(
+          return expecting == _StringComparisonResult(
             signedNotation: _binaryCompare(nfcSelf, nfcOther))
         }
       }
     }
 
-    return _slowCompare(with: other)
+    if _fastPath(self.isFastUTF8 && other.isFastUTF8) {
+      Builtin.onFastPath() // aggressively inline / optimize
+      let isEqual = self.withFastUTF8 { utf8Self in
+        return other.withFastUTF8 { utf8Other in
+          return 0 == _binaryCompare(utf8Self, utf8Other)
+        }
+      }
+      if isEqual { return expecting == .equal }
+    }
+
+    return expecting == _slowCompare(with: other)
   }
 
   @inline(never) // opaque slow-path
