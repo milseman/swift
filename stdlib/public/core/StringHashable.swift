@@ -28,7 +28,7 @@ extension String : Hashable {
       return
     }
 
-    _slicedGuts._normalizedHash(into: &hasher)
+    _gutsSlice._normalizedHash(into: &hasher)
   }
 }
 
@@ -40,11 +40,11 @@ extension StringProtocol {
   ///   of this instance.
   @inlinable
   public func hash(into hasher: inout Hasher) {
-    _slicedGuts._normalizedHash(into: &hasher)
+    _gutsSlice._normalizedHash(into: &hasher)
   }
 }
 
-extension _SlicedStringGuts {
+extension _StringGutsSlice {
   @usableFromInline // @opaque
   @inline(never) // slow-path
   internal func _normalizedHash(into hasher: inout Hasher) {
