@@ -33,7 +33,7 @@ internal enum _StringComparisonResult: Int {
   }
 }
 
-extension _SlicedStringGuts {
+extension _StringGutsSlice {
   @inline(__always)
   @_effects(readonly)
   internal func withNFCCodeUnitsIterator<R>(
@@ -82,11 +82,11 @@ internal func _binaryCompare<UInt8>(
 }
 
 // Double dispatch functions
-extension _SlicedStringGuts {
+extension _StringGutsSlice {
   @usableFromInline
   @_effects(readonly)
   internal func compare(
-    with other: _SlicedStringGuts
+    with other: _StringGutsSlice
   ) -> _StringComparisonResult {
     if _fastPath(self.isNFCFastUTF8 && other.isNFCFastUTF8) {
       Builtin.onFastPath() // aggressively inline / optimize
@@ -104,7 +104,7 @@ extension _SlicedStringGuts {
   @inline(never) // opaque slow-path
   @_effects(readonly)
   internal func _slowCompare(
-    with other: _SlicedStringGuts
+    with other: _StringGutsSlice
   ) -> _StringComparisonResult {
     return withNFCCodeUnitsIterator_2 {
       var selfIter = $0
