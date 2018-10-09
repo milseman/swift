@@ -38,7 +38,8 @@ public let StringComparison = [
     name: "StringComparison_${Name}",
     runFunction: run_StringComparison_${Name},
     tags: [.validation, .api, .String],
-    setUpFunction: { blackHole(Workload_${Name}) }),
+    setUpFunction: { blackHole(Workload_${Name}) }
+  ),
 % end # Names
 ]
 
@@ -48,7 +49,19 @@ public let StringHashing = [
     name: "StringHashing_${Name}",
     runFunction: run_StringHashing_${Name},
     tags: [.validation, .api, .String],
-    setUpFunction: { blackHole(Workload_${Name}) }),
+    setUpFunction: { blackHole(Workload_${Name}) }
+  ),
+% end # Names
+]
+
+public let NormalizedIterator = [
+% for Name in Names:
+  BenchmarkInfo(
+    name: "NormalizedIterator_${Name}",
+    runFunction: run_NormalizedIterator_${Name},
+    tags: [.validation, .String],
+    setUpFunction: { blackHole(Workload_${Name}) }
+  ),
 % end # Names
 ]
 
@@ -80,6 +93,22 @@ public func run_StringHashing_${Name}(_ N: Int) {
       blackHole(str.hashValue)
     }
   }
+}
+
+@inline(never)
+public func run_NormalizedIterator_${Name}(_ N: Int) {
+  let workload: Workload = Workload.${Name}
+  let tripCount = workload.tripCount
+  let payload = workload.payload
+  for _ in 1...tripCount*N {
+    for str in payload {
+      str._withNormalizedUTF8Iterator { iterator in
+        for cu in iterator {
+          blackHole(cu)
+        }
+      }
+    }
+  } 
 }
   
 % end # Names

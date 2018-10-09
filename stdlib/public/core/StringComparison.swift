@@ -100,7 +100,7 @@ extension _SlicedStringGuts {
     return self.withNFCCodeUnits {
       var selfIter = $0
       return other.withNFCCodeUnits {
-        var otherIter = $0
+        let otherIter = $0
         return selfIter.compare(with: otherIter)
       }
     }
