@@ -114,17 +114,8 @@ reflect(object: obj)
 // CHECK-64: Type reference:
 // CHECK-64: (class reflect_multiple_types.TestClass)
 
-// CHECK-64: Type info:
-
-////
-// FIXME(UTF8 merge): The below should state more extra inhabitants, but
-// reflection is currently out of sync with the compiler. Adjust when we rebase
-// before a final merge. <rdar://problem/44239246>
-//
+// CHECK-64-LABEL: Type info:
 // CHECK-64-NEXT: (class_instance size=185 alignment=8 stride=192 num_extra_inhabitants=0
-//
-////
-
 // CHECK-64-NEXT:   (field name=t00 offset=16
 // CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=1
 // (unstable implementation details omitted)
@@ -133,26 +124,22 @@ reflect(object: obj)
 // CHECK-64-NEXT:       (field name=_value offset=0
 // CHECK-64-NEXT:         (builtin size=1 alignment=1 stride=1 num_extra_inhabitants=254))))
 
-////
-// FIXME(UTF8 merge): The below should state more extra inhabitants, but
-// reflection is currently out of sync with the compiler. Adjust when we rebase
-// before a final merge. <rdar://problem/44239246>
-//
 // CHECK-64-NEXT:   (field name=t02 offset=32
-// CHECK-64-NEXT:     (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
+// CHECK-64-NEXT:     (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // CHECK-64-NEXT:       (field name=_str offset=0
-// CHECK-64-NEXT:         (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
+// CHECK-64-NEXT:         (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // CHECK-64-NEXT:           (field name=_guts offset=0
-// CHECK-64-NEXT:             (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
+// CHECK-64-NEXT:             (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // CHECK-64-NEXT:               (field name=_object offset=0
-// CHECK-64-NEXT:                 (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
-// CHECK-64-NEXT:                   (field name=_otherBits offset=0
+// CHECK-64-NEXT:                 (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
+// CHECK-64-NEXT:                   (field name=_countAndFlags offset=0
 // CHECK-64-NEXT:                     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
-// CHECK-64-NEXT:                       (field name=_value offset=0
-// CHECK-64-NEXT:                         (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=0))))
+// CHECK-64-NEXT:                       (field name=_storage offset=0
+// CHECK-64-NEXT:                         (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
+// CHECK-64-NEXT:                           (field name=_value offset=0
+// CHECK-64-NEXT:                             (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=0))))))
 // CHECK-64-NEXT:                   (field name=_object offset=8
 // CHECK-64-NEXT:                     (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=1))))))))))
-////
 
 // CHECK-64-NEXT:   (field name=t03 offset=48
 // CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
@@ -195,18 +182,13 @@ reflect(object: obj)
 // CHECK-64-NEXT:     (reference kind=strong refcounting=unknown))
 // CHECK-64-NEXT:   (field name=t15 offset=136
 // CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
+
 // (unstable implementation details omitted)
+
 // CHECK-64:   (field name=t16 offset=144
-
-////
-// FIXME(UTF8 merge): The below should state more extra inhabitants, but
-// reflection is currently out of sync with the compiler. Adjust when we rebase
-// before a final merge. <rdar://problem/44239246>
-//
-// CHECK-64-NEXT:     (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
-////
-
+// CHECK-64-NEXT:     (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // (unstable implementation details omitted)
+
 // CHECK-64:   (field name=t17 offset=160
 // CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
 // CHECK-64-NEXT:       (field name=_value offset=0
