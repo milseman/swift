@@ -1248,16 +1248,12 @@ extension String : LosslessStringConvertible {
 }
 
 extension String {
-  //FIXME: This should not be public, this is just a workaround for the tests
-  public func _withNormalizedUTF8Iterator<ReturnType>(_ f: (_NormalizedUTF8CodeUnitIterator) -> ReturnType) -> ReturnType {
-    if _fastPath(_guts.isFastUTF8) {
-      return _guts.withFastUTF8 { buffer in
-        let iterator = _NormalizedUTF8CodeUnitIterator(buffer, range: 0..<buffer.count)
-        return f(iterator)
+  public // @testable
+  func _withNFCCodeUnits(_ f: (UInt8) throws -> Void) rethrows {
+    try _slicedGuts.withNFCCodeUnitsIterator { 
+      for cu in $0 {
+        try f(cu)
       }
-    } else {
-      let iterator = _NormalizedUTF8CodeUnitIterator(foreign: _guts, range: startIndex..<endIndex)
-      return f(iterator)
     }
   }
 }

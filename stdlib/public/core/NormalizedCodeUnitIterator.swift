@@ -134,8 +134,7 @@ extension UnsafeBufferPointer where Element == UInt8 {
   }
 }
 
-//FIXME: This should not be public, this is just a workaround for the tests
-public /*internal*/ struct _NormalizedUTF8CodeUnitIterator: IteratorProtocol {
+internal struct _NormalizedUTF8CodeUnitIterator: IteratorProtocol {
   internal typealias CodeUnit = UInt8
 
   var utf16Iterator: _NormalizedCodeUnitIterator
@@ -148,13 +147,11 @@ public /*internal*/ struct _NormalizedUTF8CodeUnitIterator: IteratorProtocol {
     utf16Iterator = _NormalizedCodeUnitIterator(guts, range)
   }
 
-  // FIXME: This should not be public, this is just a workaround for the tests
-  public /*internal*/ init(_ buffer: UnsafeBufferPointer<UInt8>, range: Range<Int>) {
+  internal init(_ buffer: UnsafeBufferPointer<UInt8>, range: Range<Int>) {
     utf16Iterator = _NormalizedCodeUnitIterator(buffer, range)
   }
 
-  //FIXME: This should not be public, this is just a workaround for the tests
-  public /*internal*/ mutating func next() -> UInt8? {
+  internal mutating func next() -> UInt8? {
     if bufferIndex == bufferCount {
       bufferIndex = 0
       bufferCount = 0

@@ -439,13 +439,11 @@ public func run_NormalizedIterator_ascii(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -455,13 +453,11 @@ public func run_NormalizedIterator_latin1(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -471,13 +467,11 @@ public func run_NormalizedIterator_fastPrenormal(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -487,13 +481,11 @@ public func run_NormalizedIterator_slowerPrenormal(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -503,13 +495,11 @@ public func run_NormalizedIterator_nonBMPSlowestPrenormal(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -519,13 +509,11 @@ public func run_NormalizedIterator_emoji(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -535,13 +523,11 @@ public func run_NormalizedIterator_abnormal(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 @inline(never)
@@ -551,13 +537,11 @@ public func run_NormalizedIterator_zalgo(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 

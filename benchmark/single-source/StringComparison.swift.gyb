@@ -113,13 +113,11 @@ public func run_NormalizedIterator_${Name}(_ N: Int) {
   let payload = workload.payload
   for _ in 1...tripCount*N {
     for str in payload {
-      str._withNormalizedUTF8Iterator { iterator in
-        for cu in iterator {
-          blackHole(cu)
-        }
+      str._withNFCCodeUnits { cu in
+        blackHole(cu)
       }
     }
-  } 
+  }
 }
 
 % end # NormalizedIteratorWorkloads
