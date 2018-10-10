@@ -498,12 +498,8 @@ extension _StringObject.CountAndFlags {
     self.init(zero:())
     self.count = count
     if isASCII {
-#if arch(i386) || arch(arm)
-      unimplemented_utf8_32bit()
-#else
       // ASCII also entails NFC
       self._storage |= 0xC000_0000_0000_0000
-#endif
     }
     _invariantCheck()
   }
