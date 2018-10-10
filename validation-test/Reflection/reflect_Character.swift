@@ -24,29 +24,24 @@ reflect(object: obj)
 // CHECK-64: Type reference:
 // CHECK-64: (class reflect_Character.TestClass)
 
-// CHECK-64: Type info:
+// CHECK-64-LABEL: Type info:
 // CHECK-64: (class_instance size=32 alignment=8 stride=32 num_extra_inhabitants=0
-
-////
-// FIXME(UTF8 merge): The below should state more extra inhabitants, but
-// reflection is currently out of sync with the compiler. Adjust when we rebase
-// before a final merge. <rdar://problem/44239246>
-//
 // CHECK-64-NEXT: (field name=t offset=16
-// CHECK-64-NEXT:   (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
+// CHECK-64-NEXT:   (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // CHECK-64-NEXT:     (field name=_str offset=0
-// CHECK-64-NEXT:       (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
+// CHECK-64-NEXT:       (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // CHECK-64-NEXT:         (field name=_guts offset=0
-// CHECK-64-NEXT:           (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
+// CHECK-64-NEXT:           (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
 // CHECK-64-NEXT:             (field name=_object offset=0
-// CHECK-64-NEXT:               (struct size=16 alignment=8 stride=16 num_extra_inhabitants=0
-// CHECK-64-NEXT:                 (field name=_otherBits offset=0
+// CHECK-64-NEXT:               (struct size=16 alignment=8 stride=16 num_extra_inhabitants=1
+// CHECK-64-NEXT:                 (field name=_countAndFlags offset=0
 // CHECK-64-NEXT:                   (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
-// CHECK-64-NEXT:                     (field name=_value offset=0
-// CHECK-64-NEXT:                       (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=0))))
+// CHECK-64-NEXT:                     (field name=_storage offset=0
+// CHECK-64-NEXT:                       (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
+// CHECK-64-NEXT:                         (field name=_value offset=0
+// CHECK-64-NEXT:                           (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=0))))))
 // CHECK-64-NEXT:                 (field name=_object offset=8
 // CHECK-64-NEXT:                   (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=1)))))))))))
-////
 
 // CHECK-32: Reflecting an object.
 // CHECK-32: Type reference:
