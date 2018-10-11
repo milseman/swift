@@ -66,15 +66,36 @@ extension _StringObject {
 
   @inlinable @inline(__always)
   internal init(
-    rawObject: UInt, rawDiscrim: UInt, countAndFlags: CountAndFlags
+    bridgeObject: Builtin.BridgeObject, countAndFlags: CountAndFlags
   ) {
-    let builtinRawObject: Builtin.Int64 = Builtin.reinterpretCast(rawObject)
-    let builtinDiscrim: Builtin.Int64 = Builtin.reinterpretCast(rawDiscrim)
-    self._object = Builtin.reinterpretCast(
-      Builtin.stringObjectOr_Int64(builtinRawObject, builtinDiscrim))
-
+    self._object = bridgeObject
     self._countAndFlags = countAndFlags
     _invariantCheck()
+  }
+
+  @inlinable @inline(__always)
+  internal init(
+    object: AnyObject, discriminator: UInt, countAndFlags: CountAndFlags
+  ) {
+    let builtinRawObject: Builtin.Int64 = Builtin.reinterpretCast(object)
+    let builtinDiscrim: Builtin.Int64 = Builtin.reinterpretCast(discriminator)
+    self.init(
+      bridgeObject: Builtin.reinterpretCast(
+        Builtin.stringObjectOr_Int64(builtinRawObject, builtinDiscrim)),
+      countAndFlags: countAndFlags)
+  }
+
+  // Initializer to use for tagged (unmanaged) values
+  @inlinable @inline(__always)
+  internal init(
+    valueBits: UInt, discriminator: UInt, countAndFlags: CountAndFlags
+  ) {
+    let builtinValueBits: Builtin.Int64 = Builtin.reinterpretCast(valueBits)
+    let builtinDiscrim: Builtin.Int64 = Builtin.reinterpretCast(discriminator)
+    self.init(
+      bridgeObject: Builtin.valueToBridgeObject(Builtin.stringObjectOr_Int64(
+        builtinValueBits, builtinDiscrim)),
+      countAndFlags: countAndFlags)
   }
 
   @inlinable @inline(__always)
@@ -418,12 +439,12 @@ extension _StringObject {
     // TODO(UTF8 codegen): Ensure this is just a couple simple ops
     _sanityCheck(isSmall && count <= _SmallString.capacity)
 
-    let rawObject = self.undiscriminatedObjectRawBits
+    let valueBits = self.undiscriminatedObjectRawBits
     let discrim = Nibbles.small(isASCII: isASCII)
                 | (UInt(bitPattern: count) &<< 56)
     self = _StringObject(
-      rawObject: rawObject,
-      rawDiscrim: discrim,
+      valueBits: valueBits,
+      discriminator: discrim,
       countAndFlags: self._countAndFlags)
   }
 
@@ -735,35 +756,30 @@ extension _StringObject {
 // Object creation
 extension _StringObject {
   @inlinable @inline(__always)
-  init(
-    start: UnsafePointer<UInt8>, discrim: UInt, countAndFlags: CountAndFlags
-  ) {
-    self.init(
-      rawObject: UInt(bitPattern: start) &- _StringObject.nativeBias,
-      rawDiscrim: discrim,
-      countAndFlags: countAndFlags)
-  }
-
-  @inlinable @inline(__always)
-  init(immortal bufPtr: UnsafeBufferPointer<UInt8>, isASCII: Bool) {
+  internal init(immortal bufPtr: UnsafeBufferPointer<UInt8>, isASCII: Bool) {
+    // We bias to align code paths for mortal and immortal strings
+    let biasedAddress = UInt(
+      bitPattern: bufPtr.baseAddress._unsafelyUnwrappedUnchecked
+    ) &- _StringObject.nativeBias
     let countAndFlags = CountAndFlags(count: bufPtr.count, isASCII: isASCII)
+
     self.init(
-      start: bufPtr.baseAddress._unsafelyUnwrappedUnchecked,
-      discrim: Nibbles.largeImmortal(),
+      valueBits: biasedAddress,
+      discriminator: Nibbles.largeImmortal(),
       countAndFlags: countAndFlags)
   }
   @inlinable @inline(__always)
-  init(_ storage: _StringStorage) {
+  internal init(_ storage: _StringStorage) {
     self.init(
-      start: storage.start,
-      discrim: Nibbles.largeMortal(),
+      object: storage,
+      discriminator: Nibbles.largeMortal(),
       countAndFlags: storage._countAndFlags)
   }
 
-  init(_ storage: _SharedStringStorage, isASCII: Bool) {
+  internal init(_ storage: _SharedStringStorage, isASCII: Bool) {
     self.init(
-      rawObject: Builtin.reinterpretCast(storage),
-      rawDiscrim: Nibbles.largeSharedMortal(),
+      object: storage,
+      discriminator: Nibbles.largeSharedMortal(),
       countAndFlags: storage._countAndFlags)
   }
 
@@ -771,13 +787,10 @@ extension _StringObject {
     cocoa: AnyObject, providesFastUTF8: Bool, isASCII: Bool, length: Int
   ) {
     let countAndFlags = CountAndFlags(count: length, isASCII: isASCII)
-    let discrim = Nibbles.largeCocoa(providesFastUTF8: providesFastUTF8)
+    let discriminator = Nibbles.largeCocoa(providesFastUTF8: providesFastUTF8)
 
-    // TODO: Use with a perf flags helper
     self.init(
-      rawObject: Builtin.reinterpretCast(cocoa),
-      rawDiscrim: discrim,
-      countAndFlags: countAndFlags)
+      object: cocoa, discriminator: discriminator, countAndFlags: countAndFlags)
 
     _sanityCheck(self.largeAddressBits == Builtin.reinterpretCast(cocoa))
     _sanityCheck(self.providesFastUTF8 == providesFastUTF8)
