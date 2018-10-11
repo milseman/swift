@@ -209,6 +209,9 @@ extension _StringGuts {
 
     if isUniqueNative {
       _object.nativeStorage.remove(from: lowerOffset, to: upperOffset)
+      // We re-initialize from the modified storage to pick up new count, flags,
+      // etc.
+      self = _StringGuts(self._object.nativeStorage)
       return
     }
 
