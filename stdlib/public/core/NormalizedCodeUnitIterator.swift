@@ -649,7 +649,7 @@ extension _NormalizedUTF8CodeUnitIterator_2 {
       return
     }
 
-    let remaining: Int = gutsSlice.withNFCCodeUnits {
+    let remaining: Int = gutsSlice.withNFCCodeUnitsIterator {
       var nfc = $0
       while !outputBufferFull, let cu = nfc.next() {
         outputBuffer[outputBufferCount] = cu
