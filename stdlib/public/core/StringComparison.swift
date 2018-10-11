@@ -121,9 +121,9 @@ extension _StringGutsSlice {
   internal func _slowCompare(
     with other: _StringGutsSlice
   ) -> _StringComparisonResult {
-    return withNFCCodeUnitsIterator_2 {
+    return self.withNFCCodeUnitsIterator_2 {
       var selfIter = $0
-      return withNFCCodeUnitsIterator_2 {
+      return other.withNFCCodeUnitsIterator_2 {
         var otherIter = $0
         return selfIter.compare(with: otherIter)
       }
