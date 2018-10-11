@@ -53,7 +53,7 @@ extension _StringGutsSlice {
         hasher.combine(bytes: UnsafeRawBufferPointer($0))
       }
     } else {
-      self.withNFCCodeUnits_2 {
+      self.withNFCCodeUnitsIterator_2 {
         var selfIter = $0
         for cu in selfIter { hasher.combine(cu) }
       }
