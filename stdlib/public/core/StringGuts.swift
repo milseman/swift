@@ -146,7 +146,7 @@ extension _StringGuts {
   ) rethrows -> R {
     _sanityCheck(isFastUTF8)
 
-    if _object.isSmall { return try _object.asSmallString.withUTF8(f) }
+    if _object.isSmall { return try _SmallString(_object).withUTF8(f) }
 
     defer { _fixLifetime(self) }
     return try f(_object.fastUTF8)
