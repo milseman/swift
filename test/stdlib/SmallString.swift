@@ -56,7 +56,7 @@ extension _SmallString {
     if !str._guts._object.isSmall {
       return nil
     }
-    self = str._guts._object.asSmallString
+    self.init(str._guts._object)
   }
   init?(_cocoaString ns: NSString) {
     guard _isObjCTaggedPointer(ns) else { return nil }
@@ -69,7 +69,7 @@ extension _SmallString {
   }
   func _repeated(_ n: Int) -> _SmallString? {
     var base = self
-    var toAppend = _StringGuts(self)
+    let toAppend = _StringGuts(self)
     for _ in 0..<(n &- 1) {
       guard let s = _SmallString(
         base: _StringGuts(base), appending: toAppend)
