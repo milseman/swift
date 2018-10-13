@@ -45,14 +45,14 @@ internal struct _SmallString {
   }
 
   @inlinable @inline(__always)
-  internal init() {
-    self.init(raw: _StringObject(empty:()).rawBits)
+  internal init(_ object: _StringObject) {
+    _sanityCheck(object.isSmall)
+    self.init(raw: object.rawBits)
   }
 
-  @inlinable
-  internal var asStringObject: _StringObject {
-    @inline(__always) get { return _StringObject(raw: _storage) }
-    @inline(__always) set { self = _SmallString(raw: newValue.rawBits) }
+  @inlinable @inline(__always)
+  internal init() {
+    self.init(raw: _StringObject(empty:()).rawBits)
   }
 }
 
@@ -66,7 +66,7 @@ extension _SmallString {
 
   @inlinable
   internal var count: Int {
-    @inline(__always) get { return asStringObject.smallCount }
+    @inline(__always) get { return _StringObject(self).smallCount }
   }
 
   @inlinable
@@ -76,7 +76,7 @@ extension _SmallString {
 
   @inlinable
   internal var isASCII: Bool {
-    @inline(__always) get { return asStringObject.smallIsASCII }
+    @inline(__always) get { return _StringObject(self).smallIsASCII }
   }
 
   // Give raw, nul-terminated code units. This is only for limited internal
@@ -84,7 +84,7 @@ extension _SmallString {
   @inlinable
   internal var zeroTerminatedRawCodeUnits: RawBitPattern {
     @inline(__always) get {
-      return (self._storage.0, self.asStringObject.undiscriminatedObjectRawBits)
+      return (self._storage.0, _StringObject(self).undiscriminatedObjectRawBits)
     }
   }
 
@@ -110,10 +110,8 @@ extension _SmallString {
   #else
   @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    // Avoid `asStringObject`, which triggers more invariant checks (runtime)
-    var _object = _StringObject(zero:())
-    _object._countAndFlags = Builtin.reinterpretCast(_storage.0)
-    _object._object = Builtin.reinterpretCast(_storage.1)
+    // Avoid _StringObject (redundant and expensive) invariant checks
+    var _object = _StringObject(rawNoCheck: _storage)
     _sanityCheck(_object.smallCount <= _SmallString.capacity)
     _sanityCheck(_object.smallIsASCII == computeIsASCII())
   }
@@ -201,8 +199,9 @@ extension _SmallString {
     }
 
     _sanityCheck(len <= _SmallString.capacity)
-    self.asStringObject.setSmallCount(len, isASCII: self.computeIsASCII())
-    self._invariantCheck()
+    var obj = _StringObject(rawNoCheck: self.rawBits)
+    obj.setSmallCount(len, isASCII: self.computeIsASCII())
+    self = _SmallString(obj)
   }
 
   // Write to excess capacity. `f` should return the new count.
@@ -226,19 +225,23 @@ extension _SmallString {
   // Direct from UTF-8
   @inlinable @inline(__always)
   internal init?(_ input: UnsafeBufferPointer<UInt8>) {
-    guard input.count <= _SmallString.capacity else { return nil }
+    let count = input.count
+    guard count <= _SmallString.capacity else { return nil }
 
-    // TODO(UTF8 perf): Directly in register
-    self.init()
-    self.withMutableExcessCapacity { mutBufPtr in
-      mutBufPtr.baseAddress._unsafelyUnwrappedUnchecked.initialize(
-        from: input.baseAddress._unsafelyUnwrappedUnchecked, count: input.count)
-      return input.count
-    }
+    let ptr = input.baseAddress._unsafelyUnwrappedUnchecked
 
-    _invariantCheck()
+    let low = _bytesToUInt(ptr, Swift.min(input.count, 8))
+    let high = count > 8 ? _bytesToUInt(ptr + 8, count &- 8) : 0
+
+    let isASCII = (low | high) & 0x8080_8080_8080_8080 == 0
+    let smallDiscriminator = _StringObject.Nibbles.small(
+      withCount: count, isASCII: isASCII)
+
+    self.init(_StringObject(
+      discriminator: smallDiscriminator,
+      valueLeading: low,
+      valueTrailing: high))
   }
-
 
   // Appending
   @usableFromInline // testable
@@ -299,6 +302,17 @@ extension UInt {
     let shift = UInt(bitPattern: i) &* 8
     return UInt8(truncatingIfNeeded: (self &>> shift))
   }
-
 }
+
+@inlinable @inline(__always)
+internal func _bytesToUInt(_ input: UnsafePointer<UInt8>, _ c: Int) -> UInt {
+  var r: UInt = 0
+  var shift: Int = 0
+  for idx in 0..<c {
+    r = r | (UInt(input[idx]) &<< shift)
+    shift = shift &+ 8
+  }
+  return r
+}
+
 
