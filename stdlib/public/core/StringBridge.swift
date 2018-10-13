@@ -184,7 +184,7 @@ extension String {
     // form, rather than querying object directly. Presumably there will be
     // other such visitors.
     if _guts._object.isSmall {
-      return _guts._object.asSmallString.withUTF8 { bufPtr in
+      return _SmallString(_guts._object).withUTF8 { bufPtr in
         // TODO(UTF8 perf): worth isASCII check for different encoding?
         return _swift_stdlib_CFStringCreateWithBytes(
             nil, bufPtr.baseAddress._unsafelyUnwrappedUnchecked,
