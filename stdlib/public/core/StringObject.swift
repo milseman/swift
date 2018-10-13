@@ -94,7 +94,7 @@ extension _StringObject {
     _sanityCheck(valueTrailing & Nibbles.discriminatorMask == 0)
     self.init(
       bridgeObject: Builtin.valueToBridgeObject(valueTrailing | discriminator),
-      countAndFlags: CountAndFlags(rawNoCheck: valueLeading))
+      countAndFlags: CountAndFlags(rawUnchecked: valueLeading))
   }
 
   // Initializer to use for tagged (unmanaged) values
@@ -111,16 +111,16 @@ extension _StringObject {
   }
 
   @inlinable @inline(__always)
-  internal init(rawNoCheck bits: RawBitPattern) {
+  internal init(rawUncheckedValue bits: RawBitPattern) {
     self.init(zero:())
-    self._countAndFlags = CountAndFlags(rawNoCheck: bits.0)
+    self._countAndFlags = CountAndFlags(rawUnchecked: bits.0)
     self._object = Builtin.reinterpretCast(bits.1)
     _sanityCheck(self.rawBits == bits)
   }
 
   @inlinable @inline(__always)
-  internal init(raw bits: RawBitPattern) {
-    self.init(rawNoCheck: bits)
+  internal init(rawValue bits: RawBitPattern) {
+    self.init(rawUncheckedValue: bits)
     _invariantCheck()
   }
 
@@ -147,13 +147,13 @@ extension _StringObject.CountAndFlags {
   }
 
   @inlinable @inline(__always)
-  internal init(rawNoCheck bits: RawBitPattern) {
+  internal init(rawUnchecked bits: RawBitPattern) {
     self._storage = bits
   }
 
   @inlinable @inline(__always)
   internal init(raw bits: RawBitPattern) {
-    self.init(rawNoCheck: bits)
+    self.init(rawUnchecked: bits)
     _invariantCheck()
   }
 }
@@ -508,7 +508,7 @@ extension _StringObject {
 
   @inlinable @inline(__always)
   internal init(_ small: _SmallString) {
-    self.init(raw: small.rawBits)
+    self.init(rawValue: small.rawBits)
   }
 
   // Canonical empty pattern: small zero-length string
