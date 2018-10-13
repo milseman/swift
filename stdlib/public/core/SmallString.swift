@@ -39,8 +39,13 @@ internal struct _SmallString {
   }
 
   @inlinable @inline(__always)
-  internal init(raw bits: RawBitPattern) {
+  internal init(rawUnchecked bits: RawBitPattern) {
     self._storage = bits
+  }
+
+  @inlinable @inline(__always)
+  internal init(raw bits: RawBitPattern) {
+    self.init(rawUnchecked: bits)
     _invariantCheck()
   }
 
@@ -66,7 +71,9 @@ extension _SmallString {
 
   @inlinable
   internal var count: Int {
-    @inline(__always) get { return _StringObject(self).smallCount }
+    @inline(__always) get {
+      return _StringObject(rawUncheckedValue: self.rawBits).smallCount
+    }
   }
 
   @inlinable
@@ -76,7 +83,9 @@ extension _SmallString {
 
   @inlinable
   internal var isASCII: Bool {
-    @inline(__always) get { return _StringObject(self).smallIsASCII }
+    @inline(__always) get {
+      return _StringObject(rawUncheckedValue: self.rawBits).smallIsASCII
+    }
   }
 
   // Give raw, nul-terminated code units. This is only for limited internal
@@ -84,7 +93,12 @@ extension _SmallString {
   @inlinable
   internal var zeroTerminatedRawCodeUnits: RawBitPattern {
     @inline(__always) get {
-      return (self._storage.0, _StringObject(self).undiscriminatedObjectRawBits)
+      return (
+        self._storage.0,
+        _StringObject(
+          rawUncheckedValue: self.rawBits
+        ).undiscriminatedObjectRawBits
+      )
     }
   }
 
@@ -110,10 +124,8 @@ extension _SmallString {
   #else
   @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    // Avoid _StringObject (redundant and expensive) invariant checks
-    var _object = _StringObject(rawNoCheck: _storage)
-    _sanityCheck(_object.smallCount <= _SmallString.capacity)
-    _sanityCheck(_object.smallIsASCII == computeIsASCII())
+    _sanityCheck(count <= _SmallString.capacity)
+    _sanityCheck(isASCII == computeIsASCII())
   }
   #endif // INTERNAL_CHECKS_ENABLED
 
@@ -199,7 +211,7 @@ extension _SmallString {
     }
 
     _sanityCheck(len <= _SmallString.capacity)
-    var obj = _StringObject(rawNoCheck: self.rawBits)
+    var obj = _StringObject(rawUncheckedValue: self.rawBits)
     obj.setSmallCount(len, isASCII: self.computeIsASCII())
     self = _SmallString(obj)
   }
