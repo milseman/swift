@@ -53,7 +53,7 @@ extension _SmallString {
     let str = codeUnits.withUnsafeBufferPointer {
       return String._uncheckedFromUTF16($0)
     }
-    if !str._guts._object.isSmall {
+    if !str._guts.isSmall {
       return nil
     }
     self.init(str._guts._object)
