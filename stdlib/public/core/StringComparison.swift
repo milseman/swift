@@ -137,35 +137,3 @@ internal func _lexicographicalCompare(
   return lhs < rhs ? .less : (lhs > rhs ? .greater : .equal)
 }
 
-internal func _lexicographicalCompare(
-  _ lhs: UInt16, _ rhs: UInt16
-) -> _StringComparisonResult {
-  return lhs < rhs ? .less : (lhs > rhs ? .greater : .equal)
-}
-
-internal func _lexicographicalCompare(
-  _ lhs: Int, _ rhs: Int
-) -> _StringComparisonResult {
-  // TODO: inspect code quality
-  return lhs < rhs ? .less : (lhs > rhs ? .greater : .equal)
-}
-
-@_effects(readonly)
-internal func _lexicographicalCompare(
-  _ lhs: Array<UInt8>, _ rhs: Array<UInt8>
-) -> _StringComparisonResult {
-  // Check for a difference in overlapping contents
-  let count = Swift.min(lhs.count, rhs.count)
-  for idx in 0..<count {
-    let lhsValue = lhs[idx]
-    let rhsValue = rhs[idx]
-    guard lhsValue == rhsValue else {
-      return lhsValue < rhsValue ? .less : .greater
-    }
-  }
-
-  // Otherwise, the longer string is greater
-  if lhs.count == rhs.count { return .equal }
-  return lhs.count < rhs.count ? .less : .greater
-}
-
