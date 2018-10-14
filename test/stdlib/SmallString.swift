@@ -37,6 +37,15 @@ func verifySmallString(_ small: _SmallString, _ input: String) {
       }
     }
   }
+
+  // Test RAC and Mutable
+  var copy = small
+  for i in 0..<small.count / 2 {
+    let tmp = copy[i]
+    copy[i] = copy[copy.count - 1 - i]
+    copy[copy.count - 1 - i] = tmp
+  }
+  expectEqualSequence(small.reversed(), copy)
 }
 
 // Testing helper inits
@@ -64,15 +73,14 @@ extension _SmallString {
   }
 
   func _appending(_ other: _SmallString) -> _SmallString? {
-    return _SmallString(
-      base: _StringGuts(self), appending: _StringGuts(other))
+    return _SmallString(self, appending: other)
   }
   func _repeated(_ n: Int) -> _SmallString? {
     var base = self
-    let toAppend = _StringGuts(self)
+    let toAppend = self
     for _ in 0..<(n &- 1) {
       guard let s = _SmallString(
-        base: _StringGuts(base), appending: toAppend)
+        base, appending: toAppend)
       else { return nil }
       base = s
     }
