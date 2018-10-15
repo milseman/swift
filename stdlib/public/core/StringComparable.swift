@@ -20,7 +20,10 @@ extension StringProtocol {
   @_specialize(where Self == Substring, R == Substring)
   @_effects(readonly)
   public static func == <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
-    return lhs._gutsSlice.compare(with: rhs._gutsSlice, expecting: .equal)
+    return _stringCompare(
+      lhs._wholeGuts, lhs._offsetRange,
+      rhs._wholeGuts, rhs._offsetRange,
+      expecting: .equal)
   }
 
   @inlinable @inline(__always) // forward to other operator
@@ -36,7 +39,10 @@ extension StringProtocol {
   @_specialize(where Self == Substring, R == Substring)
   @_effects(readonly)
   public static func < <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
-    return lhs._gutsSlice.compare(with: rhs._gutsSlice, expecting: .less)
+    return _stringCompare(
+      lhs._wholeGuts, lhs._offsetRange,
+      rhs._wholeGuts, rhs._offsetRange,
+      expecting: .less)
   }
 
   @inlinable @inline(__always) // forward to other operator
@@ -62,17 +68,7 @@ extension String : Equatable {
   @inlinable @inline(__always) // For the bitwise comparision
   @_effects(readonly)
   public static func == (lhs: String, rhs: String) -> Bool {
-    if lhs._guts.rawBits == rhs._guts.rawBits { return true }
-    if _fastPath(lhs._guts.isNFCFastUTF8 && rhs._guts.isNFCFastUTF8) {
-      Builtin.onFastPath() // aggressively inline / optimize
-      return lhs._guts.withFastUTF8 { nfcSelf in
-        return rhs._guts.withFastUTF8 { nfcOther in
-          return _binaryCompare(nfcSelf, nfcOther) == 0
-        }
-      }
-    }
-
-    return lhs._gutsSlice.compare(with: rhs._gutsSlice, expecting: .equal)
+    return _stringCompare(lhs._guts, nil, rhs._guts, nil, expecting: .equal)
   }
 }
 
@@ -80,17 +76,7 @@ extension String : Comparable {
   @inlinable @inline(__always) // For the bitwise comparision
   @_effects(readonly)
   public static func < (lhs: String, rhs: String) -> Bool {
-    if lhs._guts.rawBits == rhs._guts.rawBits { return false }
-    if _fastPath(lhs._guts.isNFCFastUTF8 && rhs._guts.isNFCFastUTF8) {
-      Builtin.onFastPath() // aggressively inline / optimize
-      return lhs._guts.withFastUTF8 { nfcSelf in
-        return rhs._guts.withFastUTF8 { nfcOther in
-          return _binaryCompare(nfcSelf, nfcOther) < 0
-        }
-      }
-    }
-
-    return lhs._gutsSlice.compare(with: rhs._gutsSlice, expecting: .less)
+    return _stringCompare(lhs._guts, nil, rhs._guts, nil, expecting: .less)
   }
 }
 
