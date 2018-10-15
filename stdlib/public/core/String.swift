@@ -1250,7 +1250,7 @@ extension String : LosslessStringConvertible {
 extension String {
   public // @testable
   var _nfcCodeUnits: [UInt8] {
-    return _slicedGuts.withNFCCodeUnitsIterator { Array($0) }
+    return _gutsSlice.withNFCCodeUnitsIterator_2 { Array($0) }
   }
   
   public // @testable
