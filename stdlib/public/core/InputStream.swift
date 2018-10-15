@@ -66,6 +66,6 @@ public func readLine(strippingNewline: Bool = true) -> String? {
   }
   let result = String._fromUTF8Repairing(
     UnsafeBufferPointer(start: linePtr, count: readBytes)).0
-  _stdlib_free(linePtr)
+  _swift_stdlib_free(linePtr)
   return result
 }
