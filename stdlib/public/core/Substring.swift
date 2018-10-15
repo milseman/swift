@@ -19,7 +19,7 @@ extension String {
   ///
   /// - Complexity: O(*n*), where *n* is the length of `substring`.
   @inlinable
-  public init(_ substring: Substring) {
+  public init(_ substring: __shared Substring) {
     self = substring.withUnsafeBytes {
       return String._uncheckedFromUTF8($0._asUInt8)
     }
