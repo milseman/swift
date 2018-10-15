@@ -81,9 +81,8 @@ extension Substring: _HasContiguousBytes {
   func withUnsafeBytes<R>(
     _ body: (UnsafeRawBufferPointer) throws -> R
   ) rethrows -> R {
-    let sliced = self._gutsSlice
-    if _fastPath(sliced.isFastUTF8) {
-      return try sliced.withFastUTF8 {
+    if _wholeGuts.isFastUTF8 {
+      return try _wholeGuts.withFastUTF8(range: self._offsetRange) {
         return try body(UnsafeRawBufferPointer($0))
       }
     }
