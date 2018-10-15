@@ -140,12 +140,14 @@ set(SWIFTLIB_ESSENTIAL
   Stride.swift
   StringHashable.swift  # ORDER DEPENDENCY: Must precede String.swift
   String.swift
+  StringBreadcrumbs.swift
   StringBridge.swift
   StringCharacterView.swift
   StringComparable.swift
   StringComparison.swift
   StringCreate.swift
   StringGuts.swift
+  StringGutsRangeReplaceable.swift
   StringGutsVisitor.swift
   StringObject.swift
   StringProtocol.swift

@@ -106,94 +106,6 @@ extension String.UTF8View {
   }
 }
 
-// TODO(UTF8 merge): when this refactoring lands on master and we can get a
-// toolchain, remove these and use the single-underscore ones. Will still need
-// to solve access control somehow, perhaps shims need to expose them...
-extension BidirectionalCollection {
-  /// Do not use this method directly; call advanced(by: n) instead.
-  @inlinable
-  @inline(__always)
-  internal func __advanceForward(_ i: Index, by n: Int) -> Index {
-    _precondition(n >= 0,
-      "Only BidirectionalCollections can be advanced by a negative amount")
-
-    var i = i
-    for _ in stride(from: 0, to: n, by: 1) {
-      formIndex(after: &i)
-    }
-    return i
-  }
-
-  /// Do not use this method directly; call advanced(by: n, limit) instead.
-  @inlinable
-  @inline(__always)
-  internal func __advanceForward(
-    _ i: Index, by n: Int, limitedBy limit: Index
-  ) -> Index? {
-    _precondition(n >= 0,
-      "Only BidirectionalCollections can be advanced by a negative amount")
-
-    var i = i
-    for _ in stride(from: 0, to: n, by: 1) {
-      if i == limit {
-        return nil
-      }
-      formIndex(after: &i)
-    }
-    return i
-  }
-
-  @inlinable // FIXME(sil-serialize-all)
-  public func __index(_ i: Index, offsetBy n: Int) -> Index {
-    if n >= 0 {
-      return __advanceForward(i, by: n)
-    }
-    var i = i
-    for _ in stride(from: 0, to: n, by: -1) {
-      formIndex(before: &i)
-    }
-    return i
-  }
-
-  @inlinable // FIXME(sil-serialize-all)
-  public func __index(
-    _ i: Index, offsetBy n: Int, limitedBy limit: Index
-  ) -> Index? {
-    if n >= 0 {
-      return __advanceForward(i, by: n, limitedBy: limit)
-    }
-    var i = i
-    for _ in stride(from: 0, to: n, by: -1) {
-      if i == limit {
-        return nil
-      }
-      formIndex(before: &i)
-    }
-    return i
-  }
-
-  @inlinable // FIXME(sil-serialize-all)
-  internal func __distance(from start: Index, to end: Index) -> Int {
-    var start = start
-    var count = 0
-
-    if start < end {
-      while start != end {
-        count += 1
-        formIndex(after: &start)
-      }
-    }
-    else if start > end {
-      while start != end {
-        count -= 1
-        formIndex(before: &start)
-      }
-    }
-
-    return count
-  }
-}
-
 extension String.UTF8View: BidirectionalCollection {
   public typealias Index = String.Index
 
@@ -574,7 +486,7 @@ extension String.UTF8View {
   @_effects(releasenone)
   internal func _foreignIndex(_ i: Index, offsetBy n: Int) -> Index {
     _sanityCheck(_guts.isForeign)
-    return __index(i, offsetBy: n)
+    return _index(i, offsetBy: n)
   }
 
   @usableFromInline @inline(never)
@@ -583,21 +495,21 @@ extension String.UTF8View {
     _ i: Index, offsetBy n: Int, limitedBy limit: Index
   ) -> Index? {
     _sanityCheck(_guts.isForeign)
-    return __index(i, offsetBy: n, limitedBy: limit)
+    return _index(i, offsetBy: n, limitedBy: limit)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignDistance(from i: Index, to j: Index) -> Int {
     _sanityCheck(_guts.isForeign)
-    return __distance(from: i, to: j)
+    return _distance(from: i, to: j)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignCount() -> Int {
     _sanityCheck(_guts.isForeign)
-    return __distance(from: startIndex, to: endIndex)
+    return _distance(from: startIndex, to: endIndex)
   }
 }
 

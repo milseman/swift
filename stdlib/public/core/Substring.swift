@@ -323,13 +323,12 @@ extension Substring : CustomDebugStringConvertible {
   public var debugDescription: String { return String(self).debugDescription }
 }
 
-//extension Substring : LosslessStringConvertible {
-//  @inlinable @inline(__always)
-//  public init(_ content: String) {
-//    self.init(
-//      Slice(base: content, bounds: content.beginIndex..<content.endIndex))
-//  }
-//}
+extension Substring : LosslessStringConvertible {
+  @inlinable
+  public init(_ content: String) {
+    self = content[...]
+  }
+}
 
 // TODO(UTF8 merge): Can we just unify all these?
 extension Substring {
