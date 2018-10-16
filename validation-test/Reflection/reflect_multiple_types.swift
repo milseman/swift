@@ -142,7 +142,7 @@ reflect(object: obj)
 // CHECK-64-NEXT:                     (builtin size=8 alignment=8 stride=8 num_extra_inhabitants=1))))))))))
 
 // CHECK-64-NEXT:   (field name=t03 offset=48
-// CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
+// CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=1
 // (unstable implementation details omitted)
 // CHECK-64:   (field name=t04 offset=56
 // CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
@@ -181,7 +181,7 @@ reflect(object: obj)
 // CHECK-64-NEXT:   (field name=t14 offset=128
 // CHECK-64-NEXT:     (reference kind=strong refcounting=unknown))
 // CHECK-64-NEXT:   (field name=t15 offset=136
-// CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=0
+// CHECK-64-NEXT:     (struct size=8 alignment=8 stride=8 num_extra_inhabitants=1
 
 // (unstable implementation details omitted)
 
