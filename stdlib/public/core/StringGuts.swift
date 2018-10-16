@@ -186,7 +186,6 @@ extension _StringGuts {
   #else
   @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
-    _object._invariantCheck()
     #if arch(i386) || arch(arm)
     _sanityCheck(MemoryLayout<String>.size == 12, """
     the runtime is depending on this, update Reflection.mm and \
