@@ -17,7 +17,7 @@ import SwiftShims
 @_fixed_layout
 @usableFromInline
 @objc
-internal class _AbstractStringStorage: _SwiftNativeNSString, _NSStringCore {
+internal class _AbstractStringStorage: __SwiftNativeNSString, _NSStringCore {
   // Abstract interface
   internal var asString: String { get { Builtin.unreachable() } }
   internal var count: Int { get { Builtin.unreachable() } }
