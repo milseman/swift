@@ -167,7 +167,7 @@ internal func _binaryCompare<UInt8>(
   _ lhs: UnsafeBufferPointer<UInt8>, _ rhs: UnsafeBufferPointer<UInt8>
 ) -> Int {
   var cmp = Int(truncatingIfNeeded:
-    _stdlib_memcmp(
+    _swift_stdlib_memcmp(
       lhs.baseAddress._unsafelyUnwrappedUnchecked,
       rhs.baseAddress._unsafelyUnwrappedUnchecked,
       Swift.min(lhs.count, rhs.count)))
@@ -220,7 +220,7 @@ extension _StringGutsSlice {
     return self.withNFCCodeUnitsIterator_2 {
       var selfIter = $0
       return other.withNFCCodeUnitsIterator_2 {
-        var otherIter = $0
+        let otherIter = $0
         return selfIter.compare(with: otherIter)
       }
     }
