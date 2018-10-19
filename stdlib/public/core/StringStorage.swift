@@ -377,6 +377,7 @@ extension _StringStorage {
   @nonobjc
   internal func clear() {
     self._countAndFlags = CountAndFlags(count: 0, isASCII: true)
+    self.terminator.pointee = 0
   }
 }
 
