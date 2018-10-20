@@ -308,9 +308,9 @@ extension Substring: StringProtocol {
   }
 }
 
-//extension Substring : CustomReflectable {
-//  public var customMirror: Mirror { return String(self).customMirror }
-//}
+extension Substring : CustomReflectable {
+ public var customMirror: Mirror { return String(self).customMirror }
+}
 
 //extension Substring : CustomPlaygroundQuickLookable {
 //  @available(*, deprecated, message: "Substring.customPlaygroundQuickLook will be removed in a future Swift version")

@@ -1217,13 +1217,6 @@ extension String {
   }
 }
 
-extension String : LosslessStringConvertible {
-  @inlinable // FIXME(sil-serialize-all)
-  public init(_ content: String) {
-    self = content
-  }
-}
-
 extension String {
   public // @testable
   var _nfcCodeUnits: [UInt8] {

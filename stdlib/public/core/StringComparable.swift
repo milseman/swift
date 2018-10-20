@@ -14,12 +14,12 @@ import SwiftShims
 
 extension StringProtocol {
   @inlinable
-  @_specialize(where Self == String, R == String)
-  @_specialize(where Self == String, R == Substring)
-  @_specialize(where Self == Substring, R == String)
-  @_specialize(where Self == Substring, R == Substring)
+  @_specialize(where Self == String, RHS == String)
+  @_specialize(where Self == String, RHS == Substring)
+  @_specialize(where Self == Substring, RHS == String)
+  @_specialize(where Self == Substring, RHS == Substring)
   @_effects(readonly)
-  public static func == <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
+  public static func == <RHS: StringProtocol>(lhs: Self, rhs: RHS) -> Bool {
     return _stringCompare(
       lhs._wholeGuts, lhs._offsetRange,
       rhs._wholeGuts, rhs._offsetRange,
@@ -28,17 +28,17 @@ extension StringProtocol {
 
   @inlinable @inline(__always) // forward to other operator
   @_effects(readonly)
-  public static func != <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
+  public static func != <RHS: StringProtocol>(lhs: Self, rhs: RHS) -> Bool {
     return !(lhs == rhs)
   }
 
   @inlinable
-  @_specialize(where Self == String, R == String)
-  @_specialize(where Self == String, R == Substring)
-  @_specialize(where Self == Substring, R == String)
-  @_specialize(where Self == Substring, R == Substring)
+  @_specialize(where Self == String, RHS == String)
+  @_specialize(where Self == String, RHS == Substring)
+  @_specialize(where Self == Substring, RHS == String)
+  @_specialize(where Self == Substring, RHS == Substring)
   @_effects(readonly)
-  public static func < <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
+  public static func < <RHS: StringProtocol>(lhs: Self, rhs: RHS) -> Bool {
     return _stringCompare(
       lhs._wholeGuts, lhs._offsetRange,
       rhs._wholeGuts, rhs._offsetRange,
@@ -47,19 +47,19 @@ extension StringProtocol {
 
   @inlinable @inline(__always) // forward to other operator
   @_effects(readonly)
-  public static func > <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
+  public static func > <RHS: StringProtocol>(lhs: Self, rhs: RHS) -> Bool {
     return rhs < lhs
   }
 
   @inlinable @inline(__always) // forward to other operator
   @_effects(readonly)
-  public static func <= <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
+  public static func <= <RHS: StringProtocol>(lhs: Self, rhs: RHS) -> Bool {
     return !(rhs < lhs)
   }
 
   @inlinable @inline(__always) // forward to other operator
   @_effects(readonly)
-  public static func >= <R: StringProtocol>(lhs: Self, rhs: R) -> Bool {
+  public static func >= <RHS: StringProtocol>(lhs: Self, rhs: RHS) -> Bool {
     return !(lhs < rhs)
   }
 }
