@@ -188,14 +188,30 @@ extension _StringGuts {
   private func _foreignOpaqueCharacterStride(startingAt i: Int) -> Int {
     _sanityCheck(isForeign)
 
-    // TODO(UTF8 perf): grapheme breaking fast-paths...
+    // TODO(UTF8 perf): Faster to do it from pointer directly
+    let count = _object.largeCount
+    let cocoa = _object.cocoaObject
+
+    let startIdx = String.Index(encodedOffset: i)
+    let (sc1, len) = foreignErrorCorrectedScalar(startingAt: startIdx)
+    if i &+ len == count {
+      // Last scalar is last grapheme
+      return len
+    }
+    let (sc2, _) = foreignErrorCorrectedScalar(
+      startingAt: startIdx.encoded(offsetBy: len))
+    if _fastPath(_hasGraphemeBreakBetween(sc1, sc2)) {
+      return len
+    }
+
+    if let utf16Ptr = _stdlib_binary_CFStringGetCharactersPtr(cocoa) {
+      let utf16 = UnsafeBufferPointer(start: utf16Ptr, count: count)
+      return _measureCharacterStrideICU(of: utf16, startingAt: i)
+    }
 
     // TODO(UTF8 perf): local stack first, before nuclear solution
     // TODO(UTF8 perf): even nuclear solution should copy to larger arrays in a
     //                  loop
-
-    let count = _object.largeCount
-    let cocoa = _object.cocoaObject
     var codeUnits = Array<UInt16>(repeating: 0, count: count)
 
     codeUnits.withUnsafeMutableBufferPointer {
@@ -235,14 +251,31 @@ extension _StringGuts {
   private func _foreignOpaqueCharacterStride(endingAt i: Int) -> Int {
     _sanityCheck(isForeign)
 
-    // TODO(UTF8 perf): grapheme breaking fast-paths...
+    // TODO(UTF8 perf): Faster to do it from pointer directly
+    let count = _object.largeCount
+    let cocoa = _object.cocoaObject
+
+    let endIdx = String.Index(encodedOffset: i)
+    let (sc2, len) = foreignErrorCorrectedScalar(endingAt: endIdx)
+    if i &- len == 0 {
+      // First scalar is first grapheme
+      return len
+    }
+    let (sc1, _) = foreignErrorCorrectedScalar(
+      endingAt: endIdx.encoded(offsetBy: -len))
+    if _fastPath(_hasGraphemeBreakBetween(sc1, sc2)) {
+      return len
+    }
+
+    if let utf16Ptr = _stdlib_binary_CFStringGetCharactersPtr(cocoa) {
+      let utf16 = UnsafeBufferPointer(start: utf16Ptr, count: count)
+      return _measureCharacterStrideICU(of: utf16, endingAt: i)
+    }
 
     // TODO(UTF8 perf): local stack first, before nuclear solution
     // TODO(UTF8 perf): even nuclear solution should copy to larger arrays in a
     //                  loop
 
-    let count = _object.largeCount
-    let cocoa = _object.cocoaObject
     var codeUnits = Array<UInt16>(repeating: 0, count: count)
 
     codeUnits.withUnsafeMutableBufferPointer {
