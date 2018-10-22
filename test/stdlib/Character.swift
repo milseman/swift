@@ -82,6 +82,10 @@ let testCharacters = [
   "\u{0061}\u{0300}\u{0300}", // UTF-8: 5 bytes
   "\u{0061}\u{0300}\u{0300}\u{0300}", // UTF-8: 7 bytes
   "\u{0061}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 9 bytes
+  "\u{0061}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 11 bytes
+  "\u{0061}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 13 bytes
+  "\u{0061}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 15 bytes
+  "\u{0061}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 17 bytes
 
   // U+00A9 COPYRIGHT SIGN
   // U+0300 COMBINING GRAVE ACCENT
@@ -90,6 +94,12 @@ let testCharacters = [
   "\u{00a9}\u{0300}\u{0300}", // UTF-8: 6 bytes
   "\u{00a9}\u{0300}\u{0300}\u{0300}", // UTF-8: 8 bytes
   "\u{00a9}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 10 bytes
+  "\u{00a9}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 12 bytes
+  "\u{00a9}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 14 bytes
+  "\u{00a9}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}\u{0300}", // UTF-8: 16 bytes
+
+  "👩🏽‍💼", // UTF-8: 15 bytes
+  "👩‍👩‍👦‍👦", // UTF-8: 25 bytes
 ]
 
 func randomGraphemeCluster(_ minSize: Int, _ maxSize: Int) -> String {
@@ -139,12 +149,10 @@ CharacterTests.test("sizeof") {
   // <rdar://problem/16754935> MemoryLayout<Character>.size is 9, should be 8
 
   let size1 = MemoryLayout<Character>.size
-  expectTrue(size1 == 8 || size1 == 9)
+  expectTrue(size1 == 16)
 
   let a: Character = "a"
   let size2 = MemoryLayout.size(ofValue: a)
-  expectTrue(size2 == 8 || size2 == 9)
-
   expectEqual(size1, size2)
 }
 
@@ -251,9 +259,7 @@ func checkUnicodeScalars(_ s: String) {
 }
 
 func checkRepresentation(_ s: String) {
-  let utf16 = Array(s.utf16)
-  let expectSmall
-    = utf16.count < 4 || utf16.count == 4 && utf16[3] < 0x8000
+  let expectSmall = s.utf8.count <= _SmallString.capacity
   let isSmall = isSmallRepresentation(s)
 
   let expectedSize = expectSmall ? "small" : "large"

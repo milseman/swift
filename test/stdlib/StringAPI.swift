@@ -276,9 +276,11 @@ let substringTests = tests.map {
   (test: ComparisonTest) -> ComparisonTest in
   switch (test.expectedUnicodeCollation, test.lhs, test.rhs) {
 
-  case (.gt, "\r\n", "\n"):
-    return test.replacingPredicate(.objCRuntime(
-      "blocked on rdar://problem/19036555"))
+  // TODO(UTF8 merge): Is this ok? I don't see why we want the wrong answer...
+  //
+  // case (.gt, "\r\n", "\n"):
+  //   return test.replacingPredicate(.objCRuntime(
+  //     "blocked on rdar://problem/19036555"))
 
   default:
     return test

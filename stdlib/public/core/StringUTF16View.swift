@@ -187,7 +187,11 @@ extension String.UTF16View: BidirectionalCollection {
     }
 
     // TODO(UTF8) known-ASCII fast path
-    return __index(i, offsetBy: n)
+    if n < String.UTF16View._shortHeuristic {
+      return _index(i, offsetBy: n)
+    }
+
+    return _slowIndex(i, offsetBy: n)
   }
 
   @inlinable @inline(__always)
@@ -199,17 +203,27 @@ extension String.UTF16View: BidirectionalCollection {
     }
 
     // TODO(UTF8) known-ASCII fast paths
-    return __index(i, offsetBy: n, limitedBy: limit)
+    return _index(i, offsetBy: n, limitedBy: limit)
   }
 
-  @inlinable @inline(__always)
+  @inlinable
   public func distance(from start: Index, to end: Index) -> Int {
     if _slowPath(_guts.isForeign) {
       return _foreignDistance(from: start, to: end)
     }
 
     // TODO(UTF8) known-ASCII fast paths
-    return __distance(from: start, to: end)
+    if (end.encodedOffset - start.encodedOffset)
+      < String.UTF16View._shortHeuristic
+    {
+      return _distance(from: start, to: end)
+    }
+    return _slowDistance(from: start, to: end)
+  }
+
+  @inlinable
+  public var count: Int {
+    @inline(__always) get { return distance(from: startIndex, to: endIndex) }
   }
 
   /// Accesses the code unit at the given position.
@@ -438,3 +452,77 @@ extension String.Index {
   }
 }
 
+// Breadcrumb-aware acceleration
+extension String.UTF16View {
+  // A simple heuristic we can always tweak later. Not needed for correctness
+  @inlinable
+  internal static var _shortHeuristic: Int {
+    @inline(__always) get { return 32 }
+  }
+
+  @usableFromInline @inline(never) // opaque slow-path
+  @_effects(releasenone)
+  func _slowIndex(_ idx: Index, offsetBy n: Int) -> Index {
+    if _slowPath(!_guts.hasBreadcrumbs || n <= 0) {
+      // TODO(UTF8 perf): Accelerate for negative offsets
+      return _index(idx, offsetBy: n)
+    }
+
+    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
+
+    let lowerOffset: Int
+    if _fastPath(idx == startIndex) {
+      lowerOffset = 0
+    } else {
+      lowerOffset = distance(from: startIndex, to: idx)
+    }
+
+    let totalOffset = lowerOffset + n
+
+    let (crumb, remaining) = breadcrumbsPtr.pointee.getBreadcrumb(
+      forOffset: totalOffset)
+    return _index(crumb, offsetBy: remaining)
+  }
+
+  @usableFromInline @inline(never) // opaque slow-path
+  @_effects(releasenone)
+  func _slowDistance(from start: Index, to end: Index) -> Int {
+    guard _guts.hasBreadcrumbs else {
+      return _distance(from: start, to: end)
+    }
+
+    let breadcrumbsPtr = _guts.getBreadcrumbsPtr()
+
+    let lower: Int
+    if _fastPath(start == startIndex) {
+      lower = 0
+    } else {
+      // TODO(UTF8 perf): Use breadcrumbs to accelerate
+      //
+      // let (offset: offset, bound) = breadcrumbs.lowerBound(start)
+      // lower = offset + _distance(from: bound, to: start)
+
+      lower = _distance(from: startIndex, to: start)
+    }
+
+    let upper: Int
+    if _fastPath(end == endIndex) {
+      upper = breadcrumbsPtr.pointee.utf16Length
+    } else {
+      // TODO(UTF8 perf): Use breadcrumbs to accelerate
+      //
+      // let (offset: offset, bound) = breadcrumbs.lowerBound(end)
+      // upper = offset + _distance(from: bound, to: end)
+
+      upper = _distance(from: startIndex, to: end)
+    }
+
+    return upper - lower
+  }
+}
+
+// TODO(UTF8 perf): Breadcrumb-accelerate:
+//   * distance
+//   * index(_:offsetBy), index(_:offsetBy:limitedBy:)
+//   * count
+//

@@ -95,6 +95,29 @@ extension String: RangeReplaceableCollection {
     self._guts.reserveCapacity(n)
   }
 
+  /// Appends the given string to this string.
+  ///
+  /// The following example builds a customized greeting by using the
+  /// `append(_:)` method:
+  ///
+  ///     var greeting = "Hello, "
+  ///     if let name = getUserName() {
+  ///         greeting.append(name)
+  ///     } else {
+  ///         greeting.append("friend")
+  ///     }
+  ///     print(greeting)
+  ///     // Prints "Hello, friend"
+  ///
+  /// - Parameter other: Another string.
+  public mutating func append(_ other: String) {
+    if self.isEmpty && !_guts.hasNativeStorage {
+      self = other
+      return
+    }
+    self._guts.append(other._guts)
+  }
+
   /// Appends the given character to the string.
   ///
   /// The following example adds an emoji globe to the end of a string.
@@ -121,13 +144,12 @@ extension String: RangeReplaceableCollection {
   /// Appends the characters in the given sequence to the string.
   ///
   /// - Parameter newElements: A sequence of characters.
+  @inlinable // @specializable
   public mutating func append<S : Sequence>(contentsOf newElements: S)
   where S.Iterator.Element == Character {
-    // TODO(UTF8 perf): This is a horribly slow means...
-    let scalars = String(
-      decoding: newElements.map { $0.unicodeScalars }.joined().map { $0.value },
-      as: UTF32.self)
-    self.append(scalars)
+    for c in newElements {
+      self.append(c._str)
+    }
   }
 
   /// Replaces the text within the specified bounds with the given characters.
@@ -250,12 +272,11 @@ extension String: RangeReplaceableCollection {
   ///   optimization when you're planning to grow the string again. The
   ///   default value is `false`.
   public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
-    guard keepCapacity || _guts.uniqueNativeCapacity != nil else {
-      self = String()
+    guard keepCapacity else {
+      self = ""
       return
     }
-
-    unimplemented_utf8()
+    _guts.clear()
   }
 }
 
