@@ -45,14 +45,23 @@ extension String {
 }
 
 public struct NormalizationTest {
-  public var sourceUTF16: [UInt16]
-  public var source: [UInt8]
-  public var NFC: [UInt8]
-  public var NFD: [UInt8]
-  public var NFKC: [UInt8]
-  public var NFKD: [UInt8]
+  public let loc: SourceLoc
+  public let sourceUTF16: [UInt16]
+  public let source: [UInt8]
+  public let NFC: [UInt8]
+  public let NFD: [UInt8]
+  public let NFKC: [UInt8]
+  public let NFKD: [UInt8]
 
-  init(source: String, NFC: String, NFD: String, NFKC: String, NFKD: String) {
+  init(
+    loc: SourceLoc,
+    source: String,
+    NFC: String,
+    NFD: String,
+    NFKC: String,
+    NFKD: String
+  ) {
+    self.loc = loc
     self.sourceUTF16 = source.parseUTF16CodeUnits()
     self.source = source.parseUTF8CodeUnits()
     self.NFC = NFC.parseUTF8CodeUnits()
@@ -65,12 +74,15 @@ public struct NormalizationTest {
 public let normalizationTests: [NormalizationTest] = {
   var tests = [NormalizationTest]()
 
-  let fileURL = URL(fileURLWithPath: CommandLine.arguments[2])
+  let file = CommandLine.arguments[2]
+  let fileURL = URL(fileURLWithPath: file)
 
   //Bridged String grapheme breaking is sloooooow.
   let fileContents = try! String(contentsOf: fileURL) + ""
 
+  var lineNumber: UInt = 0
   for line in fileContents.split(separator: "\n") {
+    lineNumber += 1
     guard line.hasPrefix("#") == false else {
       continue
     }
@@ -85,9 +97,13 @@ public let normalizationTests: [NormalizationTest] = {
     }
 
     let columns = content.split(separator: ";").filter { $0 != " " }.map(String.init)
-    let test = NormalizationTest(source: columns[0],
-                        NFC: columns[1], NFD: columns[2],
-                        NFKC: columns[3], NFKD: columns[4])
+    let test = NormalizationTest(
+      loc: SourceLoc(file, lineNumber),
+      source: columns[0],
+      NFC: columns[1],
+      NFD: columns[2],
+      NFKC: columns[3],
+      NFKD: columns[4])
 
     tests.append(test)
   }
