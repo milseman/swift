@@ -42,7 +42,12 @@ private func expectEqualIterators(
 
 var tests = TestSuite("StringNormalization")
 
-tests.test("StringNormalization/ConvertToNFC") {
+tests.test("StringNormalization/ConvertToNFC")
+.skip(.custom({
+      if #available(macOS 10.14, iOS 12, watchOS 5, tvOS 12, *) { return false }
+      return true
+    }, reason: "NormalizationTest.txt requires Unicode 11"))
+.code {
   for test in normalizationTests {
     expectEqualIterators(
       label: "NFC",
@@ -56,7 +61,12 @@ tests.test("StringNormalization/ConvertToNFC") {
   }
 }
 
-tests.test("StringNormalization/ConvertNFK*ToNFKC") {
+tests.test("StringNormalization/ConvertNFK*ToNFKC")
+.skip(.custom({
+      if #available(macOS 10.14, iOS 12, watchOS 5, tvOS 12, *) { return false }
+      return true
+    }, reason: "NormalizationTest.txt requires Unicode 11"))
+.code {
   for test in normalizationTests {
     expectEqualIterators(
       label: "NFKC",
