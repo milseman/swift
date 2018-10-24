@@ -13,13 +13,6 @@
 import SwiftShims
 
 @inlinable @_transparent
-internal func unimplemented_utf8(
-  _ message: String = "",
-  file: StaticString = #file, line: UInt = #line
-) -> Never {
-  fatalError("Unimplemented for UTF-8 support", file: file, line: line)
-}
-@inlinable @_transparent
 internal func unimplemented_utf8_32bit(
   _ message: String = "",
   file: StaticString = #file, line: UInt = #line
@@ -909,23 +902,6 @@ extension String {
   @inlinable // Forward inlinability to append
   public static func += (lhs: inout String, rhs: String) {
     lhs.append(rhs)
-  }
-}
-
-extension String {
-  /// Constructs a `String` in `resultStorage` containing the given UTF-8.
-  ///
-  /// Low-level construction interface used by introspection
-  /// implementation in the runtime library.
-  @inlinable @inline(__always)
-  @_silgen_name("swift_stringFromUTF8InRawMemory")
-  public // COMPILER_INTRINSIC
-  static func _fromUTF8InRawMemory(
-    _ resultStorage: UnsafeMutablePointer<String>,
-    start: UnsafeMutablePointer<UTF8.CodeUnit>,
-    utf8CodeUnitCount: Int
-    ) {
-    unimplemented_utf8()
   }
 }
 
