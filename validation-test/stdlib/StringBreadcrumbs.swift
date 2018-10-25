@@ -1,4 +1,4 @@
-// RUN: %target-run-simple-swift
+// RUN: %target-run-simple-swift -Xfrontend -disable-access-control
 // REQUIRES: executable_test
 
 // Some targetted tests for the breadcrumbs path. There is some overlap with
