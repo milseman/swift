@@ -522,11 +522,6 @@ extension String: _ExpressibleByBuiltinStringLiteral {
 }
 
 extension String: ExpressibleByStringLiteral {
-  // TODO(UTF8 merge): drop all of the below
-  public typealias StringLiteralType = String
-  public typealias UnicodeScalarLiteralType = String
-  public typealias ExtendedGraphemeClusterLiteralType = String
-
   /// Creates an instance initialized to the given string value.
   ///
   /// Do not call this initializer directly. It is used by the compiler when you
@@ -545,10 +540,9 @@ extension String: ExpressibleByStringLiteral {
 extension String: CustomDebugStringConvertible {
   /// A representation of the string that is suitable for debugging.
   public var debugDescription: String {
-    // TODO(UTF8): Drop some explicig `String` calls; needed for the SPM build
-    var result: String = "\""
+    var result = "\""
     for us in self.unicodeScalars {
-      result += String(us.escaped(asASCII: false))
+      result += us.escaped(asASCII: false)
     }
     result += "\""
     return result
@@ -598,7 +592,7 @@ extension Sequence where Element: StringProtocol {
     // for large Sequences.
     let understimatedCap =
       (1 &+ separator._guts.count) &* self.underestimatedCount
-    var result = String() // TODO(UTF8 merge): replace String() with ""
+    var result = ""
     result.reserveCapacity(understimatedCap)
     if separator.isEmpty {
       for x in self {
@@ -642,18 +636,6 @@ extension BidirectionalCollection where Element == String {
     return _joined(separator: separator)
   }
 }
-
-// TODO(UTF8): Can we change the test and remove this? This is only here for
-// test/RuntimeObjC.swift
-#if _runtime(_ObjC)
-@usableFromInline // FIXME(sil-serialize-all)
-@_silgen_name("swift_stdlib_NSStringLowercaseString")
-internal func _stdlib_NSStringLowercaseString(_ str: AnyObject) -> _CocoaString
-
-@usableFromInline // FIXME(sil-serialize-all)
-@_silgen_name("swift_stdlib_NSStringUppercaseString")
-internal func _stdlib_NSStringUppercaseString(_ str: AnyObject) -> _CocoaString
-#endif
 
 // Unicode algorithms
 extension String {
@@ -721,7 +703,7 @@ extension String {
   public func lowercased() -> String {
     if _fastPath(_guts.isFastASCII) {
       return _guts.withFastUTF8 { utf8 in
-        // TODO(UTF8 perf): code-unit appendInPlace on guts
+        // TODO(String performance): We can directly call appendInPlace
         var result = String()
         result.reserveCapacity(utf8.count)
         for u8 in utf8 {
@@ -731,7 +713,8 @@ extension String {
       }
     }
 
-    // TODO(UTF8 perf): This is a horribly slow means...
+    // TODO(String performance): Try out incremental case-conversion rather than
+    // make UTF-16 array beforehand
     let codeUnits = Array(self.utf16).withUnsafeBufferPointer {
       (uChars: UnsafeBufferPointer<UInt16>) -> Array<UInt16> in
       var result = Array<UInt16>(repeating: 0, count: uChars.count)
@@ -744,7 +727,7 @@ extension String {
             Int32(output.count),
             uChars.baseAddress._unsafelyUnwrappedUnchecked,
             Int32(uChars.count),
-            "", // TODO(UTF8): with new root, nil
+            "",
             &err))
       }
       if len > uChars.count {
@@ -757,7 +740,7 @@ extension String {
             Int32(output.count),
             uChars.baseAddress._unsafelyUnwrappedUnchecked,
             Int32(uChars.count),
-            "", // TODO(UTF8): with new root, nil
+            "",
             &err)
         }
       }
@@ -781,7 +764,7 @@ extension String {
   public func uppercased() -> String {
     if _fastPath(_guts.isFastASCII) {
       return _guts.withFastUTF8 { utf8 in
-        // TODO(UTF8 perf): code-unit appendInPlace on guts
+        // TODO(String performance): code-unit appendInPlace on guts
         var result = String()
         result.reserveCapacity(utf8.count)
         for u8 in utf8 {
@@ -791,7 +774,8 @@ extension String {
       }
     }
 
-    // TODO(UTF8 perf): This is a horribly slow means...
+    // TODO(String performance): Try out incremental case-conversion rather than
+    // make UTF-16 array beforehand
     let codeUnits = Array(self.utf16).withUnsafeBufferPointer {
       (uChars: UnsafeBufferPointer<UInt16>) -> Array<UInt16> in
       var result = Array<UInt16>(repeating: 0, count: uChars.count)
@@ -804,7 +788,7 @@ extension String {
             Int32(output.count),
             uChars.baseAddress._unsafelyUnwrappedUnchecked,
             Int32(uChars.count),
-            "", // TODO(UTF8): with new root, nil
+            "",
             &err))
       }
       if len > uChars.count {
@@ -817,7 +801,7 @@ extension String {
             Int32(output.count),
             uChars.baseAddress._unsafelyUnwrappedUnchecked,
             Int32(uChars.count),
-            "", // TODO(UTF8): with new root, nil
+            "",
             &err)
         }
       }
@@ -848,7 +832,7 @@ extension String {
   var _nfcCodeUnits: [UInt8] {
     return _gutsSlice.withNFCCodeUnitsIterator_2 { Array($0) }
   }
-  
+
   public // @testable
   func _withNFCCodeUnits(_ f: (UInt8) throws -> Void) rethrows {
     try _gutsSlice.withNFCCodeUnitsIterator_2 {
