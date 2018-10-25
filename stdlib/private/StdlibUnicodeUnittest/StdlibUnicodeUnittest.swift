@@ -71,14 +71,16 @@ public struct NormalizationTest {
   }
 }
 
+// Normalization tests are currently only avaible on Darwin, awaiting a sensible
+// file API...
+#if _runtime(_ObjC)
 public let normalizationTests: [NormalizationTest] = {
   var tests = [NormalizationTest]()
 
   let file = CommandLine.arguments[2]
   let fileURL = URL(fileURLWithPath: file)
 
-  //Bridged String grapheme breaking is sloooooow.
-  let fileContents = try! String(contentsOf: fileURL) + ""
+  let fileContents = try! String(contentsOf: fileURL) + "" // go faster
 
   var lineNumber: UInt = 0
   for line in fileContents.split(separator: "\n") {
@@ -110,6 +112,7 @@ public let normalizationTests: [NormalizationTest] = {
   
   return tests
 }()
+#endif
 
 public struct UTFTest {
   public struct Flags : OptionSet {
