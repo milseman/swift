@@ -33,6 +33,20 @@ position of the sequence of 14 bits allocated is part of Index's ABI, as well as
 the default value being `0`.
 
 */
+extension String {
+  /// A position of a character or code unit in a string.
+  @_fixed_layout // FIXME(sil-serialize-all)
+  public struct Index {
+    @usableFromInline
+    internal var _rawBits: UInt64
+
+    @inlinable @inline(__always)
+    init(_ raw: UInt64) {
+      self._rawBits = raw
+      self._invariantCheck()
+    }
+  }
+}
 
 extension String.Index {
   @inlinable

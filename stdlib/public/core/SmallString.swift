@@ -195,9 +195,10 @@ extension _SmallString: RandomAccessCollection, MutableCollection {
   @usableFromInline // testable
   internal subscript(_ bounds: Range<Index>) -> SubSequence {
     @inline(__always) get {
-      // TODO(String performance): In-register; just a couple shifts...
+      // TODO(String performance): In-vector-register operation
       return self.withUTF8 { utf8 in
-        _SmallString(utf8[bounds]._rebased)._unsafelyUnwrappedUnchecked
+        let rebased = UnsafeBufferPointer(rebasing: utf8[bounds])
+        return _SmallString(rebased)._unsafelyUnwrappedUnchecked
       }
     }
   }
@@ -232,21 +233,6 @@ extension _SmallString {
 
     _sanityCheck(len <= _SmallString.capacity)
     discriminator = .small(withCount: len, isASCII: self.computeIsASCII())
-  }
-
-  // Write to excess capacity. `f` should return the new count.
-  @inlinable @inline(__always)
-  internal mutating func withMutableExcessCapacity(
-    _ f: (UnsafeMutableBufferPointer<UInt8>) throws -> Int
-  ) rethrows {
-    let currentCount = self.count
-
-    try self.withMutableCapacity { fullBufPtr in
-      let rebased = UnsafeMutableBufferPointer(rebasing:
-        fullBufPtr[currentCount...])
-      let delta = try f(rebased)
-      return currentCount + delta
-    }
   }
 }
 

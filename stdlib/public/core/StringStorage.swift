@@ -91,9 +91,9 @@ private typealias Flags = _StringObject.Flags
 private typealias CountAndFlags = _StringObject.CountAndFlags
 
 //
-// TODO(UTF8 merge): Documentation about the runtime layout of these instances,
-// which is growing in complexity. For now, the second trailing allocation holds
-// an Optional<_StringBreadcrumbs>.
+// TODO(String docs): Documentation about the runtime layout of these instances,
+// which is a little complex. The second trailing allocation holds an
+// Optional<_StringBreadcrumbs>.
 //
 
 @_fixed_layout
