@@ -458,19 +458,19 @@ extension String {
     encodedAs targetEncoding: TargetEncoding.Type,
     _ body: (UnsafePointer<TargetEncoding.CodeUnit>) throws -> Result
   ) rethrows -> Result {
-    // TODO(UTF8 perf): Transcode from guts directly
-    let codeUnits = Array(self.utf8)
-    var arg = Array<TargetEncoding.CodeUnit>()
-    arg.reserveCapacity(1 &+ self._guts.count / 4)
-    let repaired = transcode(
-      codeUnits.makeIterator(),
-      from: UTF8.self,
-      to: targetEncoding,
-      stoppingOnError: false,
-      into: { arg.append($0) })
-    arg.append(TargetEncoding.CodeUnit(0))
-    _sanityCheck(!repaired)
-    return try body(arg)
+    return try self._withUTF8 { utf8 in
+      var arg = Array<TargetEncoding.CodeUnit>()
+      arg.reserveCapacity(1 &+ self._guts.count / 4)
+      let repaired = transcode(
+        utf8.makeIterator(),
+        from: UTF8.self,
+        to: targetEncoding,
+        stoppingOnError: false,
+        into: { arg.append($0) })
+      arg.append(TargetEncoding.CodeUnit(0))
+      _sanityCheck(!repaired)
+      return try body(arg)
+    }
   }
 }
 
