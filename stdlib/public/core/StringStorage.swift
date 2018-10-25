@@ -63,11 +63,12 @@ extension _AbstractStringStorage {
   @objc(_fastCStringContents)
   final internal func _fastCStringContents() -> UnsafePointer<CChar>? {
     if let native = self as? _StringStorage {
-      // FIXME(UTF8): Need to check for interior nul
       return native.start._asCChar
     }
 
-    // TODO(UTF8 perf): shared from literals are nul-terminated...
+    // TODO(String performance): Check for nul-terminated shared strings, which
+    // could be from bridged literals two/from ObjC (alternatively: reconsider
+    // our bridging model for literals).
 
     return nil
   }

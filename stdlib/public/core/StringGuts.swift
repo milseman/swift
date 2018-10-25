@@ -171,11 +171,13 @@ extension _StringGuts {
   }
 
   @inlinable @inline(__always)
-  internal func withUTF8IfAvailable<R>(
-    _ f: (UnsafeBufferPointer<UInt8>) throws -> R
-  ) rethrows -> R? {
-    if _slowPath(isForeign) { return nil }
-    return try withFastUTF8(f)
+  internal func withFastCChar<R>(
+    _ f: (UnsafeBufferPointer<CChar>) throws -> R
+  ) rethrows -> R {
+    return try self.withFastUTF8 { utf8 in
+      let ptr = utf8.baseAddress._unsafelyUnwrappedUnchecked._asCChar
+      return try f(UnsafeBufferPointer(start: ptr, count: utf8.count))
+    }
   }
 }
 
@@ -213,9 +215,8 @@ extension _StringGuts {
       return try _slowWithCString(body)
     }
 
-    return try self.withFastUTF8 {
-      let ptr = $0._asCChar.baseAddress._unsafelyUnwrappedUnchecked
-      return try body(ptr)
+    return try self.withFastCChar {
+      return try body($0.baseAddress._unsafelyUnwrappedUnchecked)
     }
   }
 

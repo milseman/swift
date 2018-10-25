@@ -125,8 +125,7 @@ extension _SmallString {
 
   @inlinable
   internal func computeIsASCII() -> Bool {
-    // TODO(UTF8 codegen): Either mask off discrim before, or don't set bit
-    // after
+    // TODO(String micro-performance): Evaluate other expressions, e.g. | first
     let asciiMask: UInt64 = 0x8080_8080_8080_8080
     let raw = zeroTerminatedRawCodeUnits
     return (raw.0 & asciiMask == 0) && (raw.1 & asciiMask == 0)
@@ -196,7 +195,7 @@ extension _SmallString: RandomAccessCollection, MutableCollection {
   @usableFromInline // testable
   internal subscript(_ bounds: Range<Index>) -> SubSequence {
     @inline(__always) get {
-      // TODO(UTF8 perf): In-register; just a couple shifts...
+      // TODO(String performance): In-register; just a couple shifts...
       return self.withUTF8 { utf8 in
         _SmallString(utf8[bounds]._rebased)._unsafelyUnwrappedUnchecked
       }

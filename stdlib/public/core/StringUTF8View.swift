@@ -173,7 +173,7 @@ extension String {
   ///     // Prints "6"
   public var utf8CString: ContiguousArray<CChar> {
     if _fastPath(_guts.isFastUTF8) {
-      var result = _guts.withFastUTF8 { return ContiguousArray($0._asCChar) }
+      var result = _guts.withFastCChar { ContiguousArray($0) }
       result.append(0)
       return result
     }
