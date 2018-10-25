@@ -188,7 +188,7 @@ extension _StringGuts {
   private func _foreignOpaqueCharacterStride(startingAt i: Int) -> Int {
     _sanityCheck(isForeign)
 
-    // TODO(UTF8 perf): Faster to do it from pointer directly
+    // TODO(String performance): Faster to do it from a pointer directly
     let count = _object.largeCount
     let cocoa = _object.cocoaObject
 
@@ -209,9 +209,8 @@ extension _StringGuts {
       return _measureCharacterStrideICU(of: utf16, startingAt: i)
     }
 
-    // TODO(UTF8 perf): local stack first, before nuclear solution
-    // TODO(UTF8 perf): even nuclear solution should copy to larger arrays in a
-    //                  loop
+    // TODO(String performance): Local small stack first, before making large
+    // array. Also, make a smaller initial array and grow over time.
     var codeUnits = Array<UInt16>(repeating: 0, count: count)
 
     codeUnits.withUnsafeMutableBufferPointer {
@@ -251,7 +250,7 @@ extension _StringGuts {
   private func _foreignOpaqueCharacterStride(endingAt i: Int) -> Int {
     _sanityCheck(isForeign)
 
-    // TODO(UTF8 perf): Faster to do it from pointer directly
+    // TODO(String performance): Faster to do it from a pointer directly
     let count = _object.largeCount
     let cocoa = _object.cocoaObject
 
@@ -272,10 +271,8 @@ extension _StringGuts {
       return _measureCharacterStrideICU(of: utf16, endingAt: i)
     }
 
-    // TODO(UTF8 perf): local stack first, before nuclear solution
-    // TODO(UTF8 perf): even nuclear solution should copy to larger arrays in a
-    //                  loop
-
+    // TODO(String performance): Local small stack first, before making large
+    // array. Also, make a smaller initial array and grow over time.
     var codeUnits = Array<UInt16>(repeating: 0, count: count)
 
     codeUnits.withUnsafeMutableBufferPointer {
