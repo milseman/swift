@@ -12,8 +12,6 @@
 
 import SwiftShims
 
-// TODO(UTF8): We can drop the nonobjc annotations soon
-
 @_fixed_layout
 @usableFromInline
 @objc
@@ -102,22 +100,17 @@ final internal class _StringStorage: _AbstractStringStorage {
 #if arch(i386) || arch(arm)
   // The total allocated storage capacity. Note that this includes the required
   // nul-terminator
-  @nonobjc
   @usableFromInline
   internal var _realCapacity: Int
 
-  @nonobjc
   @usableFromInline
   internal var _count: Int
 
-  @nonobjc
   @usableFromInline
   internal var _flags: _StringObject.Flags
 
-  @nonobjc
   internal var _reserved: UInt16
 
-  @nonobjc
   @inlinable
   override internal var count: Int {
     @inline(__always) get { return _count }
@@ -126,15 +119,12 @@ final internal class _StringStorage: _AbstractStringStorage {
 #else
   // The capacity of our allocation. Note that this includes the nul-terminator,
   // which is not available for overridding.
-  @nonobjc
   @usableFromInline
   internal var _realCapacityAndFlags: UInt64
 
-  @nonobjc
   @usableFromInline
   internal var _countAndFlags: _StringObject.CountAndFlags
 
-  @nonobjc
   @inlinable
   override internal var count: Int {
     @inline(__always) get { return _countAndFlags.count }
@@ -143,7 +133,6 @@ final internal class _StringStorage: _AbstractStringStorage {
 
   // The total allocated storage capacity. Note that this includes the required
   // nul-terminator
-  @nonobjc
   internal var _realCapacity: Int {
     @inline(__always) get {
       return Int(truncatingIfNeeded:
@@ -152,12 +141,10 @@ final internal class _StringStorage: _AbstractStringStorage {
   }
 #endif
 
-  @nonobjc
   override internal var asString: String {
     @inline(__always) get { return String(_StringGuts(self)) }
   }
 
-  @nonobjc
   private init(_doNotCallMe: ()) {
     _sanityCheckFailure("Use the create method")
   }
@@ -203,7 +190,6 @@ private func determineCodeUnitCapacity(_ desiredCapacity: Int) -> Int {
 extension _StringStorage {
   @inline(never) // rdar://problem/44542202
   @_effects(releasenone)
-  @nonobjc
   private static func create(
     realCodeUnitCapacity: Int, countAndFlags: CountAndFlags
   ) -> _StringStorage {
@@ -230,7 +216,6 @@ extension _StringStorage {
   }
 
   @_effects(releasenone)
-  @nonobjc
   private static func create(
     capacity: Int, countAndFlags: CountAndFlags
   ) -> _StringStorage {
@@ -243,7 +228,6 @@ extension _StringStorage {
   }
 
   @_effects(releasenone)
-  @nonobjc
   internal static func create(
     initializingFrom bufPtr: UnsafeBufferPointer<UInt8>,
     capacity: Int,
@@ -265,7 +249,6 @@ extension _StringStorage {
   }
 
   @_effects(releasenone)
-  @nonobjc
   internal static func create(
     initializingFrom bufPtr: UnsafeBufferPointer<UInt8>, isASCII: Bool
   ) -> _StringStorage {
@@ -276,43 +259,36 @@ extension _StringStorage {
 
 // Usage
 extension _StringStorage {
-  @nonobjc
   @inlinable
   internal var mutableStart: UnsafeMutablePointer<UInt8> {
     @inline(__always) get {
       return UnsafeMutablePointer(Builtin.projectTailElems(self, UInt8.self))
     }
   }
-  @nonobjc
   private var mutableEnd: UnsafeMutablePointer<UInt8> {
     @inline(__always) get { return mutableStart + count }
   }
 
-  @nonobjc
   @inlinable
   internal var start: UnsafePointer<UInt8> {
     @inline(__always) get { return UnsafePointer(mutableStart) }
   }
 
-  @nonobjc
   private final var end: UnsafePointer<UInt8> {
     @inline(__always) get { return UnsafePointer(mutableEnd) }
   }
 
   // Point to the nul-terminator
-  @nonobjc
   private final var terminator: UnsafeMutablePointer<UInt8> {
     @inline(__always) get { return mutableEnd }
   }
 
-  @nonobjc
   private var codeUnits: UnsafeBufferPointer<UInt8> {
     @inline(__always) get {
       return UnsafeBufferPointer(start: start, count: count)
     }
   }
 
-  @nonobjc
   private var isASCII: Bool {
 #if arch(i386) || arch(arm)
     return _flags.isASCII
@@ -321,7 +297,6 @@ extension _StringStorage {
 #endif
   }
 
-  @nonobjc
   // @opaque
   internal var _breadcrumbsAddress: UnsafeMutablePointer<_StringBreadcrumbs?> {
     let raw = Builtin.getTailAddr_Word(
@@ -334,7 +309,6 @@ extension _StringStorage {
 
   // The total capacity available for code units. Note that this excludes the
   // required nul-terminator
-  @nonobjc
   internal var capacity: Int {
     return _realCapacity &- 1
   }
@@ -343,7 +317,6 @@ extension _StringStorage {
   // required nul-terminator.
   //
   // NOTE: Callers who wish to mutate this storage should enfore nul-termination
-  @nonobjc
   private var unusedStorage: UnsafeMutableBufferPointer<UInt8> {
     @inline(__always) get {
       return UnsafeMutableBufferPointer(
@@ -353,15 +326,13 @@ extension _StringStorage {
 
   // The capacity available for appending. Note that this excludes the required
   // nul-terminator
-  @nonobjc
   internal var unusedCapacity: Int {
     get { return _realCapacity &- count &- 1 }
   }
 
   #if !INTERNAL_CHECKS_ENABLED
-  @nonobjc @inline(__always) internal func _invariantCheck() {}
+  @inline(__always) internal func _invariantCheck() {}
   #else
-  @nonobjc @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
     let rawSelf = UnsafeRawPointer(Builtin.bridgeToRawPointer(self))
     let rawStart = UnsafeRawPointer(start)
@@ -390,7 +361,6 @@ extension _StringStorage {
 extension _StringStorage {
   // Perform common post-RRC adjustments and invariant enforcement
   @_effects(releasenone)
-  @nonobjc
   private func _postRRCAdjust(newCount: Int, newIsASCII: Bool) {
 #if arch(i386) || arch(arm)
     self._count = newCount
@@ -405,7 +375,6 @@ extension _StringStorage {
 
   // Perform common post-append adjustments and invariant enforcement
   @_effects(releasenone)
-  @nonobjc
   private func _postAppendAdjust(
     appendedCount: Int, appendedIsASCII isASCII: Bool
   ) {
@@ -416,7 +385,6 @@ extension _StringStorage {
   }
 
   @_effects(releasenone)
-  @nonobjc
   internal func appendInPlace(
     _ other: UnsafeBufferPointer<UInt8>, isASCII: Bool
   ) {
@@ -428,7 +396,6 @@ extension _StringStorage {
   }
 
   @_effects(releasenone)
-  @nonobjc
   internal func appendInPlace<Iter: IteratorProtocol>(
     _ other: inout Iter, isASCII: Bool
   ) where Iter.Element == UInt8 {
@@ -441,7 +408,6 @@ extension _StringStorage {
     _postAppendAdjust(appendedCount: srcCount, appendedIsASCII: isASCII)
   }
 
-  @nonobjc
   internal func clear() {
     _postRRCAdjust(newCount: 0, newIsASCII: true)
   }
@@ -450,7 +416,6 @@ extension _StringStorage {
 // Removing
 extension _StringStorage {
   @_effects(releasenone)
-  @nonobjc
   internal func remove(from lower: Int, to upper: Int) {
     _sanityCheck(lower <= upper)
 
@@ -466,7 +431,6 @@ extension _StringStorage {
   // Reposition a tail of this storage from src to dst. Returns the length of
   // the tail.
   @_effects(releasenone)
-  @nonobjc
   internal func _slideTail(
     src: UnsafeMutablePointer<UInt8>,
     dst: UnsafeMutablePointer<UInt8>
@@ -478,7 +442,6 @@ extension _StringStorage {
   }
 
   @_effects(releasenone)
-  @nonobjc
   internal func replace(
     from lower: Int,
     to upper: Int,
@@ -507,7 +470,6 @@ extension _StringStorage {
 
 
   @_effects(releasenone)
-  @nonobjc
   internal func replace<C: Collection>(
     from lower: Int,
     to upper: Int,
@@ -540,38 +502,29 @@ extension _StringStorage {
 
 // For shared storage and bridging literals
 final internal class _SharedStringStorage: _AbstractStringStorage {
-  @nonobjc
   internal var _owner: AnyObject?
 
-  @nonobjc
   internal var _start: UnsafePointer<UInt8>
 
 #if arch(i386) || arch(arm)
-  @nonobjc
   internal var _count: Int
 
-  @nonobjc
   internal var _flags: _StringObject.Flags
 
   @inlinable
-  @nonobjc
   internal var _countAndFlags: _StringObject.CountAndFlags {
     @inline(__always) get {
       return CountAndFlags(count: _count, flags: _flags)
     }
   }
 #else
-  @nonobjc
   internal var _countAndFlags: _StringObject.CountAndFlags
 #endif
 
-  @nonobjc
   internal var _breadcrumbs: _StringBreadcrumbs? = nil
 
-  @nonobjc
   internal var start: UnsafePointer<UInt8> { return _start }
 
-  @nonobjc
   override internal var count: Int {
 #if arch(i386) || arch(arm)
     return _count
@@ -580,7 +533,6 @@ final internal class _SharedStringStorage: _AbstractStringStorage {
 #endif
   }
 
-  @nonobjc
   internal init(
     immortal ptr: UnsafePointer<UInt8>,
     countAndFlags: _StringObject.CountAndFlags
@@ -597,15 +549,13 @@ final internal class _SharedStringStorage: _AbstractStringStorage {
     self._invariantCheck()
   }
 
-  @nonobjc
   override internal var asString: String { return String(_StringGuts(self)) }
 }
 
 extension _SharedStringStorage {
   #if !INTERNAL_CHECKS_ENABLED
-  @nonobjc @inline(__always) internal func _invariantCheck() {}
+  @inline(__always) internal func _invariantCheck() {}
   #else
-  @nonobjc @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
     if let crumbs = _breadcrumbs {
       crumbs._invariantCheck()

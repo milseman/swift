@@ -128,13 +128,10 @@ extension _StringGuts {
 //
 extension _StringGuts {
   // Whether we can provide fast access to contiguous UTF-8 code units
-  @transparent
+  @_transparent
   @inlinable
-  internal var isFastUTF8: Bool {
-    @inline(__always) get {
-      return _fastPath(_object.providesFastUTF8)
-    }
-  }
+  internal var isFastUTF8: Bool { return _fastPath(_object.providesFastUTF8) }
+
   // A String which does not provide fast access to contiguous UTF-8 code units
   @inlinable
   internal var isForeign: Bool {

@@ -242,7 +242,7 @@ extension String {
   public var utf8: UTF8View {
     @inline(__always) get { return UTF8View(self._guts) }
     set {
-      // TODO(UTF8 testing): test suite doesn't currenlty exercise this code at
+      // TODO(String testing): test suite doesn't currenlty exercise this code at
       // all, test it.
       self = String(utf8._guts)
     }
@@ -291,8 +291,6 @@ extension String {
     self = String(utf8._guts)
   }
 }
-
-// TODO(UTF8): design specialized iterator, rather than default indexing one
 
 extension String.UTF8View {
   @inlinable
@@ -367,7 +365,6 @@ extension String.UTF8View : CustomReflectable {
   }
 }
 
-// TODO(UTF8): Can we just unify this view?
 //===--- Slicing Support --------------------------------------------------===//
 /// In Swift 3.2, in the absence of type context,
 ///

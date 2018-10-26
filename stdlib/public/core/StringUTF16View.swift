@@ -143,7 +143,7 @@ extension String.UTF16View: BidirectionalCollection {
 
   @inlinable @inline(__always)
   public func index(after i: Index) -> Index {
-    // TODO(UTF8) known-ASCII fast path
+    // TODO(String performance) known-ASCII fast path
 
     if _slowPath(_guts.isForeign) { return _foreignIndex(after: i) }
 
@@ -159,10 +159,9 @@ extension String.UTF16View: BidirectionalCollection {
   @inlinable @inline(__always)
   public func index(before i: Index) -> Index {
     precondition(!i.isZeroPosition)
+    // TODO(String performance) known-ASCII fast path
 
     if _slowPath(_guts.isForeign) { return _foreignIndex(before: i) }
-
-    // TODO(UTF8) known-ASCII fast path
 
     if i.transcodedOffset != 0 {
       _sanityCheck(i.transcodedOffset == 1)
@@ -182,11 +181,10 @@ extension String.UTF16View: BidirectionalCollection {
   }
 
   public func index(_ i: Index, offsetBy n: Int) -> Index {
+    // TODO(String performance) known-ASCII fast path
     if _slowPath(_guts.isForeign) {
       return _foreignIndex(i, offsetBy: n)
     }
-
-    // TODO(UTF8) known-ASCII fast path
 
     let lowerOffset = _getOffset(for: i)
     let result = _getIndex(for: lowerOffset + n)
@@ -196,11 +194,10 @@ extension String.UTF16View: BidirectionalCollection {
   public func index(
     _ i: Index, offsetBy n: Int, limitedBy limit: Index
   ) -> Index? {
+    // TODO(String performance) known-ASCII fast path
     if _slowPath(_guts.isForeign) {
       return _foreignIndex(i, offsetBy: n, limitedBy: limit)
     }
-
-    // TODO(UTF8) known-ASCII fast path
 
     let iOffset = _getOffset(for: i)
     let limitOffset = _getOffset(for: limit)
@@ -219,11 +216,10 @@ extension String.UTF16View: BidirectionalCollection {
   }
 
   public func distance(from start: Index, to end: Index) -> Int {
+    // TODO(String performance) known-ASCII fast path
     if _slowPath(_guts.isForeign) {
       return _foreignDistance(from: start, to: end)
     }
-
-    // TODO(UTF8) known-ASCII fast paths
 
     let lower = _getOffset(for: start)
     let upper = _getOffset(for: end)
@@ -253,8 +249,8 @@ extension String.UTF16View: BidirectionalCollection {
   @inlinable
   public subscript(i: Index) -> UTF16.CodeUnit {
     @inline(__always) get {
+      // TODO(String performance) known-ASCII fast path
       String(_guts)._boundsCheck(i)
-      // TODO(UTF8): known-ASCII fast path
 
       if _fastPath(_guts.isFastUTF8) {
         let scalar = _guts.fastUTF8Scalar(
