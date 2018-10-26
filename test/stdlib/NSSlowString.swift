@@ -43,19 +43,19 @@ func check(
 	checkSingleForm(s.dropLast().dropFirst(), expectedCount: count-2, expectedCodeUnitCount: nil)
 }
 
-// tests.test("Iterator") {
-//   let native = "abc👍👩‍👩‍👧‍👦de\u{0301}f"
-//   let opaque = NSSlowString(string: "abc👍👩‍👩‍👧‍👦de\u{0301}f") as String
-//   expectEqualSequence(opaque, native)
-//   expectEqualSequence(opaque.unicodeScalars, native.unicodeScalars)
-//   expectEqualSequence(opaque.utf16, native.utf16)
-//   expectEqualSequence(opaque.utf8, native.utf8)
+tests.test("Iterator") {
+  let native = "abc👍👩‍👩‍👧‍👦de\u{0301}f"
+  let opaque = NSSlowString(string: "abc👍👩‍👩‍👧‍👦de\u{0301}f") as String
+  expectEqualSequence(opaque, native)
+  expectEqualSequence(opaque.unicodeScalars, native.unicodeScalars)
+  expectEqualSequence(opaque.utf16, native.utf16)
+  expectEqualSequence(opaque.utf8, native.utf8)
 
-//   expectEqualSequence(opaque.reversed(), native.reversed())
-//   expectEqualSequence(opaque.unicodeScalars.reversed(), native.unicodeScalars.reversed())
-//   expectEqualSequence(opaque.utf16.reversed(), native.utf16.reversed())
-//   expectEqualSequence(opaque.utf8.reversed(), native.utf8.reversed())
-// }
+  expectEqualSequence(opaque.reversed(), native.reversed())
+  expectEqualSequence(opaque.unicodeScalars.reversed(), native.unicodeScalars.reversed())
+  expectEqualSequence(opaque.utf16.reversed(), native.utf16.reversed())
+  expectEqualSequence(opaque.utf8.reversed(), native.utf8.reversed())
+}
 
 tests.test("Unicode 9 grapheme breaking") {
 
@@ -69,26 +69,26 @@ tests.test("Unicode 9 grapheme breaking") {
 	check(strJustRight as String, expectedCount: 5, expectedCodeUnitCount: 16)
 }
 
-// tests.test("Zalgo") {
-// 	// Check that we handle absurdly long graphemes
-// 	var zalgo = "a👩‍👩‍👧‍👦c"
-// 	for combo in 0x300...0x36f {
-// 		zalgo.append(String(UnicodeScalar(combo)!))
-// 	}
-// 	check(
-// 		NSSlowString(string: zalgo) as String, 
-// 		expectedCount: 3, 
-// 		expectedCodeUnitCount: 125
-// 	)
+tests.test("Zalgo") {
+	// Check that we handle absurdly long graphemes
+	var zalgo = "a👩‍👩‍👧‍👦c"
+	for combo in 0x300...0x36f {
+		zalgo.append(String(UnicodeScalar(combo)!))
+	}
+	check(
+		NSSlowString(string: zalgo) as String, 
+		expectedCount: 3, 
+		expectedCodeUnitCount: 125
+	)
 
-// 	// Check for interspersed zalgo and emoji
-// 	var megaZalgo = zalgo + zalgo + zalgo + zalgo
-// 	check(
-// 		NSSlowString(string: megaZalgo) as String,
-// 		expectedCount: megaZalgo.count,
-// 		expectedCodeUnitCount: megaZalgo.utf16.count
-// 	)
-// }
+	// Check for interspersed zalgo and emoji
+	var megaZalgo = zalgo + zalgo + zalgo + zalgo
+	check(
+		NSSlowString(string: megaZalgo) as String,
+		expectedCount: megaZalgo.count,
+		expectedCodeUnitCount: megaZalgo.utf16.count
+	)
+}
 
 runAllTests()
 
