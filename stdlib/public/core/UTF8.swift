@@ -20,10 +20,12 @@ extension Unicode.UTF8 : _UnicodeEncoding {
   public typealias CodeUnit = UInt8
   public typealias EncodedScalar = _ValidUTF8Buffer
 
+  @inlinable
   public static var encodedReplacementCharacter : EncodedScalar {
     return EncodedScalar.encodedReplacementCharacter
   }
 
+  @inlinable
   public static func _isScalar(_ x: CodeUnit) -> Bool {
     return x & 0x80 == 0
   }
@@ -54,7 +56,7 @@ extension Unicode.UTF8 : _UnicodeEncoding {
       return Unicode.Scalar(_unchecked: value)
     }
   }
-  
+
   @inlinable
   public static func encode(
     _ source: Unicode.Scalar
@@ -83,12 +85,13 @@ extension Unicode.UTF8 : _UnicodeEncoding {
       _biasedBits: (o | c ) &+ 0b0__1000_0001__1000_0001__1000_0001__1111_0001)
   }
 
+  @inlinable
   public static func transcode<FromEncoding : _UnicodeEncoding>(
     _ content: FromEncoding.EncodedScalar, from _: FromEncoding.Type
   ) -> EncodedScalar? {
     if _fastPath(FromEncoding.self == UTF16.self) {
       let c = _identityCast(content, to: UTF16.EncodedScalar.self)
-      var u0 = UInt16(truncatingIfNeeded: c._storage) 
+      var u0 = UInt16(truncatingIfNeeded: c._storage)
       if _fastPath(u0 < 0x80) {
         return EncodedScalar(_containing: UInt8(truncatingIfNeeded: u0))
       }
@@ -113,15 +116,23 @@ extension Unicode.UTF8 : _UnicodeEncoding {
     return encode(FromEncoding.decode(content))
   }
 
+  @_fixed_layout
   public struct ForwardParser {
     public typealias _Buffer = _UIntBuffer<UInt32, UInt8>
+
+    @inlinable
     public init() { _buffer = _Buffer() }
+
     public var _buffer: _Buffer
   }
-  
+
+  @_fixed_layout
   public struct ReverseParser {
     public typealias _Buffer = _UIntBuffer<UInt32, UInt8>
+
+    @inlinable
     public init() { _buffer = _Buffer() }
+
     public var _buffer: _Buffer
   }
 }
@@ -188,7 +199,7 @@ extension UTF8.ReverseParser : Unicode.Parser, _UTFParser {
     }
     return 1
   }
-  
+
   public func _bufferedScalar(bitCount: UInt8) -> Encoding.EncodedScalar {
     let x = UInt32(truncatingIfNeeded: _buffer._storage.byteSwapped)
     let shift = 32 &- bitCount
@@ -201,7 +212,7 @@ extension Unicode.UTF8.ForwardParser : Unicode.Parser, _UTFParser {
 
   public func _parseMultipleCodeUnits() -> (isValid: Bool, bitCount: UInt8) {
     _sanityCheck(_buffer._storage & 0x80 != 0) // this case handled elsewhere
-    
+
     if _buffer._storage & 0b0__1100_0000__1110_0000
                        == 0b0__1000_0000__1100_0000 {
       // 2-byte sequence. At least one of the top 4 bits of the decoded result
@@ -254,7 +265,7 @@ extension Unicode.UTF8.ForwardParser : Unicode.Parser, _UTFParser {
     }
     return 1
   }
-  
+
   public func _bufferedScalar(bitCount: UInt8) -> Encoding.EncodedScalar {
     let x = UInt32(_buffer._storage) &+ 0x01010101
     return _ValidUTF8Buffer(_biasedBits: x & ._lowBits(bitCount))

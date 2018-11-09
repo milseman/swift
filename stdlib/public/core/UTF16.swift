@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 extension Unicode {
+  @_frozen
   public enum UTF16 {
   case _swift3Buffer(Unicode.UTF16.ForwardParser)
   }
@@ -19,8 +20,9 @@ extension Unicode.UTF16 : Unicode.Encoding {
   public typealias CodeUnit = UInt16
   public typealias EncodedScalar = _UIntBuffer<UInt32, UInt16>
 
+  @inlinable
   internal static var _replacementCodeUnit: CodeUnit { return 0xfffd }
-  
+
   public static var encodedReplacementCharacter : EncodedScalar {
     return EncodedScalar(_storage: 0xFFFD, _bitCount: 16)
   }
@@ -44,7 +46,6 @@ extension Unicode.UTF16 : Unicode.Encoding {
         (UInt32(lead & 0x03ff) &<< 10 | UInt32(trail & 0x03ff)))
   }
 
-  @inlinable
   public static func decode(_ source: EncodedScalar) -> Unicode.Scalar {
     let bits = source._storage
     if _fastPath(source._bitCount == 16) {
@@ -57,7 +58,6 @@ extension Unicode.UTF16 : Unicode.Encoding {
     return Unicode.Scalar(_unchecked: value)
   }
 
-  @inlinable
   public static func encode(
     _ source: Unicode.Scalar
   ) -> EncodedScalar? {
@@ -89,7 +89,7 @@ extension Unicode.UTF16 : Unicode.Encoding {
       s &>>= 8
       r |= s & 0b0__11_1111
       b = b &- 1
-      
+
       if _fastPath(b == 0) {
         return EncodedScalar(_storage: r & 0b0__111_1111_1111, _bitCount: 16)
       }
@@ -97,11 +97,11 @@ extension Unicode.UTF16 : Unicode.Encoding {
       s &>>= 8
       r |= s & 0b0__11_1111
       b = b &- 1
-      
+
       if _fastPath(b == 0) {
         return EncodedScalar(_storage: r & 0xFFFF, _bitCount: 16)
       }
-      
+
       r &<<= 6
       s &>>= 8
       r |= s & 0b0__11_1111
@@ -113,16 +113,24 @@ extension Unicode.UTF16 : Unicode.Encoding {
     }
     return encode(FromEncoding.decode(content))
   }
-  
+
+  @_fixed_layout
   public struct ForwardParser {
     public typealias _Buffer = _UIntBuffer<UInt32, UInt16>
+
+    @inlinable
     public init() { _buffer = _Buffer() }
+
     public var _buffer: _Buffer
   }
-  
+
+  @_fixed_layout
   public struct ReverseParser {
     public typealias _Buffer = _UIntBuffer<UInt32, UInt16>
+
+    @inlinable
     public init() { _buffer = _Buffer() }
+
     public var _buffer: _Buffer
   }
 }
@@ -138,7 +146,7 @@ extension UTF16.ReverseParser : Unicode.Parser, _UTFParser {
     }
     return (false, 1*16)
   }
-  
+
   public func _bufferedScalar(bitCount: UInt8) -> Encoding.EncodedScalar {
     return Encoding.EncodedScalar(
       _storage:
@@ -150,7 +158,7 @@ extension UTF16.ReverseParser : Unicode.Parser, _UTFParser {
 
 extension Unicode.UTF16.ForwardParser : Unicode.Parser, _UTFParser {
   public typealias Encoding = Unicode.UTF16
-  
+
   public func _parseMultipleCodeUnits() -> (isValid: Bool, bitCount: UInt8) {
     _sanityCheck(  // this case handled elsewhere
       !Encoding._isScalar(UInt16(truncatingIfNeeded: _buffer._storage)))
@@ -159,7 +167,7 @@ extension Unicode.UTF16.ForwardParser : Unicode.Parser, _UTFParser {
     }
     return (false, 1*16)
   }
-  
+
   public func _bufferedScalar(bitCount: UInt8) -> Encoding.EncodedScalar {
     var r = _buffer
     r._bitCount = bitCount

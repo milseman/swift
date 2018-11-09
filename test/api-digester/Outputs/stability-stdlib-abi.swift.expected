@@ -136,19 +136,12 @@ Var _ValidUTF8Buffer.Index._biasedBits has declared type change from τ_0_0 to U
 Var _ValidUTF8Buffer.Iterator._biasedBits has declared type change from τ_0_0 to UInt32
 Var _ValidUTF8Buffer._biasedBits has declared type change from τ_0_0 to UInt32
 Var _ValidUTF8Buffer.encodedReplacementCharacter has declared type change from _ValidUTF8Buffer<τ_0_0> to _ValidUTF8Buffer
-Enum Unicode.ASCII is now without @_frozen
-Enum Unicode.UTF16 is now without @_frozen
-Enum Unicode.UTF32 is now without @_frozen
-Enum Unicode.UTF8 is now without @_frozen
 Struct Unicode.ASCII.Parser is now without @_fixed_layout
 Struct Unicode.UTF16.ForwardParser is now without @_fixed_layout
 Struct Unicode.UTF16.ReverseParser is now without @_fixed_layout
 Struct Unicode.UTF32.Parser is now without @_fixed_layout
 Struct Unicode.UTF8.ForwardParser is now without @_fixed_layout
 Struct Unicode.UTF8.ReverseParser is now without @_fixed_layout
-EnumElement Unicode.UTF16._swift3Buffer is no longer a stored property
-EnumElement Unicode.UTF32._swift3Codec is no longer a stored property
-EnumElement Unicode.UTF8._swift3Buffer is no longer a stored property
 Var Unicode.UTF16.ForwardParser._buffer is no longer a stored property
 Var Unicode.UTF16.ReverseParser._buffer is no longer a stored property
 Var Unicode.UTF8.ForwardParser._buffer is no longer a stored property

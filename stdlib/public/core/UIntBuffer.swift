@@ -21,6 +21,7 @@ public struct _UIntBuffer<
 > {
   @usableFromInline
   internal var _storage: Storage
+
   @usableFromInline
   internal var _bitCount: UInt8
 
@@ -30,6 +31,7 @@ public struct _UIntBuffer<
     self._bitCount = _bitCount
   }
   
+  @inlinable
   internal init(containing e: Element) {
     _storage = Storage(truncatingIfNeeded: e)
     _bitCount = UInt8(truncatingIfNeeded: Element.bitWidth)
@@ -41,8 +43,14 @@ extension _UIntBuffer : Sequence {
   
   @_fixed_layout
   public struct Iterator : IteratorProtocol, Sequence {
+    @usableFromInline
+    internal
+    var _impl: _UIntBuffer
+
+    @inlinable
     internal init(_ x: _UIntBuffer) { _impl = x }
     
+    @inlinable
     public mutating func next() -> Element? {
       if _impl._bitCount == 0 { return nil }
       defer {
@@ -51,10 +59,9 @@ extension _UIntBuffer : Sequence {
       }
       return Element(truncatingIfNeeded: _impl._storage)
     }
-    internal
-    var _impl: _UIntBuffer
   }
   
+  @inlinable
   public func makeIterator() -> Iterator {
     return Iterator(self)
   }
@@ -63,36 +70,46 @@ extension _UIntBuffer : Sequence {
 extension _UIntBuffer : Collection {  
   @_fixed_layout
   public struct Index : Comparable {
+    @usableFromInline
     internal var bitOffset: UInt8
     
+    @inlinable
     internal init(bitOffset: UInt8) { self.bitOffset = bitOffset }
     
+    @inlinable
     public static func == (lhs: Index, rhs: Index) -> Bool {
       return lhs.bitOffset == rhs.bitOffset
     }
+    @inlinable
     public static func < (lhs: Index, rhs: Index) -> Bool {
       return lhs.bitOffset < rhs.bitOffset
     }
   }
 
+  @inlinable
   public var startIndex : Index { return Index(bitOffset: 0) }
   
+  @inlinable
   public var endIndex : Index { return Index(bitOffset: _bitCount) }
   
+  @inlinable
   public func index(after i: Index) -> Index {
     return Index(bitOffset: i.bitOffset &+ _elementWidth)
   }
 
+  @inlinable
   internal var _elementWidth : UInt8 {
     return UInt8(truncatingIfNeeded: Element.bitWidth)
   }
   
+  @inlinable
   public subscript(i: Index) -> Element {
     return Element(truncatingIfNeeded: _storage &>> i.bitOffset)
   }
 }
 
 extension _UIntBuffer : BidirectionalCollection {
+  @inlinable
   public func index(before i: Index) -> Index {
     return Index(bitOffset: i.bitOffset &- _elementWidth)
   }
@@ -101,44 +118,53 @@ extension _UIntBuffer : BidirectionalCollection {
 extension _UIntBuffer : RandomAccessCollection {
   public typealias Indices = DefaultIndices<_UIntBuffer>
   
+  @inlinable
   public func index(_ i: Index, offsetBy n: Int) -> Index {
     let x = Int(i.bitOffset) &+ n &* Element.bitWidth
     return Index(bitOffset: UInt8(truncatingIfNeeded: x))
   }
 
+  @inlinable
   public func distance(from i: Index, to j: Index) -> Int {
     return (Int(j.bitOffset) &- Int(i.bitOffset)) / Element.bitWidth
   }
 }
 
 extension FixedWidthInteger {
+  @inlinable
   internal func _fullShiftLeft<N: FixedWidthInteger>(_ n: N) -> Self {
     return (self &<< ((n &+ 1) &>> 1)) &<< (n &>> 1)
   }
+  @inlinable
   internal func _fullShiftRight<N: FixedWidthInteger>(_ n: N) -> Self {
     return (self &>> ((n &+ 1) &>> 1)) &>> (n &>> 1)
   }
+  @inlinable
   internal static func _lowBits<N: FixedWidthInteger>(_ n: N) -> Self {
     return ~((~0 as Self)._fullShiftLeft(n))
   }
 }
 
 extension Range {
+  @inlinable
   internal func _contains_(_ other: Range) -> Bool {
     return other.clamped(to: self) == other
   }
 }
 
 extension _UIntBuffer : RangeReplaceableCollection {
+  @inlinable
   public init() {
     _storage = 0
     _bitCount = 0
   }
 
+  @inlinable
   public var capacity: Int {
     return Storage.bitWidth / Element.bitWidth
   }
 
+  @inlinable
   public mutating func append(_ newElement: Element) {
     _debugPrecondition(count + 1 <= capacity)
     _storage &= ~(Storage(Element.max) &<< _bitCount)
@@ -146,6 +172,7 @@ extension _UIntBuffer : RangeReplaceableCollection {
     _bitCount = _bitCount &+ _elementWidth
   }
 
+  @inlinable
   @discardableResult
   public mutating func removeFirst() -> Element {
     _debugPrecondition(!isEmpty)
@@ -155,6 +182,7 @@ extension _UIntBuffer : RangeReplaceableCollection {
     return result
   }
   
+  @inlinable
   public mutating func replaceSubrange<C: Collection>(
     _ target: Range<Index>, with replacement: C
   ) where C.Element == Element {

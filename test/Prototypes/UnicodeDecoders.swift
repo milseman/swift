@@ -260,32 +260,6 @@ func checkDecodeUTF<Codec : UnicodeCodec>(
   }
   check(expected, "legacy, repairing: false")
 
-  do {
-    var iterator = utfStr.makeIterator()
-    let errorCount = Codec.ForwardParser._decode(
-      &iterator, repairingIllFormedSequences: false, into: output1)
-    expectEqual(expectedRepairedTail.isEmpty ? 0 : 1, errorCount)
-  }
-  check(expected, "forward, repairing: false")
-
-  do {
-    var iterator = utfStr.reversed().makeIterator()
-    let errorCount = Codec.ReverseParser._decode(
-      &iterator, repairingIllFormedSequences: false, into: output1)
-    if expectedRepairedTail.isEmpty {
-      expectEqual(0, errorCount)
-      check(expected.reversed(), "reverse, repairing: false")
-    }
-    else {
-      expectEqual(1, errorCount)
-      let x = (expected + expectedRepairedTail).reversed()
-      expectTrue(
-        x.starts(with: decoded),
-        "reverse, repairing: false\n\t\(Array(x)) does not start with \(decoded)")
-      decoded.removeAll(keepingCapacity: true)
-    }
-  }
-
   //===--- Tests with repairs ------------------------------------------===//
   expected += expectedRepairedTail
   do {
@@ -294,23 +268,6 @@ func checkDecodeUTF<Codec : UnicodeCodec>(
       stoppingOnError: false, into: output)
   }
   check(expected, "legacy, repairing: true")
-  do {
-    var iterator = utfStr.makeIterator()
-    let errorCount = Codec.ForwardParser._decode(
-      &iterator, repairingIllFormedSequences: true, into: output1)
-    
-    if expectedRepairedTail.isEmpty { expectEqual(0, errorCount) }
-    else { expectNotEqual(0, errorCount) }
-  }
-  check(expected, "forward, repairing: true")
-  do {
-    var iterator = utfStr.reversed().makeIterator()
-    let errorCount = Codec.ReverseParser._decode(
-      &iterator, repairingIllFormedSequences: true, into: output1)
-    if expectedRepairedTail.isEmpty { expectEqual(0, errorCount) }
-    else { expectNotEqual(0, errorCount) }
-  }
-  check(expected.reversed(), "reverse, repairing: true")
   
   //===--- String/Substring Construction and C-String interop -------------===//
   do {

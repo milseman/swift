@@ -23,12 +23,10 @@ public struct _ValidUTF8Buffer {
   @usableFromInline
   internal var _biasedBits: UInt32
 
-  @inlinable
   internal init(_biasedBits: UInt32) {
     self._biasedBits = _biasedBits
   }
   
-  @inlinable
   internal init(_containing e: Element) {
     _sanityCheck(
       e != 192 && e != 193 && !(245...255).contains(e), "invalid UTF8 byte")
@@ -60,7 +58,6 @@ extension _ValidUTF8Buffer : Collection {
   
   @_fixed_layout
   public struct Index : Comparable {
-    @usableFromInline
     internal var _biasedBits: UInt32
     
     internal init(_biasedBits: UInt32) { self._biasedBits = _biasedBits }
@@ -141,6 +138,7 @@ extension _ValidUTF8Buffer : RangeReplaceableCollection {
     return 32 / Element.bitWidth
   }
 
+  @inlinable
   public mutating func append(_ e: Element) {
     _debugPrecondition(count + 1 <= capacity)
     _sanityCheck(

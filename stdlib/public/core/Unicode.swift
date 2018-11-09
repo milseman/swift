@@ -184,6 +184,7 @@ extension Unicode.UTF8 : UnicodeCodec {
   /// - Returns: A `UnicodeDecodingResult` instance, representing the next
   ///   Unicode scalar, an indication of an error, or an indication that the
   ///   UTF sequence has been fully decoded.
+  @inlinable
   public mutating func decode<I : IteratorProtocol>(
     _ input: inout I
   ) -> UnicodeDecodingResult where I.Element == CodeUnit {
@@ -352,6 +353,7 @@ extension Unicode.UTF16 : UnicodeCodec {
   /// - Returns: A `UnicodeDecodingResult` instance, representing the next
   ///   Unicode scalar, an indication of an error, or an indication that the
   ///   UTF sequence has been fully decoded.
+  @inlinable
   public mutating func decode<I : IteratorProtocol>(
     _ input: inout I
   ) -> UnicodeDecodingResult where I.Element == CodeUnit {
@@ -460,13 +462,8 @@ extension Unicode.UTF32 : UnicodeCodec {
   /// - Returns: A `UnicodeDecodingResult` instance, representing the next
   ///   Unicode scalar, an indication of an error, or an indication that the
   ///   UTF sequence has been fully decoded.
+  @inlinable
   public mutating func decode<I : IteratorProtocol>(
-    _ input: inout I
-  ) -> UnicodeDecodingResult where I.Element == CodeUnit {
-    return UTF32._decode(&input)
-  }
-
-  internal static func _decode<I : IteratorProtocol>(
     _ input: inout I
   ) -> UnicodeDecodingResult where I.Element == CodeUnit {
     var parser = ForwardParser()
@@ -537,6 +534,7 @@ extension Unicode.UTF32 : UnicodeCodec {
 ///     unit at a time.
 /// - Returns: `true` if the translation detected encoding errors in `input`;
 ///   otherwise, `false`.
+@inlinable
 public func transcode<
   Input : IteratorProtocol,
   InputEncoding : Unicode.Encoding,
@@ -796,6 +794,7 @@ extension UTF16 {
   ///   contained only ASCII characters. If `repairingIllFormedSequences` is
   ///   `false` and an ill-formed sequence is detected, this method returns
   ///   `nil`.
+  @inlinable
   public static func transcodedLength<
     Input : IteratorProtocol,
     Encoding : Unicode.Encoding

@@ -31,7 +31,7 @@ extension Unicode.ASCII : Unicode.Encoding {
     return Unicode.Scalar(_unchecked: UInt32(
         source.first._unsafelyUnwrappedUnchecked))
   }
-  
+
   @inlinable
   public static func encode(_ source: Unicode.Scalar) -> EncodedScalar? {
     guard source.value < (1&<<7) else { return nil }
@@ -55,10 +55,12 @@ extension Unicode.ASCII : Unicode.Encoding {
     return encode(FromEncoding.decode(content))
   }
 
+  @_fixed_layout
   public struct Parser {
+    @inlinable
     public init() { }
   }
-  
+
   public typealias ForwardParser = Parser
   public typealias ReverseParser = Parser
 }

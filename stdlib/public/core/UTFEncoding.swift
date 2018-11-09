@@ -28,6 +28,7 @@ public protocol _UTFParser {
 extension _UTFParser
 where Encoding.EncodedScalar : RangeReplaceableCollection {
 
+  @inlinable
   public mutating func parseScalar<I : IteratorProtocol>(
     from input: inout I
   ) -> Unicode.ParseResult<Encoding.EncodedScalar>
