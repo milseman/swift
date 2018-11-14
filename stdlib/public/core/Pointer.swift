@@ -387,10 +387,17 @@ func _convertMutableArrayToPointerArgument<
 }
 
 /// Derive a UTF-8 pointer argument from a value string parameter.
+@_transparent
 public // COMPILER_INTRINSIC
 func _convertConstStringToUTF8PointerArgument<
   ToPointer : _Pointer
 >(_ str: String) -> (AnyObject?, ToPointer) {
-  let utf8 = Array(str.utf8CString)
-  return _convertConstArrayToPointerArgument(utf8)
+  // TODO: Change compiler interface to supply a stack buffer we can spill
+  // small strings into.
+  if _fastPath(str._guts.hasNativeStorage) {
+    let (owner, ptr) = str._guts.nativeOwnerAndPointer
+    return (owner, ToPointer(ptr._rawValue))
+  }
+
+  return _convertConstArrayToPointerArgument(Array(str.utf8))
 }

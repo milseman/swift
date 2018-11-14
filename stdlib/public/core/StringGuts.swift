@@ -177,6 +177,12 @@ extension _StringGuts {
       return try f(UnsafeBufferPointer(start: ptr, count: utf8.count))
     }
   }
+
+  @usableFromInline
+  internal var nativeOwnerAndPointer: (AnyObject, UnsafePointer<UInt8>) {
+    _sanityCheck(hasNativeStorage)
+    return (_object.nativeStorage, _object.nativeUTF8Start)
+  }
 }
 
 // Internal invariants
