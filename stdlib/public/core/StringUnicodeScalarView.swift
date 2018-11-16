@@ -178,17 +178,34 @@ extension String.UnicodeScalarView {
     @usableFromInline
     internal var _end: Int
 
+    @usableFromInline
+    internal var _ptr: UnsafePointer<UInt8>? = nil
+
     @inlinable
     internal init(_ guts: _StringGuts) {
       self._guts = guts
       self._end = guts.count
+
+      // Cache our pointer to hand-outline loop invariant paths
+      if guts._object.isLarge && guts.isFastUTF8 {
+        self._ptr = guts._object.fastUTF8.baseAddress
+      }
     }
 
     @inlinable
     public mutating func next() -> Unicode.Scalar? {
       guard _fastPath(_position < _end) else { return nil }
 
-      let (result, len) = _guts.errorCorrectedScalar(startingAt: _position)
+      // Bless large contiguous UTF-8 strings, better register pressure
+      let (result, len): (Unicode.Scalar, Int)
+      if _fastPath(_ptr != nil) {
+        let utf8 = UnsafeBufferPointer(
+          start: _ptr._unsafelyUnwrappedUnchecked, count: _end)
+        (result, len) = _decodeScalar(utf8, startingAt: _position)
+      } else {
+        (result, len) = _guts.errorCorrectedScalar(startingAt: _position)
+      }
+
       _position &+= len
       return result
     }
@@ -200,10 +217,10 @@ extension String.UnicodeScalarView {
 }
 
 extension String.UnicodeScalarView: CustomStringConvertible {
- @inlinable
- public var description: String {
-   @inline(__always) get { return String(_guts) }
- }
+  @inlinable
+  public var description: String {
+    @inline(__always) get { return String(_guts) }
+  }
 }
 
 extension String.UnicodeScalarView: CustomDebugStringConvertible {

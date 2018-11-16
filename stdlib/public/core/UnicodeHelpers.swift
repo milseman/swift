@@ -421,7 +421,7 @@ extension _StringGuts {
 // result is the sole operation done by a caller, otherwise it's always more
 // efficient to use `withFastUTF8` in the caller.
 extension _StringGuts {
-  @inlinable @inline(__always)
+  @inlinable
   internal func errorCorrectedScalar(
     startingAt i: Int
   ) -> (Unicode.Scalar, scalarLength: Int) {
