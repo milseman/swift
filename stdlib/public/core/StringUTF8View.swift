@@ -222,6 +222,70 @@ extension String.UTF8View: BidirectionalCollection {
   }
 }
 
+extension String.UTF8View {
+  @_fixed_layout
+  public struct Iterator: IteratorProtocol {
+    @usableFromInline
+    internal var _guts: _StringGuts
+
+    @usableFromInline
+    internal var _position: Int = 0
+
+    @usableFromInline
+    internal var _end: Int
+
+    // If we're transcoding from a foreign string, we need to store sub-scalar
+    // indices. When we've finished a foreign string, _position is guaranteed to
+    // be equal to _end.
+    @usableFromInline
+    internal var _foreignIndex: String.Index
+
+    @inlinable
+    internal init(_ guts: _StringGuts) {
+      self._end = guts.count
+      self._foreignIndex = guts.startIndex
+      self._guts = guts
+    }
+
+    @inlinable
+    public mutating func next() -> UInt8? {
+      guard _fastPath(_position < _end) else {
+        _internalInvariant(
+          _foreignIndex == _guts.startIndex || _foreignIndex == _guts.endIndex)
+        return nil
+      }
+
+      if _fastPath(_guts.isFastUTF8) {
+        let result =  _guts.withFastUTF8 { $0[_unchecked: _position] }
+        _position &+= 1
+        return result
+      }
+
+      return _foreignNext()
+    }
+
+    @usableFromInline @inline(never) // slow-path
+    @_effects(releasenone)
+    internal mutating func _foreignNext() -> UInt8 {
+      let view = String.UTF8View(_guts)
+      let result = view._foreignSubscript(position: _foreignIndex)
+      self._foreignIndex = view._foreignIndex(after: self._foreignIndex)
+
+      // Signal when we're done
+      if self._foreignIndex == _guts.endIndex {
+        _position = _end
+      }
+
+      return result
+    }
+  }
+
+  @inlinable
+  public __consuming func makeIterator() -> Iterator {
+    return Iterator(_guts)
+  }
+}
+
 extension String.UTF8View: CustomStringConvertible {
  @inlinable
  public var description: String {
