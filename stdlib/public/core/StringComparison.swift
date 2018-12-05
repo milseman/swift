@@ -18,8 +18,30 @@ internal func _stringCompare(
   _ lhs: _StringGuts, _ rhs: _StringGuts, expecting: _StringComparisonResult
 ) -> Bool {
   if lhs.rawBits == rhs.rawBits { return expecting == .equal }
+  return _stringCompareInlinable(lhs, rhs, expecting: expecting)
+}
+
+@inlinable // small-string fast-paths
+@_effects(readonly)
+internal func _stringCompareInlinable(
+  _ lhs: _StringGuts, _ rhs: _StringGuts, expecting: _StringComparisonResult
+) -> Bool {
+  // ASCII small-string fast-path:
+  if lhs.isSmallASCII && rhs.isSmallASCII {
+    let lhsRaw = lhs.asSmall._storage
+    let rhsRaw = rhs.asSmall._storage
+
+    if lhsRaw.0 != rhsRaw.0 {
+      return _lexicographicalCompare(
+        lhsRaw.0.byteSwapped, rhsRaw.0.byteSwapped, expecting: expecting)
+    }
+    return _lexicographicalCompare(
+      lhsRaw.1.byteSwapped, rhsRaw.1.byteSwapped, expecting: expecting)
+  }
+
   return _stringCompareInternal(lhs, rhs, expecting: expecting)
 }
+
 
 @usableFromInline
 @_effects(readonly)
@@ -196,8 +218,8 @@ private func _findDiffIdx(
 }
 
 @_effects(readonly)
-@inline(__always)
-private func _lexicographicalCompare<I: FixedWidthInteger>(
+@inlinable @inline(__always)
+internal func _lexicographicalCompare<I: FixedWidthInteger>(
   _ lhs: I, _ rhs: I, expecting: _StringComparisonResult
 ) -> Bool {
   return expecting == .equal ? lhs == rhs : lhs < rhs
