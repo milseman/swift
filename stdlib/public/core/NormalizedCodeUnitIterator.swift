@@ -37,7 +37,7 @@ private func _unsafeBufferPointerCast<T, U>(
   to: U.Type = U.self
 ) -> UnsafeBufferPointer<U> {
   return UnsafeBufferPointer(
-    start: UnsafeRawPointer(ptr).assumingMemoryBound(to: U.self),
+    _uncheckedStart: UnsafeRawPointer(ptr).assumingMemoryBound(to: U.self),
     count: count
   )
 }
@@ -49,7 +49,7 @@ internal func _castOutputBuffer(
   let bufPtr: UnsafeMutableBufferPointer<UInt16> =
     _unsafeMutableBufferPointerCast(
       ptr, _Normalization._SegmentOutputBuffer.capacity)
-  return UnsafeMutableBufferPointer<UInt16>(rebasing: bufPtr[..<endIdx])
+  return bufPtr[_uncheckedRebasing: 0..<endIdx]
 }
 internal func _castOutputBuffer(
   _ ptr: UnsafePointer<_Normalization._SegmentOutputBuffer>,
@@ -58,7 +58,7 @@ internal func _castOutputBuffer(
   let bufPtr: UnsafeBufferPointer<UInt16> =
     _unsafeBufferPointerCast(
       ptr, _Normalization._SegmentOutputBuffer.capacity)
-  return UnsafeBufferPointer<UInt16>(rebasing: bufPtr[..<endIdx])
+  return bufPtr[_uncheckedRebasing: 0..<endIdx]
 }
 
 extension _StringGuts {
@@ -343,7 +343,8 @@ struct _NormalizedUTF16CodeUnitIterator: IteratorProtocol {
       return segmentHeapBuffer!.withUnsafeMutableBufferPointer {
         (segmentHeapBufferPtr) -> Int? in
         return _tryNormalize(
-          UnsafeBufferPointer(rebasing: normalizationHeapBufferPtr[..<filled]),
+          UnsafeBufferPointer(
+            normalizationHeapBufferPtr[_uncheckedRebasing: 0..<filled]),
           into: segmentHeapBufferPtr
         )
       }

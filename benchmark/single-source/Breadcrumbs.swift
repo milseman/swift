@@ -402,7 +402,7 @@ class CopyUTF16CodeUnits: BenchmarkBase {
       for _ in 0 ..< iterations {
         for range in inputIndices {
           inputString._copyUTF16CodeUnits(
-            into: UnsafeMutableBufferPointer(rebasing: buffer[range]),
+            into: buffer[_uncheckedRebasing: range],
             range: range)
         }
       }
