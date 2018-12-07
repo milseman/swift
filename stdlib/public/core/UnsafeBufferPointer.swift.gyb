@@ -442,7 +442,7 @@ extension Unsafe${Mutable}BufferPointer {
 
 %  if Mutable:
 
-  /// Creates a mutable typed buffer pointer referencing the same memory as the 
+  /// Creates a mutable typed buffer pointer referencing the same memory as the
   /// given immutable buffer pointer.
   ///
   /// - Parameter other: The immutable buffer pointer to convert.
@@ -461,7 +461,7 @@ extension Unsafe${Mutable}BufferPointer {
 
 %  else:
 
-  /// Creates an immutable typed buffer pointer referencing the same memory as the 
+  /// Creates an immutable typed buffer pointer referencing the same memory as the
   /// given mutable buffer pointer.
   ///
   /// - Parameter other: The mutable buffer pointer to convert.
@@ -472,7 +472,7 @@ extension Unsafe${Mutable}BufferPointer {
   }
 
 %  end
-  
+
 %  if not Mutable:
 
   /// Creates a buffer over the same memory as the given buffer slice.
@@ -528,13 +528,13 @@ extension Unsafe${Mutable}BufferPointer {
       count: slice.count)
   }
 
-  /// Deallocates the memory block previously allocated at this buffer pointer’s 
-  /// base address. 
+  /// Deallocates the memory block previously allocated at this buffer pointer’s
+  /// base address.
   ///
-  /// This buffer pointer's `baseAddress` must be `nil` or a pointer to a memory 
-  /// block previously returned by a Swift allocation method. If `baseAddress` is 
-  /// `nil`, this function does nothing. Otherwise, the memory must not be initialized 
-  /// or `Pointee` must be a trivial type. This buffer pointer's `count` must 
+  /// This buffer pointer's `baseAddress` must be `nil` or a pointer to a memory
+  /// block previously returned by a Swift allocation method. If `baseAddress` is
+  /// `nil`, this function does nothing. Otherwise, the memory must not be initialized
+  /// or `Pointee` must be a trivial type. This buffer pointer's `count` must
   /// be equal to the originally allocated size of the memory block.
   @inlinable // unsafe-performance
   public func deallocate() {
@@ -548,10 +548,10 @@ extension Unsafe${Mutable}BufferPointer {
   ///
   /// The resulting buffer references a region of memory that is bound to
   /// `Element` and is `count * MemoryLayout<Element>.stride` bytes in size.
-  /// 
-  /// The following example allocates a buffer that can store four `Int` 
+  ///
+  /// The following example allocates a buffer that can store four `Int`
   /// instances and then initializes that memory with the elements of a range:
-  /// 
+  ///
   ///     let buffer = UnsafeMutableBufferPointer<Int>.allocate(capacity: 4)
   ///     _ = buffer.initialize(from: 1...4)
   ///     print(buffer[2])
@@ -563,9 +563,9 @@ extension Unsafe${Mutable}BufferPointer {
   ///     buffer.deallocate()
   ///
   /// - Parameter count: The amount of memory to allocate, counted in instances
-  ///   of `Element`. 
+  ///   of `Element`.
   @inlinable // unsafe-performance
-  public static func allocate(capacity count: Int) 
+  public static func allocate(capacity count: Int)
     -> UnsafeMutableBufferPointer<Element> {
     let size = MemoryLayout<Element>.stride * count
     let raw  = Builtin.allocRaw(size._builtinWordValue, Builtin.alignof(Element.self))
@@ -573,7 +573,7 @@ extension Unsafe${Mutable}BufferPointer {
     return UnsafeMutableBufferPointer(
       start: UnsafeMutablePointer(raw), count: count)
   }
-  
+
   /// Initializes every element in this buffer's memory to a copy of the given value.
   ///
   /// The destination memory must be uninitialized or the buffer's `Element`
@@ -590,18 +590,18 @@ extension Unsafe${Mutable}BufferPointer {
 
     dstBase.initialize(repeating: repeatedValue, count: count)
   }
-  
+
   /// Assigns every element in this buffer's memory to a copy of the given value.
   ///
   /// The buffer’s memory must be initialized or the buffer's `Element`
-  /// must be a trivial type. 
+  /// must be a trivial type.
   ///
   /// - Parameters:
   ///   - repeatedValue: The instance to assign this buffer's memory to.
   ///
-  /// Warning: All buffer elements must be initialized before calling this. 
-  /// Assigning to part of the buffer must be done using the `assign(repeating:count:)`` 
-  /// method on the buffer’s `baseAddress`. 
+  /// Warning: All buffer elements must be initialized before calling this.
+  /// Assigning to part of the buffer must be done using the `assign(repeating:count:)``
+  /// method on the buffer’s `baseAddress`.
   @inlinable // unsafe-performance
   public func assign(repeating repeatedValue: Element) {
     guard let dstBase = _position else {
@@ -610,10 +610,10 @@ extension Unsafe${Mutable}BufferPointer {
 
     dstBase.assign(repeating: repeatedValue, count: count)
   }
-  
+
 % end
 
-  /// Executes the given closure while temporarily binding the memory referenced 
+  /// Executes the given closure while temporarily binding the memory referenced
   /// by this buffer to the given type.
   ///
   /// Use this method when you have a buffer of memory bound to one type and
@@ -624,7 +624,7 @@ extension Unsafe${Mutable}BufferPointer {
   /// is undefined.
   ///
   /// The entire region of memory referenced by this buffer must be initialized.
-  /// 
+  ///
   /// Because this buffer's memory is no longer bound to its `Element` type
   /// while the `body` closure executes, do not access memory using the
   /// original buffer from within `body`. Instead, use the `body` closure's
@@ -644,11 +644,11 @@ extension Unsafe${Mutable}BufferPointer {
   ///     buffer. The type `T` must have the same size and be layout compatible
   ///     with the pointer's `Element` type.
   ///   - body: A closure that takes a ${Mutable.lower()} typed buffer to the
-  ///     same memory as this buffer, only bound to type `T`. The buffer argument 
-  ///     contains the same number of complete instances of `T` as the original  
-  ///     buffer’s `count`. The closure's buffer argument is valid only for the 
-  ///     duration of the closure's execution. If `body` has a return value, that 
-  ///     value is also used as the return value for the `withMemoryRebound(to:_:)` 
+  ///     same memory as this buffer, only bound to type `T`. The buffer argument
+  ///     contains the same number of complete instances of `T` as the original
+  ///     buffer’s `count`. The closure's buffer argument is valid only for the
+  ///     duration of the closure's execution. If `body` has a return value, that
+  ///     value is also used as the return value for the `withMemoryRebound(to:_:)`
   ///     method.
   /// - Returns: The return value, if any, of the `body` closure parameter.
   @inlinable // unsafe-performance
