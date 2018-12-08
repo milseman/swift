@@ -26,7 +26,9 @@ private func _unsafeMutableBufferPointerCast<T, U>(
   to: U.Type = U.self
 ) -> UnsafeMutableBufferPointer<U> {
   return UnsafeMutableBufferPointer(
-    start: UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: U.self),
+    _uncheckedStart: UnsafeMutableRawPointer(
+      ptr
+    ).assumingMemoryBound(to: U.self),
     count: count
   )
 }
