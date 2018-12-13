@@ -19,37 +19,35 @@
 
 /*
 
-  On 64-bit platforms, the discriminator is the most significant 8 bits of the
+  On 64-bit platforms, the discriminator is the most significant 4 bits of the
   bridge object.
 
-  ┌─────────────────────╥─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-  │ Form                ║  7  │  6  │  5  │  4  │  3  │  2  │  1  │  0  │
-  ╞═════════════════════╬═════╪═════╪═════╪═════╪═════╧═════╧═════╧═════╡
-  │ Immortal, Small     ║  1  │ASCII│  1  │  0  │      small count      │
-  ├─────────────────────╫─────┼─────┼─────┼─────┼─────┬─────┬─────┬─────┤
-  │ Immortal, Large     ║  1  │  0  │  0  │  0  │  0  │ TBD │ TBD │ TBD │
-  ╞═════════════════════╬═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╡
-  │ Native              ║  0  │  0  │  0  │  0  │  0  │ TBD │ TBD │ TBD │
-  ├─────────────────────╫─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤
-  │ Shared              ║  x  │  0  │  0  │  0  │  1  │ TBD │ TBD │ TBD │
-  ├─────────────────────╫─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤
-  │ Shared, Bridged     ║  0  │  1  │  0  │  0  │  1  │ TBD │ TBD │ TBD │
-  ╞═════════════════════╬═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╡
-  │ Foreign             ║  x  │  0  │  0  │  1  │  1  │ TBD │ TBD │ TBD │
-  ├─────────────────────╫─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤
-  │ Foreign, Bridged    ║  0  │  1  │  0  │  1  │  1  │ TBD │ TBD │ TBD │
-  └─────────────────────╨─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+  ┌─────────────────────╥─────┬─────┬─────┬─────┐
+  │ Form                ║ b3  │ b2  │ b1  │ b0  │
+  ╞═════════════════════╬═════╪═════╪═════╪═════╡
+  │ Immortal, Small     ║  1  │ASCII│  1  │  0  │
+  ├─────────────────────╫─────┼─────┼─────┼─────┤
+  │ Immortal, Large     ║  1  │  0  │  0  │  0  │
+  ╞═════════════════════╬═════╪═════╪═════╪═════╡
+  │ Native              ║  0  │  0  │  0  │  0  │
+  ├─────────────────────╫─────┼─────┼─────┼─────┤
+  │ Shared              ║  x  │  0  │  0  │  0  │
+  ├─────────────────────╫─────┼─────┼─────┼─────┤
+  │ Shared, Bridged     ║  0  │  1  │  0  │  0  │
+  ╞═════════════════════╬═════╪═════╪═════╪═════╡
+  │ Foreign             ║  x  │  0  │  0  │  1  │
+  ├─────────────────────╫─────┼─────┼─────┼─────┤
+  │ Foreign, Bridged    ║  0  │  1  │  0  │  1  │
+  └─────────────────────╨─────┴─────┴─────┴─────┘
 
-  b7: isImmortal: Should the Swift runtime skip ARC
+  b3: isImmortal: Should the Swift runtime skip ARC
     - Small strings are just values, always immortal
     - Large strings can sometimes be immortal, e.g. literals
-  b6: (large) isBridged / (small) isASCII
+  b2: (large) isBridged / (small) isASCII
     - For large strings, this means lazily-bridged NSString: perform ObjC ARC
     - Small strings repurpose this as a dedicated bit to remember ASCII-ness
-  b5: isSmall: Dedicated bit to denote small strings
-  b4: isForeign: aka isSlow, cannot provide access to contiguous UTF-8
-  b3: (large) not isTailAllocated: payload isn't a biased pointer
-    - Shared strings provide contiguous UTF-8 through extra level of indirection
+  b1: isSmall: Dedicated bit to denote small strings
+  b0: isForeign: aka isSlow, cannot provide access to contiguous UTF-8
 
   The canonical empty string is the zero-sized small string. It has a leading
   nibble of 1110, and all other bits are 0.
@@ -329,7 +327,7 @@ extension _StringObject.Nibbles {
  └────────────┘
 
  ┌───────────────┬────────────┐
- │    b63:b56    │   b55:b0   │
+ │    b63:b60    │   b60:b0   │
  ├───────────────┼────────────┤
  │ discriminator │ objectAddr │
  └───────────────┴────────────┘
@@ -612,11 +610,11 @@ extension _StringObject {
  efficiently on this particular string, and the lower 48 are the code unit
  count (aka endIndex).
 
-┌─────────┬───────┬────────┬───────┐
-│   b63   │  b62  │ b61:48 │ b47:0 │
-├─────────┼───────┼────────┼───────┤
-│ isASCII │ isNFC │ TBD    │ count │
-└─────────┴───────┴────────┴───────┘
+┌─────────┬───────┬──────┬────────┬───────┐
+│   b63   │  b62  │ b61  │ b60:48 │ b47:0 │
+├─────────┼───────┼──────┼────────┼───────┤
+│ isASCII │ isNFC │ isTA │  TBD   │ count │
+└─────────┴───────┴──────┴────────┴───────┘
 
  isASCII: set when all code units are known to be ASCII, enabling:
    - Trivial Unicode scalars, they're just the code units
@@ -624,8 +622,10 @@ extension _StringObject {
    - Also, isASCII always implies isNFC
  isNFC: set when the contents are in normal form C, enable:
    - Trivial lexicographical comparisons: just memcmp
+ isTA: set when our contents are tail-allocated
+   - I.e. the start of the code units is at the stored address + `nativeBias`
 
- Allocation of more performance flags is TBD, un-used bits will be reserved for
+ Allocation of more performance flags is TBD, unused bits will be reserved for
  future use. Count stores the number of code units: corresponds to `endIndex`.
 
 */
