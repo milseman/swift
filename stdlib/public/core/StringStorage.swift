@@ -497,6 +497,8 @@ extension _StringStorage {
     if let crumbs = _breadcrumbsAddress.pointee {
       crumbs._invariantCheck(for: self.asString)
     }
+    _internalInvariant(_countAndFlags.isNativelyStored)
+    _internalInvariant(_countAndFlags.isTailAllocated)
   }
   #endif // INTERNAL_CHECKS_ENABLED
 }
@@ -794,6 +796,8 @@ extension _SharedStringStorage {
       crumbs._invariantCheck(for: self.asString)
     }
     _countAndFlags._invariantCheck()
+    _internalInvariant(!_countAndFlags.isNativelyStored)
+    _internalInvariant(!_countAndFlags.isTailAllocated)
   }
 #endif // INTERNAL_CHECKS_ENABLED
 }

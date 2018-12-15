@@ -343,7 +343,7 @@ extension _StringObject.Nibbles {
 extension _StringObject.Nibbles {
   // Mask for address bits, i.e. non-discriminator and non-extra high bits
   @inlinable @inline(__always)
-  static internal var largeAddressMask: UInt64 { return 0x00FF_FFFF_FFFF_FFFF }
+  static internal var largeAddressMask: UInt64 { return 0x0FFF_FFFF_FFFF_FFFF }
 
   // Mask for address bits, i.e. non-discriminator and non-extra high bits
   @inlinable @inline(__always)
@@ -376,15 +376,8 @@ extension _StringObject.Nibbles {
     return 0x0000_0000_0000_0000
   }
 
-  // Discriminator for large, shared, mortal (i.e. managed), swift-native
-  // strings
-  @inlinable @inline(__always)
-  internal static func largeSharedMortal() -> UInt64 {
-    return 0x0800_0000_0000_0000
-  }
-
   internal static func largeCocoa(providesFastUTF8: Bool) -> UInt64 {
-    return providesFastUTF8 ? 0x4800_0000_0000_0000 : 0x5800_0000_0000_0000
+    return providesFastUTF8 ? 0x4000_0000_0000_0000 : 0x5000_0000_0000_0000
   }
 }
 
@@ -440,39 +433,38 @@ extension _StringObject {
     @inline(__always) get { return !providesFastUTF8 }
   }
 
+  // Whether we are native or shared, i.e. we have a backing class which
+  // conforms to `_AbstractStringStorage`
+  @inline(__always)
+  internal var hasStorage: Bool {
+    return (discriminatedObjectRawBits & 0xF000_0000_0000_0000) == 0
+  }
+
   // Whether we are a mortal, native (tail-allocated) string
-  @inlinable
+  @inline(__always)
   internal var hasNativeStorage: Bool {
-    @inline(__always) get {
-      return (discriminatedObjectRawBits & 0xF800_0000_0000_0000) == 0
-    }
+    let result = !isSmall && _countAndFlags.isNativelyStored
+    _internalInvariant(!result || hasStorage, "native storage needs storage")
+    return result
   }
 
   // Whether we are a mortal, shared string (managed by Swift runtime)
-  internal var hasSharedStorage: Bool {
-    @inline(__always) get {
-      return (discriminatedObjectRawBits & 0xF800_0000_0000_0000)
-        == Nibbles.largeSharedMortal()
-    }
-  }
+  internal var hasSharedStorage: Bool { return hasStorage && !hasNativeStorage }
 }
 
 // Queries conditional on being in a large or fast form.
 extension _StringObject {
-  // Whether this string is native, presupposing it is both large and fast
-  @inlinable
-  internal var largeFastIsNative: Bool {
-    @inline(__always) get {
-      _internalInvariant(isLarge && providesFastUTF8)
-      return (discriminatedObjectRawBits & 0x0800_0000_0000_0000) == 0
-    }
+  // Whether this string is native, i.e. tail-allocated and nul-terminated,
+  // presupposing it is both large and fast
+  @inlinable @inline(__always)
+  internal var largeFastIsTailAllocated: Bool {
+    _internalInvariant(isLarge && providesFastUTF8)
+    return _countAndFlags.isTailAllocated
   }
 
   // Whether this string is shared, presupposing it is both large and fast
-  @inlinable
-  internal var largeFastIsShared: Bool {
-    @inline(__always) get { return !largeFastIsNative }
-  }
+  @inlinable @inline(__always)
+  internal var largeFastIsShared: Bool { return !largeFastIsTailAllocated }
 
   // Whether this string is a lazily-bridged NSString, presupposing it is large
   @inlinable
@@ -610,23 +602,29 @@ extension _StringObject {
  efficiently on this particular string, and the lower 48 are the code unit
  count (aka endIndex).
 
-┌─────────┬───────┬──────┬────────┬───────┐
-│   b63   │  b62  │ b61  │ b60:48 │ b47:0 │
-├─────────┼───────┼──────┼────────┼───────┤
-│ isASCII │ isNFC │ isTA │  TBD   │ count │
-└─────────┴───────┴──────┴────────┴───────┘
+┌─────────┬───────┬──────────────────┬─────────────────┬────────┬───────┐
+│   b63   │  b62  │       b61        │       b60       │ b59:48 │ b47:0 │
+├─────────┼───────┼──────────────────┼─────────────────┼────────┼───────┤
+│ isASCII │ isNFC │ isNativelyStored │ isTailAllocated │  TBD   │ count │
+└─────────┴───────┴──────────────────┴─────────────────┴────────┴───────┘
 
  isASCII: set when all code units are known to be ASCII, enabling:
    - Trivial Unicode scalars, they're just the code units
    - Trivial UTF-16 transcoding (just bit-extend)
    - Also, isASCII always implies isNFC
- isNFC: set when the contents are in normal form C, enable:
-   - Trivial lexicographical comparisons: just memcmp
- isTA: set when our contents are tail-allocated
+ isNFC: set when the contents are in normal form C
+   - Enables trivial lexicographical comparisons: just memcmp
+   - `isASCII` always implies `isNFC`, but not vice versa
+ isNativelyStored: set for native stored strings
    - I.e. the start of the code units is at the stored address + `nativeBias`
-
- Allocation of more performance flags is TBD, unused bits will be reserved for
- future use. Count stores the number of code units: corresponds to `endIndex`.
+   - `largeAddressBits` holds an instance of `_StringStorage`.
+ isTailAllocated: start of the code units is at the stored address + `nativeBias`
+   - `isNativelyStored` always implies `isTailAllocated`, but not vice versa
+      (e.g. literals)
+ TBD: Reserved for future usage
+   - Setting a TBD bit to 1 must be semantically equivalent to 0
+   - I.e. it can only be used to "cache" fast-path information in the future
+ count: stores the number of code units, corresponds to `endIndex`.
 
 */
 extension _StringObject.CountAndFlags {
@@ -677,9 +675,15 @@ extension _StringObject.CountAndFlags {
   internal var isASCII: Bool {
     return 0 != _storage & 0x8000_0000_0000_0000
   }
-  @inlinable
   internal var isNFC: Bool {
     return 0 != _storage & 0x4000_0000_0000_0000
+  }
+  internal var isNativelyStored: Bool {
+    return 0 != _storage & 0x2000_0000_0000_0000
+  }
+  @inlinable
+  internal var isTailAllocated: Bool {
+    return 0 != _storage & 0x1000_0000_0000_0000
   }
 
   #if !INTERNAL_CHECKS_ENABLED
@@ -689,6 +693,9 @@ extension _StringObject.CountAndFlags {
   internal func _invariantCheck() {
     if isASCII {
       _internalInvariant(isNFC)
+    }
+    if isNativelyStored {
+      _internalInvariant(isTailAllocated)
     }
   }
   #endif // INTERNAL_CHECKS_ENABLED
@@ -714,7 +721,7 @@ extension _StringObject {
   @inlinable
   internal var nativeUTF8Start: UnsafePointer<UInt8> {
     @inline(__always) get {
-      _internalInvariant(largeFastIsNative)
+      _internalInvariant(largeFastIsTailAllocated)
       return UnsafePointer(
         bitPattern: largeAddressBits &+ _StringObject.nativeBias
       )._unsafelyUnwrappedUnchecked
@@ -724,7 +731,7 @@ extension _StringObject {
   @inlinable
   internal var nativeUTF8: UnsafeBufferPointer<UInt8> {
     @inline(__always) get {
-      _internalInvariant(largeFastIsNative)
+      _internalInvariant(largeFastIsTailAllocated)
       return UnsafeBufferPointer(start: nativeUTF8Start, count: largeCount)
     }
   }
@@ -817,17 +824,15 @@ extension _StringObject {
     }
   }
 
-  @inlinable
+  @inline(__always)
   internal var isNFC: Bool {
-    @inline(__always) get {
-      if isSmall {
-        // TODO(String performance): Worth implementing more sophisiticated
-        // check, or else performing normalization on- construction. For now,
-        // approximate it with isASCII
-        return smallIsASCII
-      }
-      return _countAndFlags.isNFC
+    if isSmall {
+      // TODO(String performance): Worth implementing more sophisiticated
+      // check, or else performing normalization on- construction. For now,
+      // approximate it with isASCII
+      return smallIsASCII
     }
+    return _countAndFlags.isNFC
   }
 
   // Get access to fast UTF-8 contents for large strings which provide it.
@@ -873,7 +878,7 @@ extension _StringObject {
     // inclusive. For now, we only know native strings and small strings (when
     // accessed) are. We could also know about some shared strings.
 
-    return largeFastIsNative
+    return largeFastIsTailAllocated
   }
 }
 
@@ -919,12 +924,12 @@ extension _StringObject {
 #if arch(i386) || arch(arm)
     self.init(
       variant: .native(storage),
-      discriminator: Nibbles.largeSharedMortal(),
+      discriminator: Nibbles.largeMortal(),
       countAndFlags: storage._countAndFlags)
 #else
     self.init(
       object: storage,
-      discriminator: Nibbles.largeSharedMortal(),
+      discriminator: Nibbles.largeMortal(),
       countAndFlags: storage._countAndFlags)
 #endif
   }
@@ -982,7 +987,7 @@ extension _StringObject {
     } else {
       _internalInvariant(isLarge)
       _internalInvariant(largeCount == count)
-      if providesFastUTF8 && largeFastIsNative {
+      if providesFastUTF8 && largeFastIsTailAllocated {
         _internalInvariant(!isSmall)
         _internalInvariant(!largeIsCocoa)
 
@@ -1005,6 +1010,12 @@ extension _StringObject {
         }
       }
     }
+
+    if _countAndFlags.isNativelyStored {
+      let anyObj = Builtin.reinterpretCast(largeAddressBits) as AnyObject
+      _internalInvariant(anyObj is _StringStorage)
+    }
+
     #if arch(i386) || arch(arm)
     switch _variant {
     case .immortal:
