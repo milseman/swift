@@ -19,6 +19,7 @@ let simpleStrings: [String] = [
     SimpleString.largeASCII.rawValue,
     SimpleString.largeUnicode.rawValue,
     SimpleString.emoji.rawValue,
+    "",
 ]
 
 StringIndexTests.test("basic sanity checks") {
@@ -128,6 +129,60 @@ StringIndexTests.test("interchange") {
 
   for s in simpleStrings {
     validateIndices(s)
+  }
+}
+
+StringIndexTests.test("Offsets") {
+  func validateOffsets(_ s: String) {
+    let end = s.endIndex
+
+    expectEqual(end, String.Index(offset: s.count, within: s))
+    expectEqual(end, String.Index(offset: s.count+1, within: s))
+    expectEqual(end, String.Index(offset: -1, within: s))
+
+    expectEqual(end, String.Index(offset: s.utf16.count, within: s.utf16))
+    expectEqual(end, String.Index(offset: s.utf16.count+1, within: s.utf16))
+    expectEqual(end, String.Index(offset: -1, within: s.utf16))
+
+    expectEqual(end, String.Index(offset: s.utf8.count, within: s.utf8))
+    expectEqual(end, String.Index(offset: s.utf8.count+1, within: s.utf8))
+    expectEqual(end, String.Index(offset: -1, within: s.utf8))
+
+    expectEqual(end,
+      String.Index(offset: s.unicodeScalars.count, within: s.unicodeScalars))
+    expectEqual(end,
+      String.Index(offset: s.unicodeScalars.count+1, within: s.unicodeScalars))
+    expectEqual(end,
+      String.Index(offset: -1, within: s.unicodeScalars))
+
+    let indices = Array(s.indices)
+    for i in 0..<indices.count {
+      let idx = String.Index(offset: i, within: s)
+      expectEqual(indices[i], idx)
+      expectEqual(i, idx.offset(within: s))
+    }
+    let utf16Indices = Array(s.utf16.indices)
+    for i in 0..<utf16Indices.count {
+      let idx = String.Index(offset: i, within: s.utf16)
+      expectEqual(utf16Indices[i], idx)
+      expectEqual(i, idx.offset(within: s.utf16))
+    }
+    let utf8Indices = Array(s.utf8.indices)
+    for i in 0..<utf8Indices.count {
+      let idx = String.Index(offset: i, within: s.utf8)
+      expectEqual(utf8Indices[i], idx)
+      expectEqual(i, idx.offset(within: s.utf8))
+    }
+    let scalarIndices = Array(s.unicodeScalars.indices)
+    for i in 0..<scalarIndices.count {
+      let idx = String.Index(offset: i, within: s.unicodeScalars)
+      expectEqual(scalarIndices[i], idx)
+      expectEqual(i, idx.offset(within: s.unicodeScalars))
+    }
+  }
+
+  for s in simpleStrings {
+    validateOffsets(s)
   }
 }
 
