@@ -145,7 +145,7 @@ extension String.Index {
 
   /// Creates a new index at the specified Unicode scalar offset
   ///
-  /// - Parameter offset: An offset in UTF-8 code units.
+  /// - Parameter offset: An offset in terms of Unicode scalar values
   public init(offset: Int, within scalars: String.UnicodeScalarView) {
     let (start, end) = (scalars.startIndex, scalars.endIndex)
     guard offset >= 0,
@@ -159,7 +159,7 @@ extension String.Index {
 
   /// Creates a new index at the specified Character offset
   ///
-  /// - Parameter offset: An offset in UTF-8 code units.
+  /// - Parameter offset: An offset in terms of Characters
   public init(offset: Int, within str: String) {
     let (start, end) = (str.startIndex, str.endIndex)
     guard offset >= 0,
