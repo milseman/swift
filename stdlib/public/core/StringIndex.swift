@@ -63,26 +63,14 @@ extension String.Index {
   }
 
   /// The UTF-16 code unit offset corresponding to this Index
-  public func offset(within utf16: String.UTF16View) -> Int {
-    return utf16.distance(from: utf16.startIndex, to: self)
-  }
-  /// The UTF-8 code unit offset corresponding to this Index
-  public func offset(within utf8: String.UTF8View) -> Int {
-    return utf8.distance(from: utf8.startIndex, to: self)
-  }
-  /// The Unicode scalar offset corresponding to this Index
-  public func offset(within scalars: String.UnicodeScalarView) -> Int {
-    return scalars.distance(from: scalars.startIndex, to: self)
-  }
-  /// The Character offset corresponding to this Index
-  public func offset(within str: String) -> Int {
-    return str.distance(from: str.startIndex, to: self)
+  public func utf16Offset<S: StringProtocol>(in s: S) -> Int {
+    return s.utf16.distance(from: s.utf16.startIndex, to: self)
   }
 
   /// The offset into a string's code units for this index.
   @available(swift, deprecated: 4.2, message: """
-    encodedOffset does not specify the encoding and common usage is likely \
-    incorrect, use offset(within:) instead
+    encodedOffset has been deprecated as most common usage is incorrect. \
+    Use utf16Offset(in:) to achieve the same behavior.
     """)
   @inlinable
   public var encodedOffset: Int { return _encodedOffset }
@@ -118,54 +106,12 @@ extension String.Index {
   /// Creates a new index at the specified UTF-16 code unit offset
   ///
   /// - Parameter offset: An offset in UTF-16 code units.
-  public init(offset: Int, within utf16: String.UTF16View) {
-    let (start, end) = (utf16.startIndex, utf16.endIndex)
+  public init<S: StringProtocol>(utf16Offset offset: Int, in s: S) {
+    let (start, end) = (s.utf16.startIndex, s.utf16.endIndex)
     guard offset >= 0,
-          let idx = utf16.index(start, offsetBy: offset, limitedBy: end)
+          let idx = s.utf16.index(start, offsetBy: offset, limitedBy: end)
     else {
-      self = end
-      return
-    }
-    self = idx
-  }
-
-  /// Creates a new index at the specified UTF-8 code unit offset
-  ///
-  /// - Parameter offset: An offset in UTF-8 code units.
-  public init(offset: Int, within utf8: String.UTF8View) {
-    let (start, end) = (utf8.startIndex, utf8.endIndex)
-    guard offset >= 0,
-          let idx = utf8.index(start, offsetBy: offset, limitedBy: end)
-    else {
-      self = end
-      return
-    }
-    self = idx
-  }
-
-  /// Creates a new index at the specified Unicode scalar offset
-  ///
-  /// - Parameter offset: An offset in terms of Unicode scalar values
-  public init(offset: Int, within scalars: String.UnicodeScalarView) {
-    let (start, end) = (scalars.startIndex, scalars.endIndex)
-    guard offset >= 0,
-          let idx = scalars.index(start, offsetBy: offset, limitedBy: end)
-    else {
-      self = end
-      return
-    }
-    self = idx
-  }
-
-  /// Creates a new index at the specified Character offset
-  ///
-  /// - Parameter offset: An offset in terms of Characters
-  public init(offset: Int, within str: String) {
-    let (start, end) = (str.startIndex, str.endIndex)
-    guard offset >= 0,
-          let idx = str.index(start, offsetBy: offset, limitedBy: end)
-    else {
-      self = end
+      self = end.nextEncoded
       return
     }
     self = idx
@@ -175,9 +121,8 @@ extension String.Index {
   ///
   /// - Parameter offset: An offset in code units.
   @available(swift, deprecated: 4.2, message: """
-    encodedOffset does not specify the encoding and usage is likely incorrect, \
-    use String.Index(utf16CodeUnitOffset:within:) or \
-    String.Index(utf8CodeUnitOffset:within:) instead
+    encodedOffset has been deprecated as most common usage is incorrect. \
+    Use String.Index(utf16Offset:in:) to achieve the same behavior.
     """)
   @inlinable
   public init(encodedOffset offset: Int) {

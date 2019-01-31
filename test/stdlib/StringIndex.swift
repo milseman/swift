@@ -132,52 +132,42 @@ StringIndexTests.test("interchange") {
   }
 }
 
-StringIndexTests.test("Offsets") {
+StringIndexTests.test("UTF-16 Offsets") {
   func validateOffsets(_ s: String) {
     let end = s.endIndex
+    let utf16Count = s.utf16.count
 
-    expectEqual(end, String.Index(offset: s.count, within: s))
-    expectEqual(end, String.Index(offset: s.count+1, within: s))
-    expectEqual(end, String.Index(offset: -1, within: s))
+    expectEqual(end, String.Index(utf16Offset: utf16Count, in: s))
+    expectEqual(end, String.Index(utf16Offset: utf16Count, in: s[...]))
 
-    expectEqual(end, String.Index(offset: s.utf16.count, within: s.utf16))
-    expectEqual(end, String.Index(offset: s.utf16.count+1, within: s.utf16))
-    expectEqual(end, String.Index(offset: -1, within: s.utf16))
+    let pastEnd = String.Index(utf16Offset: utf16Count+1, in: s)
 
-    expectEqual(end, String.Index(offset: s.utf8.count, within: s.utf8))
-    expectEqual(end, String.Index(offset: s.utf8.count+1, within: s.utf8))
-    expectEqual(end, String.Index(offset: -1, within: s.utf8))
+    expectNotEqual(end, pastEnd)
+    expectEqual(pastEnd, String.Index(utf16Offset: utf16Count+1, in: s[...]))
+    expectEqual(pastEnd, String.Index(utf16Offset: utf16Count+2, in: s))
+    expectEqual(pastEnd, String.Index(utf16Offset: -1, in: s))
+    expectEqual(
+      pastEnd, String.Index(utf16Offset: Swift.max(1, utf16Count), in: s.dropFirst()))
 
-    expectEqual(end,
-      String.Index(offset: s.unicodeScalars.count, within: s.unicodeScalars))
-    expectEqual(end,
-      String.Index(offset: s.unicodeScalars.count+1, within: s.unicodeScalars))
-    expectEqual(end,
-      String.Index(offset: -1, within: s.unicodeScalars))
-
-    let indices = Array(s.indices)
-    for i in 0..<indices.count {
-      let idx = String.Index(offset: i, within: s)
-      expectEqual(indices[i], idx)
-      expectEqual(i, idx.offset(within: s))
-    }
     let utf16Indices = Array(s.utf16.indices)
+    expectEqual(utf16Count, utf16Indices.count)
     for i in 0..<utf16Indices.count {
-      let idx = String.Index(offset: i, within: s.utf16)
+      let idx = String.Index(utf16Offset: i, in: s)
       expectEqual(utf16Indices[i], idx)
-      expectEqual(i, idx.offset(within: s.utf16))
-    }
-    let utf8Indices = Array(s.utf8.indices)
-    for i in 0..<utf8Indices.count {
-      let idx = String.Index(offset: i, within: s.utf8)
-      expectEqual(utf8Indices[i], idx)
-      expectEqual(i, idx.offset(within: s.utf8))
-    }
-    let scalarIndices = Array(s.unicodeScalars.indices)
-    for i in 0..<scalarIndices.count {
-      let idx = String.Index(offset: i, within: s.unicodeScalars)
-      expectEqual(scalarIndices[i], idx)
-      expectEqual(i, idx.offset(within: s.unicodeScalars))
+      expectEqual(i, idx.utf16Offset(in: s))
+      expectEqual(i, idx.utf16Offset(in: s[...]))
+
+      if i < s.dropLast().utf16.count {
+        expectEqual(
+          utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
+        expectEqual(i, idx.utf16Offset(in: s.dropLast()))
+      } else if i == s.dropLast().utf16.count {
+        expectEqual(
+          utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
+      } else {
+        expectNotEqual(
+          utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
+      }
     }
   }
 
