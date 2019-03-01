@@ -83,8 +83,7 @@ extension Character {
     _internalInvariant(_str._guts.isFastUTF8)
 
     // TODO(@eject): Switch to a helper property on StringObject/StringGuts.
-    _internalInvariant(
-      _str._guts.isSmall || _str._guts._object._countAndFlags.isTailAllocated)
+    _internalInvariant(_str._guts._object.isPreferredRepresentation)
   }
   #endif // INTERNAL_CHECKS_ENABLED
 }
@@ -179,9 +178,7 @@ extension Character :
       "Can't form a Character from a String containing more than one extended grapheme cluster")
 
     // TODO(@eject): Switch to a helper property on StringObject/StringGuts.
-    if _fastPath(
-      s._guts.isSmall || s._guts._object._countAndFlags.isTailAllocated
-    ) {
+    if _fastPath(s._guts._object.isPreferredRepresentation) {
       self.init(unchecked: s)
       return
     }
