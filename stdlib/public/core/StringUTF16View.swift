@@ -506,6 +506,14 @@ extension String.UTF16View {
       return idx._encodedOffset
     }
 
+    // Scalar-align a native UTF-8 index, in case it came from the UTF8View.
+    // Don't do this for sub-scalar indices from the UTF16View though, as we
+    // want to count surrogates.
+    var idx = idx
+    if idx.transcodedOffset == 0 {
+      idx = _guts.withFastUTF8 { _scalarAlign($0, idx) }
+    }
+
     if idx._encodedOffset < _shortHeuristic || !_guts.hasBreadcrumbs {
       return _distance(from: startIndex, to: idx)
     }

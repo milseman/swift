@@ -247,6 +247,29 @@ StringIndexTests.test("String.Index(_:within) / Range<String.Index>(_:in:)") {
     }
   }
 }
+
+StringIndexTests.test("Misaligned") {
+  func useMisalignedRange(in string: String) {
+    let utf8Location = 0
+    let utf8Length = 7
+    let start = string.utf8.index(string.utf8.startIndex, offsetBy: utf8Location)
+    let end = string.utf8.index(start, offsetBy: utf8Length) // misaligned
+    expectEqual(string.dropLast(), string[start..<end])
+
+    let d1 = string.utf16.distance(from: string.utf16.startIndex, to: start)
+    expectEqual(0, d1)
+
+    let d2 = string.utf16.distance(from: start, to: end)
+    expectEqual(3, d2)
+  }
+
+  let nsstring: NSString = "один"
+  useMisalignedRange(in: nsstring as String)
+
+  let string = "один"
+  useMisalignedRange(in: string)
+}
+
 #endif // _runtime(_ObjC)
 
 runAllTests()
