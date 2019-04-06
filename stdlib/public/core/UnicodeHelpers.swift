@@ -144,6 +144,8 @@ internal func _continuationPayload(_ x: UInt8) -> UInt32 {
 internal func _scalarAlign(
   _ utf8: UnsafeBufferPointer<UInt8>, _ idx: Int
 ) -> Int {
+  guard _fastPath(idx != utf8.count) else { return idx }
+
   var i = idx
   while _slowPath(UTF8.isContinuation(utf8[_unchecked: i])) {
     i &-= 1
@@ -151,6 +153,20 @@ internal func _scalarAlign(
       "Malformed contents: starts with continuation byte")
   }
   return i
+}
+
+@_alwaysEmitIntoClient // Swift 5.1 refactoring
+@inline(__always)
+internal func _scalarAlign(
+  _ utf8: UnsafeBufferPointer<UInt8>, _ idx: String.Index
+) -> String.Index {
+  if _slowPath(idx.transcodedOffset != 0 || idx._encodedOffset == 0) {
+    // Transcoded index offsets are already scalar aligned
+    return idx.strippingTranscoding
+  }
+
+  let i = _scalarAlign(utf8, idx._encodedOffset)
+  return String.Index(_encodedOffset: i)
 }
 
 //
@@ -163,23 +179,14 @@ extension _StringGuts {
     // TODO(String performance): isASCII check
 
     if _slowPath(idx.transcodedOffset != 0 || idx._encodedOffset == 0) {
-      // Transcoded indices are already scalar aligned
+      // Transcoded index offsets are already scalar aligned
       return String.Index(_encodedOffset: idx._encodedOffset)
     }
     if _slowPath(self.isForeign) {
       return foreignScalarAlign(idx)
     }
 
-    return self.withFastUTF8 { utf8 in
-      let i = _scalarAlign(utf8, idx._encodedOffset)
-
-      // If no alignment is performed, keep grapheme cache
-      if i == idx._encodedOffset {
-        return idx
-      }
-
-      return Index(_encodedOffset: i)
-    }
+    return self.withFastUTF8 { _scalarAlign($0, idx) }
   }
 
   @inlinable
@@ -345,6 +352,8 @@ extension _StringGuts {
   @usableFromInline @inline(never) // slow-path
   @_effects(releasenone)
   internal func foreignScalarAlign(_ idx: Index) -> Index {
+    guard idx._encodedOffset != self.count else { return idx }
+
     _internalInvariant(idx._encodedOffset < self.count)
 
     let ecCU = foreignErrorCorrectedUTF16CodeUnit(at: idx)
