@@ -167,7 +167,7 @@ extension String: BidirectionalCollection {
   @inlinable @inline(__always)
   public func distance(from start: Index, to end: Index) -> IndexDistance {
     // TODO: known-ASCII and single-scalar-grapheme fast path, etc.
-    return _distance(from: start, to: end)
+    return _distance(from: _guts.scalarAlign(start), to: _guts.scalarAlign(end))
   }
 
   /// Accesses the character at the given position.
