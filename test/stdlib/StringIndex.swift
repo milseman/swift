@@ -271,6 +271,8 @@ StringIndexTests.test("Misaligned") {
     expectEqual(-3, string[...].distance(from: end, to: start))
     expectEqual(-3, string[...].utf16.distance(from: end, to: start))
     expectEqual(-3, string[...].unicodeScalars.distance(from: end, to: start))
+
+    // print(string.utf16.index(after: end))
   }
 
   let nsstring: NSString = "один"

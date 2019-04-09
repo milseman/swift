@@ -16,21 +16,25 @@ import SwiftShims
 
 String's Index has the following layout:
 
- ┌──────────┬───────────────────┬────────────────┬──────────┐
- │ b63:b16  │      b15:b14      │     b13:b8     │ b7:b0    │
- ├──────────┼───────────────────┼────────────────┼──────────┤
- │ position │ transcoded offset │ grapheme cache │ reserved │
- └──────────┴───────────────────┴────────────────┴──────────┘
+ ┌──────────┬───────────────────┬─────────╥────────────────┬──────────┐
+ │ b63:b16  │      b15:b14      │   b13   ║     b12:b8     │  b6:b0   │
+ ├──────────┼───────────────────┼─────────╫────────────────┼──────────┤
+ │ position │ transcoded offset │ aligned ║ grapheme cache │ reserved │
+ └──────────┴───────────────────┴─────────╨────────────────┴──────────┘
 
-- grapheme cache: A 6-bit value remembering the distance to the next grapheme
+Position, transcoded offset, and aligned are fully exposed in the ABI. Grapheme
+cache and reserved are partially resilient: the fact that there are 13 bits with
+a default value of `0` is ABI, but not the layout, construction, or
+interpretation of those bits. All use of grapheme cache should be behind
+non-inlinable function calls.
+
+- position aka `encodedOffset`: A 48-bit offset into the string's code units
+- transcoded offset: a 2-bit sub-scalar offset, derived from transcoding
+- aligned, whether this index is known to be scalar-aligned
+<resilience barrier>
+- grapheme cache: A 5-bit value remembering the distance to the next grapheme
 boundary
-- position aka `encodedOffset`: An offset into the string's code units
-- transcoded offset: a sub-scalar offset, derived from transcoding
-
-The use and interpretation of both `reserved` and `grapheme cache` is not part
-of Index's ABI; it should be hidden behind non-inlinable calls. However, the
-position of the sequence of 14 bits allocated is part of Index's ABI, as well as
-the default value being `0`.
+- reserved: 8-bit for future use.
 
 */
 extension String {
@@ -80,9 +84,13 @@ extension String.Index {
     return Int(truncatingIfNeeded: orderingValue & 0x3)
   }
 
+  @_alwaysEmitIntoClient // Swift 5.1
+  @inline(__always)
+  internal var isAligned: Bool { return 0 != _rawBits & 0x2000 }
+
   @usableFromInline
   internal var characterStride: Int? {
-    let value = (_rawBits & 0x3F00) &>> 8
+    let value = (_rawBits & 0x1F00) &>> 8
     return value > 0 ? Int(truncatingIfNeeded: value) : nil
   }
 
@@ -132,9 +140,7 @@ extension String.Index {
     encodedOffset: Int, transcodedOffset: Int, characterStride: Int
   ) {
     self.init(encodedOffset: encodedOffset, transcodedOffset: transcodedOffset)
-    if _slowPath(characterStride > 63) { return }
-
-    _internalInvariant(characterStride == characterStride & 0x3F)
+    if _slowPath(characterStride > 0x1F) { return }
     self._rawBits |= UInt64(truncatingIfNeeded: characterStride &<< 8)
     self._invariantCheck()
   }
@@ -150,6 +156,9 @@ extension String.Index {
   @usableFromInline @inline(never) @_effects(releasenone)
   internal func _invariantCheck() {
     _internalInvariant(_encodedOffset >= 0)
+    if self.isAligned {
+      _internalInvariant(transcodedOffset == 0)
+    }
   }
   #endif // INTERNAL_CHECKS_ENABLED
 }
@@ -186,6 +195,16 @@ extension String.Index {
     return String.Index(
       encodedOffset: self._encodedOffset,
       transcodedOffset: self.transcodedOffset &- 1)
+  }
+
+  @_alwaysEmitIntoClient // Swift 5.1
+  @inline(__always)
+  internal var aligned: String.Index {
+    var idx = self
+    _internalInvariant(idx.transcodedOffset == 0, "can't be aligned")
+    idx._rawBits |= 0x2000
+    idx._invariantCheck()
+    return idx
   }
 
   // Get an index with an encoded offset relative to this one.

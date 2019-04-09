@@ -166,7 +166,7 @@ internal func _scalarAlign(
   }
 
   let i = _scalarAlign(utf8, idx._encodedOffset)
-  return String.Index(_encodedOffset: i)
+  return String.Index(_encodedOffset: i).aligned
 }
 
 //
@@ -176,6 +176,8 @@ extension _StringGuts {
   @inlinable
   @inline(__always) // fast-path: fold common fastUTF8 check
   internal func scalarAlign(_ idx: Index) -> Index {
+    if _fastPath(idx.isAligned) { return idx }
+
     // TODO(String performance): isASCII check
 
     if _slowPath(idx.transcodedOffset != 0 || idx._encodedOffset == 0) {
@@ -362,7 +364,7 @@ extension _StringGuts {
     }
     _internalInvariant(idx._encodedOffset > 0,
       "Error-correction shouldn't give trailing surrogate at position zero")
-    return String.Index(_encodedOffset: idx._encodedOffset &- 1)
+    return String.Index(_encodedOffset: idx._encodedOffset &- 1).aligned
   }
 
   @usableFromInline @inline(never)
