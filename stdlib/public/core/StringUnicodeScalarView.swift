@@ -106,6 +106,7 @@ extension String.UnicodeScalarView: BidirectionalCollection {
   /// - Precondition: The next location exists.
   @inlinable @inline(__always)
   public func index(after i: Index) -> Index {
+    let i = _guts.scalarAlign(i)
     _internalInvariant(i < endIndex)
     // TODO(String performance): isASCII fast-path
 
@@ -117,11 +118,16 @@ extension String.UnicodeScalarView: BidirectionalCollection {
     return _foreignIndex(after: i)
   }
 
+  public func distance(from start: Index, to end: Index) -> Int {
+    return _distance(from: _guts.scalarAlign(start), to: _guts.scalarAlign(end))
+  }
+
   /// Returns the previous consecutive location before `i`.
   ///
   /// - Precondition: The previous location exists.
   @inlinable @inline(__always)
   public func index(before i: Index) -> Index {
+    let i = _guts.scalarAlign(i)
     precondition(i._encodedOffset > 0)
     // TODO(String performance): isASCII fast-path
 

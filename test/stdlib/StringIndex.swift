@@ -256,11 +256,21 @@ StringIndexTests.test("Misaligned") {
     let end = string.utf8.index(start, offsetBy: utf8Length) // misaligned
     expectEqual(string.dropLast(), string[start..<end])
 
-    let d1 = string.utf16.distance(from: string.utf16.startIndex, to: start)
-    expectEqual(0, d1)
+    expectEqual(3, string.utf16.distance(from: start, to: end))
+    expectEqual(3, string.unicodeScalars.distance(from: start, to: end))
+    expectEqual(3, string.distance(from: start, to: end))
+    expectEqual(-3, string.utf16.distance(from: end, to: start))
+    expectEqual(-3, string.unicodeScalars.distance(from: end, to: start))
+    expectEqual(-3, string.distance(from: end, to: start))
 
-    let d2 = string.utf16.distance(from: start, to: end)
-    expectEqual(3, d2)
+    expectEqual(3, string[start..<end].count)
+
+    expectEqual(3, string[...].distance(from: start, to: end))
+    expectEqual(3, string[...].utf16.distance(from: start, to: end))
+    expectEqual(3, string[...].unicodeScalars.distance(from: start, to: end))
+    expectEqual(-3, string[...].distance(from: end, to: start))
+    expectEqual(-3, string[...].utf16.distance(from: end, to: start))
+    expectEqual(-3, string[...].unicodeScalars.distance(from: end, to: start))
   }
 
   let nsstring: NSString = "один"

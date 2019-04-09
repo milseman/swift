@@ -426,14 +426,14 @@ extension String.UTF16View {
   @_effects(releasenone)
   internal func _foreignIndex(after i: Index) -> Index {
     _internalInvariant(_guts.isForeign)
-    return i.nextEncoded
+    return i.strippingTranscoding.nextEncoded
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignIndex(before i: Index) -> Index {
     _internalInvariant(_guts.isForeign)
-    return i.priorEncoded
+    return i.strippingTranscoding.priorEncoded
   }
 
   @usableFromInline @inline(never)
@@ -460,14 +460,14 @@ extension String.UTF16View {
     if n > 0 ? l >= 0 && l < n : l <= 0 && n < l {
       return nil
     }
-    return i.encoded(offsetBy: n)
+    return i.strippingTranscoding.encoded(offsetBy: n)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignIndex(_ i: Index, offsetBy n: Int) -> Index {
     _internalInvariant(_guts.isForeign)
-    return i.encoded(offsetBy: n)
+    return i.strippingTranscoding.encoded(offsetBy: n)
   }
 
   @usableFromInline @inline(never)

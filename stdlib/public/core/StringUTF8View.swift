@@ -137,7 +137,7 @@ extension String.UTF8View: BidirectionalCollection {
   @inlinable @inline(__always)
   public func index(after i: Index) -> Index {
     if _fastPath(_guts.isFastUTF8) {
-      return i.nextEncoded
+      return i.strippingTranscoding.nextEncoded
     }
 
     return _foreignIndex(after: i)
@@ -147,7 +147,7 @@ extension String.UTF8View: BidirectionalCollection {
   public func index(before i: Index) -> Index {
     precondition(!i.isZeroPosition)
     if _fastPath(_guts.isFastUTF8) {
-      return i.priorEncoded
+      return i.strippingTranscoding.priorEncoded
     }
 
     return _foreignIndex(before: i)
@@ -157,7 +157,7 @@ extension String.UTF8View: BidirectionalCollection {
   public func index(_ i: Index, offsetBy n: Int) -> Index {
     if _fastPath(_guts.isFastUTF8) {
       _precondition(n + i._encodedOffset <= _guts.count)
-      return i.encoded(offsetBy: n)
+      return i.strippingTranscoding.encoded(offsetBy: n)
     }
 
     return _foreignIndex(i, offsetBy: n)
