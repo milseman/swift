@@ -145,11 +145,12 @@ extension String.UTF16View: BidirectionalCollection {
 
     // For a BMP scalar (1-3 UTF-8 code units), advance past it. For a non-BMP
     // scalar, use a transcoded offset first.
+    let i = _guts.scalarAlign(i)
     let len = _guts.fastUTF8ScalarLength(startingAt: i._encodedOffset)
     if len == 4 && i.transcodedOffset == 0 {
       return i.nextTranscoded
     }
-    return i.strippingTranscoding.encoded(offsetBy: len)
+    return i.strippingTranscoding.encoded(offsetBy: len).aligned
   }
 
   @inlinable @inline(__always)
@@ -163,6 +164,7 @@ extension String.UTF16View: BidirectionalCollection {
       return i.strippingTranscoding
     }
 
+    let i = _guts.scalarAlign(i)
     let len = _guts.fastUTF8ScalarLength(endingAt: i._encodedOffset)
     if len == 4 {
       // 2 UTF-16 code units comprise this scalar; advance to the beginning and
@@ -172,7 +174,7 @@ extension String.UTF16View: BidirectionalCollection {
 
     // Single UTF-16 code unit
     _internalInvariant((1...3) ~= len)
-    return i.encoded(offsetBy: -len)
+    return i.encoded(offsetBy: -len).aligned
   }
 
   public func index(_ i: Index, offsetBy n: Int) -> Index {

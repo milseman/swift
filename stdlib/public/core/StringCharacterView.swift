@@ -66,7 +66,7 @@ extension String: BidirectionalCollection {
       startingAt: Index(_encodedOffset: nextOffset))
 
     return Index(
-      encodedOffset: nextOffset, characterStride: nextStride)
+      encodedOffset: nextOffset, characterStride: nextStride).aligned
   }
 
   /// Returns the position immediately before the given index.
@@ -80,7 +80,7 @@ extension String: BidirectionalCollection {
     // TODO: known-ASCII fast path, single-scalar-grapheme fast path, etc.
     let stride = _characterStride(endingAt: i)
     let priorOffset = i._encodedOffset &- stride
-    return Index(encodedOffset: priorOffset, characterStride: stride)
+    return Index(encodedOffset: priorOffset, characterStride: stride).aligned
   }
   /// Returns an index that is the specified distance from the given index.
   ///
