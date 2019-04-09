@@ -160,6 +160,13 @@ internal func _scalarAlign(
 internal func _scalarAlign(
   _ utf8: UnsafeBufferPointer<UInt8>, _ idx: String.Index
 ) -> String.Index {
+  if _fastPath(idx.isAligned) {
+    _internalInvariant(
+      idx._encodedOffset == _scalarAlign(utf8, idx._encodedOffset),
+      "Alignment bit is set for non-aligned index")
+
+    return idx
+  }
   if _slowPath(idx.transcodedOffset != 0 || idx._encodedOffset == 0) {
     // Transcoded index offsets are already scalar aligned
     return idx.strippingTranscoding
@@ -176,7 +183,11 @@ extension _StringGuts {
   @inlinable
   @inline(__always) // fast-path: fold common fastUTF8 check
   internal func scalarAlign(_ idx: Index) -> Index {
-    if _fastPath(idx.isAligned) { return idx }
+    if _fastPath(idx.isAligned) {
+      _internalInvariant(isOnUnicodeScalarBoundary(idx),
+        "Alignment bit is set for non-aligned index")
+      return idx
+    }
 
     // TODO(String performance): isASCII check
 

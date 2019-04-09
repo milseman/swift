@@ -139,42 +139,46 @@ extension String.UTF16View: BidirectionalCollection {
   public var endIndex: Index { return _guts.endIndex }
 
   @inlinable @inline(__always)
-  public func index(after i: Index) -> Index {
-    if _slowPath(_guts.isForeign) { return _foreignIndex(after: i) }
-    if _guts.isASCII { return i.nextEncoded }
+  public func index(after idx: Index) -> Index {
+    if _slowPath(_guts.isForeign) { return _foreignIndex(after: idx) }
+    if _guts.isASCII { return idx.nextEncoded }
 
     // For a BMP scalar (1-3 UTF-8 code units), advance past it. For a non-BMP
     // scalar, use a transcoded offset first.
-    let i = _guts.scalarAlign(i)
-    let len = _guts.fastUTF8ScalarLength(startingAt: i._encodedOffset)
-    if len == 4 && i.transcodedOffset == 0 {
-      return i.nextTranscoded
+
+    // TODO: do the ugly if non-transcoded make sure to scalar align thing...
+    // Also, can we just jump ahead 4 is transcoded is 1?
+
+    var idx = _utf16AlignNativeIndex(idx)
+    let len = _guts.fastUTF8ScalarLength(startingAt: idx._encodedOffset)
+    if len == 4 && idx.transcodedOffset == 0 {
+      return idx.nextTranscoded
     }
-    return i.strippingTranscoding.encoded(offsetBy: len).aligned
+    return idx.strippingTranscoding.encoded(offsetBy: len).aligned
   }
 
   @inlinable @inline(__always)
-  public func index(before i: Index) -> Index {
-    precondition(!i.isZeroPosition)
-    if _slowPath(_guts.isForeign) { return _foreignIndex(before: i) }
-    if _guts.isASCII { return i.priorEncoded }
+  public func index(before idx: Index) -> Index {
+    precondition(!idx.isZeroPosition)
+    if _slowPath(_guts.isForeign) { return _foreignIndex(before: idx) }
+    if _guts.isASCII { return idx.priorEncoded }
 
-    if i.transcodedOffset != 0 {
-      _internalInvariant(i.transcodedOffset == 1)
-      return i.strippingTranscoding
+    if idx.transcodedOffset != 0 {
+      _internalInvariant(idx.transcodedOffset == 1)
+      return idx.strippingTranscoding
     }
 
-    let i = _guts.scalarAlign(i)
-    let len = _guts.fastUTF8ScalarLength(endingAt: i._encodedOffset)
+    var idx = _utf16AlignNativeIndex(idx)
+    let len = _guts.fastUTF8ScalarLength(endingAt: idx._encodedOffset)
     if len == 4 {
       // 2 UTF-16 code units comprise this scalar; advance to the beginning and
       // start mid-scalar transcoding
-      return i.encoded(offsetBy: -len).nextTranscoded
+      return idx.encoded(offsetBy: -len).nextTranscoded
     }
 
     // Single UTF-16 code unit
     _internalInvariant((1...3) ~= len)
-    return i.encoded(offsetBy: -len).aligned
+    return idx.encoded(offsetBy: -len).aligned
   }
 
   public func index(_ i: Index, offsetBy n: Int) -> Index {
@@ -241,19 +245,16 @@ extension String.UTF16View: BidirectionalCollection {
   /// - Parameter position: A valid index of the view. `position` must be
   ///   less than the view's end index.
   @inlinable @inline(__always)
-  public subscript(i: Index) -> UTF16.CodeUnit {
-    String(_guts)._boundsCheck(i)
+  public subscript(idx: Index) -> UTF16.CodeUnit {
+    String(_guts)._boundsCheck(idx)
 
     if _fastPath(_guts.isFastUTF8) {
       let scalar = _guts.fastUTF8Scalar(
-        startingAt: _guts.scalarAlign(i)._encodedOffset)
-      if scalar.value <= 0xFFFF {
-        return UInt16(truncatingIfNeeded: scalar.value)
-      }
-      return scalar.utf16[i.transcodedOffset]
+        startingAt: _guts.scalarAlign(idx)._encodedOffset)
+      return scalar.utf16[idx.transcodedOffset]
     }
 
-    return _foreignSubscript(position: i)
+    return _foreignSubscript(position: idx)
   }
 }
 
@@ -478,6 +479,19 @@ extension String.UTF16View {
     _internalInvariant(_guts.isForeign)
     return endIndex._encodedOffset - startIndex._encodedOffset
   }
+
+  // Align a native UTF-8 index to a valid UTF-16 position. If there is a
+  // transcoded offset already, this is already a valid UTF-16 position
+  // (referring to the second surrogate) and returns `idx`. Otherwise, this will
+  // scalar-align the index. This is needed because we may be passed a
+  // non-scalar-aligned index from the UTF8View.
+  @_alwaysEmitIntoClient // Swift 5.1
+  @inline(__always)
+  internal func _utf16AlignNativeIndex(_ idx: String.Index) -> String.Index {
+    _internalInvariant(!_guts.isForeign)
+    guard idx.transcodedOffset == 0 else { return idx }
+    return _guts.scalarAlign(idx)
+  }
 }
 
 extension String.Index {
@@ -508,14 +522,7 @@ extension String.UTF16View {
       return idx._encodedOffset
     }
 
-    // Scalar-align a native UTF-8 index, in case it came from the UTF8View.
-    // Don't do this for sub-scalar indices from the UTF16View though, as we
-    // want to count surrogates.
-    var idx = idx
-    if idx.transcodedOffset == 0 {
-      idx = _guts.withFastUTF8 { _scalarAlign($0, idx) }
-    }
-
+    var idx = _utf16AlignNativeIndex(idx)
     if idx._encodedOffset < _shortHeuristic || !_guts.hasBreadcrumbs {
       return _distance(from: startIndex, to: idx)
     }
@@ -577,17 +584,14 @@ extension String.UTF16View {
             _internalInvariant(utf16Len == 2)
             return Index(encodedOffset: readIdx, transcodedOffset: 1)
           }
-          return Index(_encodedOffset: readIdx &+ len)
+          return Index(_encodedOffset: readIdx &+ len).aligned
         }
 
         readIdx &+= len
       }
     }
   }
-}
 
-extension String {
-  @usableFromInline // @testable
   internal func _nativeCopyUTF16CodeUnits(
     into buffer: UnsafeMutableBufferPointer<UInt16>,
     range: Range<String.Index>
@@ -595,6 +599,10 @@ extension String {
     _internalInvariant(_guts.isFastUTF8)
 
     if _slowPath(range.isEmpty) { return }
+
+    var range = Range(uncheckedBounds:
+      (_utf16AlignNativeIndex(range.lowerBound),
+       _utf16AlignNativeIndex(range.upperBound)))
 
     let isASCII = _guts.isASCII
     return _guts.withFastUTF8 { utf8 in
@@ -647,8 +655,17 @@ extension String {
         writeIdx &+= 1
       }
       _internalInvariant(writeIdx <= writeEnd)
-
     }
+  }
+}
+
+extension String {
+  @usableFromInline // @testable
+  internal func _nativeCopyUTF16CodeUnits(
+    into buffer: UnsafeMutableBufferPointer<UInt16>,
+    range: Range<String.Index>
+  ) {
+    UTF16View(_guts)._nativeCopyUTF16CodeUnits(into: buffer, range: range)
   }
 }
 
