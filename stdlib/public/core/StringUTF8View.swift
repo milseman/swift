@@ -403,6 +403,9 @@ extension String.UTF8View {
   internal func _foreignIndex(after i: Index) -> Index {
     _internalInvariant(_guts.isForeign)
 
+    // FIXME: We should need some kind of alignment if given an index into a
+    // surrogate pair
+
     let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
       startingAt: i.strippingTranscoding)
     let utf8Len = UTF8.width(scalar)
@@ -425,6 +428,10 @@ extension String.UTF8View {
   @_effects(releasenone)
   internal func _foreignIndex(before i: Index) -> Index {
     _internalInvariant(_guts.isForeign)
+
+    // FIXME: We should need some kind of alignment if given an index into a
+    // surrogate pair
+
     if i.transcodedOffset != 0 {
       _internalInvariant((1...3) ~= i.transcodedOffset)
       return i.priorTranscoded
@@ -440,6 +447,9 @@ extension String.UTF8View {
   @_effects(releasenone)
   internal func _foreignSubscript(position i: Index) -> UTF8.CodeUnit {
     _internalInvariant(_guts.isForeign)
+
+    // FIXME: We should need some kind of alignment if given an index into a
+    // surrogate pair
 
     let scalar = _guts.foreignErrorCorrectedScalar(
       startingAt: _guts.scalarAlign(i)).0

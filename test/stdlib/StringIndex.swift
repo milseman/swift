@@ -249,6 +249,49 @@ StringIndexTests.test("String.Index(_:within) / Range<String.Index>(_:in:)") {
 }
 
 StringIndexTests.test("Misaligned") {
+  func doIt(_ str: String) {
+    let characterIndices = Array(str.indices)
+    let scalarIndices = Array(str.unicodeScalars.indices)
+    let utf8Indices = Array(str.utf8.indices)
+    let utf16Indices = Array(str.utf16.indices)
+
+    var lastScalarI = 0
+    for i in 1..<utf8Indices.count {
+      let idx = utf8Indices[i]
+
+      // Skip aligned indices
+      guard idx < scalarIndices[lastScalarI + 1] else {
+        lastScalarI += 1
+        continue
+      }
+
+      expectTrue(UTF8.isContinuation(str.utf8[idx]))
+
+      let lastScalarIdx = scalarIndices[lastScalarI]
+
+      // Check aligning-down
+      expectEqual(str[lastScalarIdx], str[idx])
+      expectEqual(str.utf16[lastScalarIdx], str.utf16[idx])
+      expectEqual(str.unicodeScalars[lastScalarIdx], str.unicodeScalars[idx])
+
+      // Check distance
+      let (start, end) = (str.startIndex, str.endIndex)
+      if characterIndices.contains(lastScalarIdx) {
+        expectEqual(0, str.distance(from: lastScalarIdx, to: idx))
+        expectEqual(str[..<idx].count, str.distance(from: start, to: idx))
+        expectEqual(str[idx...].count, str.distance(from: idx, to: end))
+      }
+      expectEqual(0, str.unicodeScalars.distance(from: lastScalarIdx, to: idx))
+      expectEqual(str.unicodeScalars[..<idx].count, str.unicodeScalars.distance(from: start, to: idx))
+      expectEqual(str.unicodeScalars[idx...].count, str.unicodeScalars.distance(from: idx, to: end))
+
+      expectEqual(0, str.utf16.distance(from: lastScalarIdx, to: idx))
+      expectEqual(str.utf16[..<idx].count, str.utf16.distance(from: start, to: idx))
+      expectEqual(str.utf16[idx...].count, str.utf16.distance(from: idx, to: end))
+    }
+  }
+
+
   func useMisalignedRange(in string: String) {
     let utf8Location = 0
     let utf8Length = 7
@@ -275,11 +318,13 @@ StringIndexTests.test("Misaligned") {
     // print(string.utf16.index(after: end))
   }
 
-  let nsstring: NSString = "один"
+  let nsstring: NSString = "aодиde\u{301}日🧟‍♀️"
   useMisalignedRange(in: nsstring as String)
+  doIt(nsstring as String)
 
-  let string = "один"
+  let string = "aодиde\u{301}日🧟‍♀️"
   useMisalignedRange(in: string)
+  doIt(string)
 }
 
 #endif // _runtime(_ObjC)

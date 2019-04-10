@@ -149,7 +149,7 @@ extension String.UTF16View: BidirectionalCollection {
     // TODO: do the ugly if non-transcoded make sure to scalar align thing...
     // Also, can we just jump ahead 4 is transcoded is 1?
 
-    var idx = _utf16AlignNativeIndex(idx)
+    let idx = _utf16AlignNativeIndex(idx)
     let len = _guts.fastUTF8ScalarLength(startingAt: idx._encodedOffset)
     if len == 4 && idx.transcodedOffset == 0 {
       return idx.nextTranscoded
@@ -168,7 +168,7 @@ extension String.UTF16View: BidirectionalCollection {
       return idx.strippingTranscoding
     }
 
-    var idx = _utf16AlignNativeIndex(idx)
+    let idx = _utf16AlignNativeIndex(idx)
     let len = _guts.fastUTF8ScalarLength(endingAt: idx._encodedOffset)
     if len == 4 {
       // 2 UTF-16 code units comprise this scalar; advance to the beginning and
@@ -443,13 +443,16 @@ extension String.UTF16View {
   @_effects(releasenone)
   internal func _foreignSubscript(position i: Index) -> UTF16.CodeUnit {
     _internalInvariant(_guts.isForeign)
-    return _guts.foreignErrorCorrectedUTF16CodeUnit(at: i)
+    return _guts.foreignErrorCorrectedUTF16CodeUnit(at: i.strippingTranscoding)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
   internal func _foreignDistance(from start: Index, to end: Index) -> Int {
     _internalInvariant(_guts.isForeign)
+
+    // FIXME: What if a foreign index from UTF8View?
+
     return end._encodedOffset - start._encodedOffset
   }
 
@@ -522,7 +525,7 @@ extension String.UTF16View {
       return idx._encodedOffset
     }
 
-    var idx = _utf16AlignNativeIndex(idx)
+    let idx = _utf16AlignNativeIndex(idx)
     if idx._encodedOffset < _shortHeuristic || !_guts.hasBreadcrumbs {
       return _distance(from: startIndex, to: idx)
     }
@@ -600,7 +603,7 @@ extension String.UTF16View {
 
     if _slowPath(range.isEmpty) { return }
 
-    var range = Range(uncheckedBounds:
+    let range = Range(uncheckedBounds:
       (_utf16AlignNativeIndex(range.lowerBound),
        _utf16AlignNativeIndex(range.upperBound)))
 
