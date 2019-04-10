@@ -86,6 +86,8 @@ private func _hasGraphemeBreakBetween(
 private func _measureCharacterStrideICU(
   of utf8: UnsafeBufferPointer<UInt8>, startingAt i: Int
 ) -> Int {
+  // FIXME: need slice
+
   let iterator = _ThreadLocalStorage.getUBreakIterator(utf8)
   let offset = __swift_stdlib_ubrk_following(
     iterator, Int32(truncatingIfNeeded: i))
@@ -104,16 +106,18 @@ private func _measureCharacterStrideICU(
 private func _measureCharacterStrideICU(
   of utf16: UnsafeBufferPointer<UInt16>, startingAt i: Int
 ) -> Int {
-  let iterator = _ThreadLocalStorage.getUBreakIterator(utf16)
-  let offset = __swift_stdlib_ubrk_following(
-    iterator, Int32(truncatingIfNeeded: i))
+  // ICU will gives us a different result if we feed in the whole buffer, so
+  // slice it appropriately.
+  let utf16Slice = UnsafeBufferPointer(rebasing: utf16[i...])
+  let iterator = _ThreadLocalStorage.getUBreakIterator(utf16Slice)
+  let offset = __swift_stdlib_ubrk_following(iterator, 0)
+
   // ubrk_following returns -1 (UBRK_DONE) when it hits the end of the buffer.
-  if _fastPath(offset != -1) {
-    // The offset into our buffer is the distance.
-    _internalInvariant(offset > i, "zero-sized grapheme?")
-    return Int(truncatingIfNeeded: offset) &- i
-  }
-  return utf16.count &- i
+  guard _fastPath(offset != -1) else { return utf16Slice.count }
+
+  // The offset into our buffer is the distance.
+  _internalInvariant(offset > 0, "zero-sized grapheme?")
+  return Int(truncatingIfNeeded: offset)
 }
 
 @inline(never) // slow-path
@@ -121,9 +125,14 @@ private func _measureCharacterStrideICU(
 private func _measureCharacterStrideICU(
   of utf8: UnsafeBufferPointer<UInt8>, endingAt i: Int
 ) -> Int {
+  // FIXME: need slice
+
   let iterator = _ThreadLocalStorage.getUBreakIterator(utf8)
   let offset = __swift_stdlib_ubrk_preceding(
     iterator, Int32(truncatingIfNeeded: i))
+
+  print("ICU: \(Array(utf8)) at \(i) -> \(offset)")
+
   // ubrk_following returns -1 (UBRK_DONE) when it hits the end of the buffer.
   if _fastPath(offset != -1) {
     // The offset into our buffer is the distance.
@@ -138,6 +147,8 @@ private func _measureCharacterStrideICU(
 private func _measureCharacterStrideICU(
   of utf16: UnsafeBufferPointer<UInt16>, endingAt i: Int
 ) -> Int {
+  // FIXME: need slice
+
   let iterator = _ThreadLocalStorage.getUBreakIterator(utf16)
   let offset = __swift_stdlib_ubrk_preceding(
     iterator, Int32(truncatingIfNeeded: i))
@@ -209,7 +220,10 @@ extension _StringGuts {
       return len
     }
 
+    print("Calculating foreign grapheme stride")
+
     if let utf16Ptr = _stdlib_binary_CFStringGetCharactersPtr(cocoa) {
+      print("has pointer")
       let utf16 = UnsafeBufferPointer(start: utf16Ptr, count: count)
       return _measureCharacterStrideICU(of: utf16, startingAt: i)
     }

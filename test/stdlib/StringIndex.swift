@@ -22,231 +22,231 @@ let simpleStrings: [String] = [
     "",
 ]
 
-StringIndexTests.test("basic sanity checks") {
-  for s in simpleStrings {
-    let utf8 = Array(s.utf8)
-    let subUTF8 = Array(s[...].utf8)
-    let utf16 = Array(s.utf16)
-    let subUTF16 = Array(s[...].utf16)
-    let utf32 = Array(s.unicodeScalars.map { $0.value })
-    let subUTF32 = Array(s[...].unicodeScalars.map { $0.value })
+// StringIndexTests.test("basic sanity checks") {
+//   for s in simpleStrings {
+//     let utf8 = Array(s.utf8)
+//     let subUTF8 = Array(s[...].utf8)
+//     let utf16 = Array(s.utf16)
+//     let subUTF16 = Array(s[...].utf16)
+//     let utf32 = Array(s.unicodeScalars.map { $0.value })
+//     let subUTF32 = Array(s[...].unicodeScalars.map { $0.value })
 
-    expectEqual(s, String(decoding: utf8, as: UTF8.self))
-    expectEqual(s, String(decoding: subUTF8, as: UTF8.self))
-    expectEqual(s, String(decoding: utf16, as: UTF16.self))
-    expectEqual(s, String(decoding: subUTF16, as: UTF16.self))
-    expectEqual(s, String(decoding: utf32, as: UTF32.self))
-    expectEqual(s, String(decoding: subUTF32, as: UTF32.self))
-  }
-}
+//     expectEqual(s, String(decoding: utf8, as: UTF8.self))
+//     expectEqual(s, String(decoding: subUTF8, as: UTF8.self))
+//     expectEqual(s, String(decoding: utf16, as: UTF16.self))
+//     expectEqual(s, String(decoding: subUTF16, as: UTF16.self))
+//     expectEqual(s, String(decoding: utf32, as: UTF32.self))
+//     expectEqual(s, String(decoding: subUTF32, as: UTF32.self))
+//   }
+// }
 
-StringIndexTests.test("view counts") {
-  func validateViewCount<View: BidirectionalCollection>(
-    _ view: View, for string: String,
-    stackTrace: SourceLocStack = SourceLocStack(),
-    showFrame: Bool = true,
-    file: String = #file, line: UInt = #line
-  ) where View.Element: Equatable, View.Index == String.Index {
+// StringIndexTests.test("view counts") {
+//   func validateViewCount<View: BidirectionalCollection>(
+//     _ view: View, for string: String,
+//     stackTrace: SourceLocStack = SourceLocStack(),
+//     showFrame: Bool = true,
+//     file: String = #file, line: UInt = #line
+//   ) where View.Element: Equatable, View.Index == String.Index {
 
-    var stackTrace = stackTrace.pushIf(showFrame, file: file, line: line)
+//     var stackTrace = stackTrace.pushIf(showFrame, file: file, line: line)
 
-    let count = view.count
-    func expect(_ i: Int,
-      file: String = #file, line: UInt = #line
-    ) {
-      expectEqual(count, i, "for String: \(string)",
-        stackTrace: stackTrace.pushIf(showFrame, file: file, line: line),
-        showFrame: false)
-    }
+//     let count = view.count
+//     func expect(_ i: Int,
+//       file: String = #file, line: UInt = #line
+//     ) {
+//       expectEqual(count, i, "for String: \(string)",
+//         stackTrace: stackTrace.pushIf(showFrame, file: file, line: line),
+//         showFrame: false)
+//     }
 
-    let reversedView = view.reversed()
+//     let reversedView = view.reversed()
 
-    expect(Array(view).count)
-    expect(view.indices.count)
-    expect(view.indices.reversed().count)
-    expect(reversedView.indices.count)
-    expect(view.distance(from: view.startIndex, to: view.endIndex))
-    expect(reversedView.distance(
-      from: reversedView.startIndex, to: reversedView.endIndex))
+//     expect(Array(view).count)
+//     expect(view.indices.count)
+//     expect(view.indices.reversed().count)
+//     expect(reversedView.indices.count)
+//     expect(view.distance(from: view.startIndex, to: view.endIndex))
+//     expect(reversedView.distance(
+//       from: reversedView.startIndex, to: reversedView.endIndex))
 
-    // Access the elements from the indices
-    expectEqual(Array(view), view.indices.map { view[$0] })
-    expectEqual(
-      Array(reversedView), reversedView.indices.map { reversedView[$0] })
+//     // Access the elements from the indices
+//     expectEqual(Array(view), view.indices.map { view[$0] })
+//     expectEqual(
+//       Array(reversedView), reversedView.indices.map { reversedView[$0] })
 
-    let indicesArray = Array<String.Index>(view.indices)
-    for i in 0..<indicesArray.count {
-      var idx = view.startIndex
-      idx = view.index(idx, offsetBy: i)
-      expectEqual(indicesArray[i], idx)
-    }
-  }
+//     let indicesArray = Array<String.Index>(view.indices)
+//     for i in 0..<indicesArray.count {
+//       var idx = view.startIndex
+//       idx = view.index(idx, offsetBy: i)
+//       expectEqual(indicesArray[i], idx)
+//     }
+//   }
 
-  for s in simpleStrings {
-    validateViewCount(s, for: s)
-    validateViewCount(s.utf8, for: s)
-    validateViewCount(s.utf16, for: s)
-    validateViewCount(s.unicodeScalars, for: s)
+//   for s in simpleStrings {
+//     validateViewCount(s, for: s)
+//     validateViewCount(s.utf8, for: s)
+//     validateViewCount(s.utf16, for: s)
+//     validateViewCount(s.unicodeScalars, for: s)
 
-    validateViewCount(s[...], for: s)
-    validateViewCount(s[...].utf8, for: s)
-    validateViewCount(s[...].utf16, for: s)
-    validateViewCount(s[...].unicodeScalars, for: s)
-  }
-}
+//     validateViewCount(s[...], for: s)
+//     validateViewCount(s[...].utf8, for: s)
+//     validateViewCount(s[...].utf16, for: s)
+//     validateViewCount(s[...].unicodeScalars, for: s)
+//   }
+// }
 
-StringIndexTests.test("interchange") {
-  // Basic index alignment
+// StringIndexTests.test("interchange") {
+//   // Basic index alignment
 
-  func validateIndices(_ s: String) {
-    let utf8Indices = s.utf8.indices
-    let utf16Indices = s.utf16.indices
-    let unicodeScalarIndices = s.unicodeScalars.indices
-    let characterIndices = s.indices
+//   func validateIndices(_ s: String) {
+//     let utf8Indices = s.utf8.indices
+//     let utf16Indices = s.utf16.indices
+//     let unicodeScalarIndices = s.unicodeScalars.indices
+//     let characterIndices = s.indices
 
-    for idx in utf8Indices {
-      let char = s.utf8[idx]
+//     for idx in utf8Indices {
+//       let char = s.utf8[idx]
 
-      // ASCII or leading code unit in the scalar
-      if char <= 0x7F || char >= 0b1100_0000 {
-        expectEqual(idx, idx.samePosition(in: s.unicodeScalars))
-        expectEqual(idx, idx.samePosition(in: s.utf16))
+//       // ASCII or leading code unit in the scalar
+//       if char <= 0x7F || char >= 0b1100_0000 {
+//         expectEqual(idx, idx.samePosition(in: s.unicodeScalars))
+//         expectEqual(idx, idx.samePosition(in: s.utf16))
 
-        // ASCII
-        if char <= 0x7F {
-          expectEqual(UInt16(char), s.utf16[idx])
-          expectEqual(UInt32(char), s.unicodeScalars[idx].value)
-        }
-      } else {
-        // Continuation code unit
-        assert(char & 0b1100_0000 == 0b1000_0000)
-        expectNil(idx.samePosition(in: s))
-        expectNil(idx.samePosition(in: s.utf16))
-        expectNil(idx.samePosition(in: s.unicodeScalars))
-      }
-    }
-  }
+//         // ASCII
+//         if char <= 0x7F {
+//           expectEqual(UInt16(char), s.utf16[idx])
+//           expectEqual(UInt32(char), s.unicodeScalars[idx].value)
+//         }
+//       } else {
+//         // Continuation code unit
+//         assert(char & 0b1100_0000 == 0b1000_0000)
+//         expectNil(idx.samePosition(in: s))
+//         expectNil(idx.samePosition(in: s.utf16))
+//         expectNil(idx.samePosition(in: s.unicodeScalars))
+//       }
+//     }
+//   }
 
-  for s in simpleStrings {
-    validateIndices(s)
-  }
-}
+//   for s in simpleStrings {
+//     validateIndices(s)
+//   }
+// }
 
-StringIndexTests.test("UTF-16 Offsets") {
-  func validateOffsets(_ s: String) {
-    let end = s.endIndex
-    let utf16Count = s.utf16.count
+// StringIndexTests.test("UTF-16 Offsets") {
+//   func validateOffsets(_ s: String) {
+//     let end = s.endIndex
+//     let utf16Count = s.utf16.count
 
-    expectEqual(end, String.Index(utf16Offset: utf16Count, in: s))
-    expectEqual(end, String.Index(utf16Offset: utf16Count, in: s[...]))
+//     expectEqual(end, String.Index(utf16Offset: utf16Count, in: s))
+//     expectEqual(end, String.Index(utf16Offset: utf16Count, in: s[...]))
 
-    let pastEnd = String.Index(utf16Offset: utf16Count+1, in: s)
+//     let pastEnd = String.Index(utf16Offset: utf16Count+1, in: s)
 
-    expectNotEqual(end, pastEnd)
-    expectEqual(pastEnd, String.Index(utf16Offset: utf16Count+1, in: s[...]))
-    expectEqual(pastEnd, String.Index(utf16Offset: utf16Count+2, in: s))
-    expectEqual(pastEnd, String.Index(utf16Offset: -1, in: s))
-    expectEqual(
-      pastEnd, String.Index(utf16Offset: Swift.max(1, utf16Count), in: s.dropFirst()))
+//     expectNotEqual(end, pastEnd)
+//     expectEqual(pastEnd, String.Index(utf16Offset: utf16Count+1, in: s[...]))
+//     expectEqual(pastEnd, String.Index(utf16Offset: utf16Count+2, in: s))
+//     expectEqual(pastEnd, String.Index(utf16Offset: -1, in: s))
+//     expectEqual(
+//       pastEnd, String.Index(utf16Offset: Swift.max(1, utf16Count), in: s.dropFirst()))
 
-    let utf16Indices = Array(s.utf16.indices)
-    expectEqual(utf16Count, utf16Indices.count)
-    for i in 0..<utf16Indices.count {
-      let idx = String.Index(utf16Offset: i, in: s)
-      expectEqual(utf16Indices[i], idx)
-      expectEqual(i, idx.utf16Offset(in: s))
-      expectEqual(i, idx.utf16Offset(in: s[...]))
+//     let utf16Indices = Array(s.utf16.indices)
+//     expectEqual(utf16Count, utf16Indices.count)
+//     for i in 0..<utf16Indices.count {
+//       let idx = String.Index(utf16Offset: i, in: s)
+//       expectEqual(utf16Indices[i], idx)
+//       expectEqual(i, idx.utf16Offset(in: s))
+//       expectEqual(i, idx.utf16Offset(in: s[...]))
 
-      if i < s.dropLast().utf16.count {
-        expectEqual(
-          utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
-        expectEqual(i, idx.utf16Offset(in: s.dropLast()))
-      } else if i == s.dropLast().utf16.count {
-        expectEqual(
-          utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
-      } else {
-        expectNotEqual(
-          utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
-      }
-    }
-  }
+//       if i < s.dropLast().utf16.count {
+//         expectEqual(
+//           utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
+//         expectEqual(i, idx.utf16Offset(in: s.dropLast()))
+//       } else if i == s.dropLast().utf16.count {
+//         expectEqual(
+//           utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
+//       } else {
+//         expectNotEqual(
+//           utf16Indices[i], String.Index(utf16Offset: i, in: s.dropLast()))
+//       }
+//     }
+//   }
 
-  for s in simpleStrings {
-    validateOffsets(s)
-  }
-}
+//   for s in simpleStrings {
+//     validateOffsets(s)
+//   }
+// }
 
-func swift5ScalarAlign(_ idx: String.Index, in str: String) -> String.Index {
-  var idx = idx
-  while str.utf8[idx] & 0xC0 == 0x80 { str.utf8.formIndex(before: &idx) }
-  return idx
-}
+// func swift5ScalarAlign(_ idx: String.Index, in str: String) -> String.Index {
+//   var idx = idx
+//   while str.utf8[idx] & 0xC0 == 0x80 { str.utf8.formIndex(before: &idx) }
+//   return idx
+// }
 
-StringIndexTests.test("Scalar Align UTF-8 indices") {
-  // TODO: Test a new aligning API when we add it. For now, we
-  // test scalar-aligning UTF-8 indices
+// StringIndexTests.test("Scalar Align UTF-8 indices") {
+//   // TODO: Test a new aligning API when we add it. For now, we
+//   // test scalar-aligning UTF-8 indices
 
-  let str = "a😇"
-  let subScalarIdx = str.utf8.index(str.utf8.startIndex, offsetBy: 2)
+//   let str = "a😇"
+//   let subScalarIdx = str.utf8.index(str.utf8.startIndex, offsetBy: 2)
 
-  let roundedIdx = swift5ScalarAlign(subScalarIdx, in: str)
-  expectEqual(1, roundedIdx.utf16Offset(in: str))
+//   let roundedIdx = swift5ScalarAlign(subScalarIdx, in: str)
+//   expectEqual(1, roundedIdx.utf16Offset(in: str))
 
-  let roundedIdx2 = str.utf8[...subScalarIdx].lastIndex { $0 & 0xC0 != 0x80 }
-  expectEqual(roundedIdx, roundedIdx)
+//   let roundedIdx2 = str.utf8[...subScalarIdx].lastIndex { $0 & 0xC0 != 0x80 }
+//   expectEqual(roundedIdx, roundedIdx)
 
-  var roundedIdx3 = subScalarIdx
-  while roundedIdx3.samePosition(in: str.unicodeScalars) == nil {
-    str.utf8.formIndex(before: &roundedIdx3)
-  }
-  expectEqual(roundedIdx, roundedIdx3)
-}
+//   var roundedIdx3 = subScalarIdx
+//   while roundedIdx3.samePosition(in: str.unicodeScalars) == nil {
+//     str.utf8.formIndex(before: &roundedIdx3)
+//   }
+//   expectEqual(roundedIdx, roundedIdx3)
+// }
 
 #if _runtime(_ObjC)
 import Foundation
-StringIndexTests.test("String.Index(_:within) / Range<String.Index>(_:in:)") {
-  guard #available(macOS 9999, iOS 9999, tvOS 9999, watchOS 9999, *) else {
-    return
-  }
+// StringIndexTests.test("String.Index(_:within) / Range<String.Index>(_:in:)") {
+//   guard #available(macOS 9999, iOS 9999, tvOS 9999, watchOS 9999, *) else {
+//     return
+//   }
 
-  let str = simpleStrings.joined()
-  let substr = str[...]
-  for idx in str.utf8.indices {
-    expectEqual(
-      String.Index(idx, within: str), String.Index(idx, within: substr))
-  }
+//   let str = simpleStrings.joined()
+//   let substr = str[...]
+//   for idx in str.utf8.indices {
+//     expectEqual(
+//       String.Index(idx, within: str), String.Index(idx, within: substr))
+//   }
 
-  expectNil(String.Index(str.startIndex, within: str.dropFirst()))
-  expectNil(String.Index(str.endIndex, within: str.dropLast()))
-  expectNotNil(String.Index(str.startIndex, within: str))
-  expectNotNil(String.Index(str.endIndex, within: str))
+//   expectNil(String.Index(str.startIndex, within: str.dropFirst()))
+//   expectNil(String.Index(str.endIndex, within: str.dropLast()))
+//   expectNotNil(String.Index(str.startIndex, within: str))
+//   expectNotNil(String.Index(str.endIndex, within: str))
 
-  let utf16Count = str.utf16.count
-  let utf16Indices = Array(str.utf16.indices) + [str.utf16.endIndex]
-  for location in 0..<utf16Count {
-    for length in 0...(utf16Count - location) {
-      let strLB = String.Index(utf16Indices[location], within: str)
-      let substrLB = String.Index(utf16Indices[location], within: substr)
-      let strUB = String.Index(utf16Indices[location+length], within: str)
-      let substrUB = String.Index(utf16Indices[location+length], within: substr)
-      expectEqual(strLB, substrLB)
-      expectEqual(strUB, substrUB)
+//   let utf16Count = str.utf16.count
+//   let utf16Indices = Array(str.utf16.indices) + [str.utf16.endIndex]
+//   for location in 0..<utf16Count {
+//     for length in 0...(utf16Count - location) {
+//       let strLB = String.Index(utf16Indices[location], within: str)
+//       let substrLB = String.Index(utf16Indices[location], within: substr)
+//       let strUB = String.Index(utf16Indices[location+length], within: str)
+//       let substrUB = String.Index(utf16Indices[location+length], within: substr)
+//       expectEqual(strLB, substrLB)
+//       expectEqual(strUB, substrUB)
 
-      if #available(macOS 9999, iOS 9999, tvOS 9999, watchOS 9999, *) {
-        let nsRange = NSRange(location: location, length: length)
-        let strRange = Range<String.Index>(nsRange, in: str)
-        let substrRange = Range<String.Index>(nsRange, in: substr)
+//       if #available(macOS 9999, iOS 9999, tvOS 9999, watchOS 9999, *) {
+//         let nsRange = NSRange(location: location, length: length)
+//         let strRange = Range<String.Index>(nsRange, in: str)
+//         let substrRange = Range<String.Index>(nsRange, in: substr)
 
-        expectEqual(strRange, substrRange)
-        guard strLB != nil && strUB != nil else {
-          expectNil(strRange)
-          continue
-        }
-        expectEqual(strRange, Range(uncheckedBounds: (strLB!, strUB!)))
-      }
-    }
-  }
-}
+//         expectEqual(strRange, substrRange)
+//         guard strLB != nil && strUB != nil else {
+//           expectNil(strRange)
+//           continue
+//         }
+//         expectEqual(strRange, Range(uncheckedBounds: (strLB!, strUB!)))
+//       }
+//     }
+//   }
+// }
 
 StringIndexTests.test("Misaligned") {
   func doIt(_ str: String) {
@@ -261,13 +261,17 @@ StringIndexTests.test("Misaligned") {
 
       // Skip aligned indices
       guard idx < scalarIndices[lastScalarI + 1] else {
+        assert(idx == scalarIndices[lastScalarI + 1])
         lastScalarI += 1
         continue
       }
-
       expectTrue(UTF8.isContinuation(str.utf8[idx]))
 
       let lastScalarIdx = scalarIndices[lastScalarI]
+
+      dump(idx)
+      dump(lastScalarIdx)
+      dump(scalarIndices[lastScalarI + 1])
 
       // Check aligning-down
       expectEqual(str[lastScalarIdx], str[idx])
@@ -281,49 +285,27 @@ StringIndexTests.test("Misaligned") {
         expectEqual(str[..<idx].count, str.distance(from: start, to: idx))
         expectEqual(str[idx...].count, str.distance(from: idx, to: end))
       }
-      expectEqual(0, str.unicodeScalars.distance(from: lastScalarIdx, to: idx))
-      expectEqual(str.unicodeScalars[..<idx].count, str.unicodeScalars.distance(from: start, to: idx))
-      expectEqual(str.unicodeScalars[idx...].count, str.unicodeScalars.distance(from: idx, to: end))
+      expectEqual(
+        0, str.unicodeScalars.distance(from: lastScalarIdx, to: idx))
+      expectEqual(
+        str.unicodeScalars[..<idx].count,
+        str.unicodeScalars.distance(from: start, to: idx))
+      expectEqual(
+        str.unicodeScalars[idx...].count,
+        str.unicodeScalars.distance(from: idx, to: end))
 
       expectEqual(0, str.utf16.distance(from: lastScalarIdx, to: idx))
-      expectEqual(str.utf16[..<idx].count, str.utf16.distance(from: start, to: idx))
-      expectEqual(str.utf16[idx...].count, str.utf16.distance(from: idx, to: end))
+      expectEqual(
+        str.utf16[..<idx].count, str.utf16.distance(from: start, to: idx))
+      expectEqual(
+        str.utf16[idx...].count, str.utf16.distance(from: idx, to: end))
     }
   }
 
-
-  func useMisalignedRange(in string: String) {
-    let utf8Location = 0
-    let utf8Length = 7
-    let start = string.utf8.index(string.utf8.startIndex, offsetBy: utf8Location)
-    let end = string.utf8.index(start, offsetBy: utf8Length) // misaligned
-    expectEqual(string.dropLast(), string[start..<end])
-
-    expectEqual(3, string.utf16.distance(from: start, to: end))
-    expectEqual(3, string.unicodeScalars.distance(from: start, to: end))
-    expectEqual(3, string.distance(from: start, to: end))
-    expectEqual(-3, string.utf16.distance(from: end, to: start))
-    expectEqual(-3, string.unicodeScalars.distance(from: end, to: start))
-    expectEqual(-3, string.distance(from: end, to: start))
-
-    expectEqual(3, string[start..<end].count)
-
-    expectEqual(3, string[...].distance(from: start, to: end))
-    expectEqual(3, string[...].utf16.distance(from: start, to: end))
-    expectEqual(3, string[...].unicodeScalars.distance(from: start, to: end))
-    expectEqual(-3, string[...].distance(from: end, to: start))
-    expectEqual(-3, string[...].utf16.distance(from: end, to: start))
-    expectEqual(-3, string[...].unicodeScalars.distance(from: end, to: start))
-
-    // print(string.utf16.index(after: end))
-  }
-
   let nsstring: NSString = "aодиde\u{301}日🧟‍♀️"
-  useMisalignedRange(in: nsstring as String)
   doIt(nsstring as String)
 
   let string = "aодиde\u{301}日🧟‍♀️"
-  useMisalignedRange(in: string)
   doIt(string)
 }
 
