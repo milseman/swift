@@ -251,7 +251,7 @@ import Foundation
 StringIndexTests.test("Misaligned") {
   func doIt(_ str: String) {
     let characterIndices = Array(str.indices)
-    let scalarIndices = Array(str.unicodeScalars.indices)
+    let scalarIndices = Array(str.unicodeScalars.indices) + [str.endIndex]
     let utf8Indices = Array(str.utf8.indices)
     let utf16Indices = Array(str.utf16.indices)
 
