@@ -470,10 +470,17 @@ extension _StringObject {
 
   // Whether this string is in one of our fastest representations:
   // small or tail-allocated (i.e. mortal/immortal native)
+  //
+  // TODO: Remove @UFI when below @AEIC is moved up, this doesn't really make a
+  // symbol, getter is AEIC.
   @_alwaysEmitIntoClient
-  @inline(__always)
   internal var isPreferredRepresentation: Bool {
-    return _fastPath(isSmall || _countAndFlags.isTailAllocated)
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    @inline(__always)
+    get {
+      return _fastPath(isSmall || _countAndFlags.isTailAllocated)
+    }
   }
 }
 

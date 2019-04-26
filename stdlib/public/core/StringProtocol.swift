@@ -182,8 +182,13 @@ extension String {
   /// give a result for String.UTF8View.withContiguousStorageIfAvailable.
   /// Contiguous strings also benefit from fast-paths and better optimizations.
   ///
-  @_alwaysEmitIntoClient
-  public var isContiguousUTF8: Bool { return _guts.isFastUTF8 }
+  public var isContiguousUTF8: Bool {
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    get {
+      return _guts.isFastUTF8
+    }
+  }
 
   /// If this string is not contiguous, make it so. If this mutates the string,
   /// it will invalidate any pre-existing indices.
@@ -227,8 +232,13 @@ extension Substring {
   /// give a result for String.UTF8View.withContiguousStorageIfAvailable.
   /// Contiguous strings also benefit from fast-paths and better optimizations.
   ///
-  @_alwaysEmitIntoClient
-  public var isContiguousUTF8: Bool { return self.base.isContiguousUTF8 }
+  public var isContiguousUTF8: Bool {
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    get {
+      return self.base.isContiguousUTF8
+    }
+  }
 
   /// If this string is not contiguous, make it so. If this mutates the
   /// substring, it will invalidate any pre-existing indices.

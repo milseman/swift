@@ -50,12 +50,15 @@ public protocol SIMDStorage {
 
 extension SIMDStorage {
   /// The number of scalars, or elements, in a vector of this type.
-  @_alwaysEmitIntoClient
   public static var scalarCount: Int {
-    // Wouldn't it make more sense to define the instance var in terms of the
-    // static var? Yes, probably, but by doing it this way we make the static
-    // var backdeployable.
-    return Self().scalarCount
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    get {
+      // Wouldn't it make more sense to define the instance var in terms of the
+      // static var? Yes, probably, but by doing it this way we make the static
+      // var backdeployable.
+      return Self().scalarCount
+    }
   }
 }
 
@@ -486,9 +489,12 @@ extension SIMD where Scalar: FixedWidthInteger {
   }
   
   /// A vector with one in all lanes.
-  @_alwaysEmitIntoClient
   public static var one: Self {
-    return Self(repeating: 1)
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    get {
+      return Self(repeating: 1)
+    }
   }
   
   /// Returns a vector with random values from within the specified range in
@@ -544,9 +550,12 @@ extension SIMD where Scalar: FloatingPoint {
   }
   
   /// A vector with one in all lanes.
-  @_alwaysEmitIntoClient
   public static var one: Self {
-    return Self(repeating: 1)
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    get {
+      return Self(repeating: 1)
+    }
   }
   
   @_alwaysEmitIntoClient

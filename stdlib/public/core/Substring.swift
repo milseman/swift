@@ -117,8 +117,13 @@ public struct Substring {
 
 extension Substring {
   /// Returns the underlying string from which this Substring was derived.
-  @_alwaysEmitIntoClient
-  public var base: String { return _slice.base }
+  public var base: String {
+    // FIXME(rdar://50058883) @_alwaysEmitIntoClient needs explicit getter
+    @_alwaysEmitIntoClient
+    get {
+      return _slice.base
+    }
+  }
 
   @inlinable @inline(__always)
   internal var _wholeGuts: _StringGuts { return base._guts }
