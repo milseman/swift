@@ -5,22 +5,22 @@ import StdlibUnittest
 
 var StringIndexTests = TestSuite("StringIndexTests")
 
-enum SimpleString: String {
-  case smallASCII = "abcdefg"
-  case smallUnicode = "abéÏ𓀀"
-  case largeASCII = "012345678901234567890"
-  case largeUnicode = "abéÏ012345678901234567890𓀀"
-  case emoji = "😀😃🤢🤮👩🏿‍🎤🧛🏻‍♂️🧛🏻‍♂️👩‍👩‍👦‍👦"
-}
+// enum SimpleString: String {
+//   case smallASCII = "abcdefg"
+//   case smallUnicode = "abéÏ𓀀"
+//   case largeASCII = "012345678901234567890"
+//   case largeUnicode = "abéÏ012345678901234567890𓀀"
+//   case emoji = "😀😃🤢🤮👩🏿‍🎤🧛🏻‍♂️🧛🏻‍♂️👩‍👩‍👦‍👦"
+// }
 
-let simpleStrings: [String] = [
-    SimpleString.smallASCII.rawValue,
-    SimpleString.smallUnicode.rawValue,
-    SimpleString.largeASCII.rawValue,
-    SimpleString.largeUnicode.rawValue,
-    SimpleString.emoji.rawValue,
-    "",
-]
+// let simpleStrings: [String] = [
+//     SimpleString.smallASCII.rawValue,
+//     SimpleString.smallUnicode.rawValue,
+//     SimpleString.largeASCII.rawValue,
+//     SimpleString.largeUnicode.rawValue,
+//     SimpleString.emoji.rawValue,
+//     "",
+// ]
 
 // StringIndexTests.test("basic sanity checks") {
 //   for s in simpleStrings {
@@ -248,65 +248,137 @@ import Foundation
 //   }
 // }
 
-StringIndexTests.test("Misaligned") {
-  func doIt(_ str: String) {
-    let characterIndices = Array(str.indices)
-    let scalarIndices = Array(str.unicodeScalars.indices) + [str.endIndex]
-    let utf8Indices = Array(str.utf8.indices)
-    let utf16Indices = Array(str.utf16.indices)
+// StringIndexTests.test("Misaligned") {
+//   func doIt(_ str: String) {
+//     let characterIndices = Array(str.indices)
+//     let scalarIndices = Array(str.unicodeScalars.indices) + [str.endIndex]
+//     let utf8Indices = Array(str.utf8.indices)
+//     let utf16Indices = Array(str.utf16.indices)
 
-    var lastScalarI = 0
-    for i in 1..<utf8Indices.count {
-      let idx = utf8Indices[i]
+//     var lastScalarI = 0
+//     for i in 1..<utf8Indices.count {
+//       let idx = utf8Indices[i]
 
-      // Skip aligned indices
-      guard idx < scalarIndices[lastScalarI + 1] else {
-        assert(idx == scalarIndices[lastScalarI + 1])
-        lastScalarI += 1
-        continue
+//       // Skip aligned indices
+//       guard idx < scalarIndices[lastScalarI + 1] else {
+//         assert(idx == scalarIndices[lastScalarI + 1])
+//         lastScalarI += 1
+//         continue
+//       }
+//       expectTrue(UTF8.isContinuation(str.utf8[idx]))
+
+//       let lastScalarIdx = scalarIndices[lastScalarI]
+
+//       dump(idx)
+//       dump(lastScalarIdx)
+//       dump(scalarIndices[lastScalarI + 1])
+
+//       // Check aligning-down
+//       expectEqual(str[lastScalarIdx], str[idx])
+//       expectEqual(str.utf16[lastScalarIdx], str.utf16[idx])
+//       expectEqual(str.unicodeScalars[lastScalarIdx], str.unicodeScalars[idx])
+
+//       // Check distance
+//       let (start, end) = (str.startIndex, str.endIndex)
+//       if characterIndices.contains(lastScalarIdx) {
+//         expectEqual(0, str.distance(from: lastScalarIdx, to: idx))
+//         expectEqual(str[..<idx].count, str.distance(from: start, to: idx))
+//         expectEqual(str[idx...].count, str.distance(from: idx, to: end))
+//       }
+//       expectEqual(
+//         0, str.unicodeScalars.distance(from: lastScalarIdx, to: idx))
+//       expectEqual(
+//         str.unicodeScalars[..<idx].count,
+//         str.unicodeScalars.distance(from: start, to: idx))
+//       expectEqual(
+//         str.unicodeScalars[idx...].count,
+//         str.unicodeScalars.distance(from: idx, to: end))
+
+//       expectEqual(0, str.utf16.distance(from: lastScalarIdx, to: idx))
+//       expectEqual(
+//         str.utf16[..<idx].count, str.utf16.distance(from: start, to: idx))
+//       expectEqual(
+//         str.utf16[idx...].count, str.utf16.distance(from: idx, to: end))
+//     }
+//   }
+
+//   let nsstring: NSString = "aодиde\u{301}日🧟‍♀️"
+//   doIt(nsstring as String)
+
+//   let string = "aодиde\u{301}日🧟‍♀️"
+//   doIt(string)
+// }
+
+StringIndexTests.test("Index interchange") {
+  // Exhaustively test aspects of string index interchange
+  func testInterchange(
+    _ str: String,
+    stackTrace: SourceLocStack = SourceLocStack(),
+    showFrame: Bool = true,
+    file: String = #file,
+    line: UInt = #line
+  ) {
+    let stackTrace = stackTrace.pushIf(showFrame, file: file, line: line)
+    func expect(
+      _ condition: @autoclosure () -> Bool,
+      _ message: String = "",
+      file: String = #file,
+      line: UInt = #line
+    ) {
+      expectTrue(condition(), message,
+        stackTrace: stackTrace, showFrame: showFrame,
+        file: file, line: line)
+    }
+
+    var curCharIdx = str.startIndex
+    var curScalarIdx = str.startIndex
+    var curUTF8Idx = str.startIndex
+    var curUTF16Idx = str.startIndex
+
+    while curCharIdx < str.endIndex {
+      let curChar = str[curCharIdx]
+      expect(curChar == str[curScalarIdx])
+      expect(curChar == str[curUTF8Idx])
+      expect(curChar == str[curUTF16Idx])
+
+      // Advance the character index once and have the scalar index catch up
+      str.formIndex(after: &curCharIdx)
+
+      while curScalarIdx < curCharIdx {
+        let curScalar = str.unicodeScalars[curScalarIdx]
+
+        print(curScalar)
+        print(curScalarIdx.encodedOffset)
+
+        let curSubChar = str[curScalarIdx]
+
+        // Advance the scalar index once and have the code unit indices catch up
+        str.unicodeScalars.formIndex(after: &curScalarIdx)
+
+        while curUTF8Idx < curScalarIdx {
+          expect(curScalar == str.unicodeScalars[curUTF8Idx])
+          // expect(curSubChar == str[curUTF8Idx])
+          expect(!UTF16.isTrailSurrogate(str.utf16[curUTF8Idx]))
+          str.utf8.formIndex(after: &curUTF8Idx)
+        }
+        expect(curUTF8Idx == curScalarIdx)
+
+        while curUTF16Idx < curScalarIdx {
+          expect(curScalar == str.unicodeScalars[curUTF16Idx])
+          // expect(curSubChar == str[curUTF16Idx])
+          expect(!UTF8.isContinuation(str.utf8[curUTF16Idx]))
+          str.utf16.formIndex(after: &curUTF16Idx)
+        }
+        expect(curUTF16Idx == curScalarIdx)
       }
-      expectTrue(UTF8.isContinuation(str.utf8[idx]))
-
-      let lastScalarIdx = scalarIndices[lastScalarI]
-
-      dump(idx)
-      dump(lastScalarIdx)
-      dump(scalarIndices[lastScalarI + 1])
-
-      // Check aligning-down
-      expectEqual(str[lastScalarIdx], str[idx])
-      expectEqual(str.utf16[lastScalarIdx], str.utf16[idx])
-      expectEqual(str.unicodeScalars[lastScalarIdx], str.unicodeScalars[idx])
-
-      // Check distance
-      let (start, end) = (str.startIndex, str.endIndex)
-      if characterIndices.contains(lastScalarIdx) {
-        expectEqual(0, str.distance(from: lastScalarIdx, to: idx))
-        expectEqual(str[..<idx].count, str.distance(from: start, to: idx))
-        expectEqual(str[idx...].count, str.distance(from: idx, to: end))
-      }
-      expectEqual(
-        0, str.unicodeScalars.distance(from: lastScalarIdx, to: idx))
-      expectEqual(
-        str.unicodeScalars[..<idx].count,
-        str.unicodeScalars.distance(from: start, to: idx))
-      expectEqual(
-        str.unicodeScalars[idx...].count,
-        str.unicodeScalars.distance(from: idx, to: end))
-
-      expectEqual(0, str.utf16.distance(from: lastScalarIdx, to: idx))
-      expectEqual(
-        str.utf16[..<idx].count, str.utf16.distance(from: start, to: idx))
-      expectEqual(
-        str.utf16[idx...].count, str.utf16.distance(from: idx, to: end))
     }
   }
 
-  let nsstring: NSString = "aодиde\u{301}日🧟‍♀️"
-  doIt(nsstring as String)
+  testInterchange("abc\r\ndefg")
+  testInterchange(("abc\r\ndefg" as NSString) as String)
 
-  let string = "aодиde\u{301}日🧟‍♀️"
-  doIt(string)
+  testInterchange("ab\r\ncдиde\u{301}日🧟‍♀️")
+  testInterchange(("ab\r\ncдиde\u{301}日🧟‍♀️" as NSString) as String)
 }
 
 #endif // _runtime(_ObjC)

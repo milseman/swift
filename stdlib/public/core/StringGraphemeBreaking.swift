@@ -86,19 +86,18 @@ private func _hasGraphemeBreakBetween(
 private func _measureCharacterStrideICU(
   of utf8: UnsafeBufferPointer<UInt8>, startingAt i: Int
 ) -> Int {
-  // FIXME: need slice
+  // ICU will gives us a different result if we feed in the whole buffer, so
+  // slice it appropriately.
+  let utf8Slice = UnsafeBufferPointer(rebasing: utf8[i...])
+  let iterator = _ThreadLocalStorage.getUBreakIterator(utf8Slice)
+  let offset = __swift_stdlib_ubrk_following(iterator, 0)
 
-  let iterator = _ThreadLocalStorage.getUBreakIterator(utf8)
-  let offset = __swift_stdlib_ubrk_following(
-    iterator, Int32(truncatingIfNeeded: i))
   // ubrk_following returns -1 (UBRK_DONE) when it hits the end of the buffer.
-  if _fastPath(offset != -1) {
-    // The offset into our buffer is the distance.
-    _internalInvariant(offset > i, "zero-sized grapheme?")
-    return Int(truncatingIfNeeded: offset) &- i
-  }
-  _internalInvariant(utf8.count > i)
-  return utf8.count &- i
+  guard _fastPath(offset != -1) else { return utf8Slice.count }
+
+  // The offset into our buffer is the distance.
+  _internalInvariant(offset > 0, "zero-sized grapheme?")
+  return Int(truncatingIfNeeded: offset)
 }
 
 @inline(never) // slow-path

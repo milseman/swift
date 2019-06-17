@@ -189,15 +189,15 @@ extension String: BidirectionalCollection {
   public subscript(i: Index) -> Character {
     _boundsCheck(i)
 
-    print(Array(self.utf16).map { String($0, radix: 16, uppercase: true) })
-    print(String(i._rawBits, radix: 16, uppercase: true))
-    print(String(i._encodedOffset))
+    // print(Array(self.utf16).map { String($0, radix: 16, uppercase: true) })
+    // print(String(i._rawBits, radix: 16, uppercase: true))
+    // print(String(i._encodedOffset))
 
     let i = _guts.scalarAlign(i)
-    print(String(i._rawBits, radix: 16, uppercase: true))
-    print(String(i._encodedOffset))
+    // print(String(i._rawBits, radix: 16, uppercase: true))
+    // print(String(i._encodedOffset))
     let distance = _characterStride(startingAt: i)
-    print(distance)
+    // print(distance)
 
     return _guts.errorCorrectedCharacter(
       startingAt: i._encodedOffset, endingAt: i._encodedOffset &+ distance)
@@ -207,7 +207,7 @@ extension String: BidirectionalCollection {
   internal func _characterStride(startingAt i: Index) -> Int {
     // Fast check if it's already been measured, otherwise check resiliently
     if let d = i.characterStride {
-      print("cached stride: \(d)")
+      // print("cached stride: \(d)")
       return d
     }
 
