@@ -189,7 +189,9 @@ extension _StringGuts {
       return String.Index(_encodedOffset: idx._encodedOffset).aligned
     }
     if _slowPath(self.isForeign) {
-      return foreignScalarAlign(idx)
+      let foreignIdx = foreignScalarAlign(idx)
+      _internalInvariant(foreignIdx.isAligned)
+      return foreignIdx
     }
 
     return String.Index(_encodedOffset:
@@ -360,7 +362,7 @@ extension _StringGuts {
   @usableFromInline @inline(never) // slow-path
   @_effects(releasenone)
   internal func foreignScalarAlign(_ idx: Index) -> Index {
-    guard idx._encodedOffset != self.count else { return idx }
+    guard idx._encodedOffset != self.count else { return idx.aligned }
 
     _internalInvariant(idx._encodedOffset < self.count)
 

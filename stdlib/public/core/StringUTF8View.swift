@@ -398,49 +398,61 @@ extension String.UTF8View {
 
 // Foreign string support
 extension String.UTF8View {
-  @usableFromInline @inline(never)
-  @_effects(releasenone)
-  internal func _foreignIndex(after i: Index) -> Index {
+  // Align a foreign UTF-16 index to a valid UTF-8 position. If there is a
+  // transcoded offset already, this is already a valid UTF-8 position
+  // (referring to a continuation byte) and returns `idx`. Otherwise, this will
+  // scalar-align the index. This is needed because we may be passed a
+  // non-scalar-aligned foreign index from the UTF16View.
+  @inline(__always)
+  internal func _utf8AlignForeignIndex(_ idx: String.Index) -> String.Index {
     _internalInvariant(_guts.isForeign)
-
-    // FIXME: We should need some kind of alignment if given an index into a
-    // surrogate pair
-
-    let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
-      startingAt: i.strippingTranscoding)
-    let utf8Len = UTF8.width(scalar)
-
-    if utf8Len == 1 {
-      _internalInvariant(i.transcodedOffset == 0)
-      return i.nextEncoded
-    }
-
-    // Check if we're still transcoding sub-scalar
-    if i.transcodedOffset < utf8Len - 1 {
-      return i.nextTranscoded
-    }
-
-    // Skip to the next scalar
-    return i.encoded(offsetBy: scalarLen)
+    guard idx.transcodedOffset == 0 else { return idx }
+    return _guts.scalarAlign(idx)
   }
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
-  internal func _foreignIndex(before i: Index) -> Index {
+  internal func _foreignIndex(after idx: Index) -> Index {
     _internalInvariant(_guts.isForeign)
 
-    // FIXME: We should need some kind of alignment if given an index into a
-    // surrogate pair
+    let idx = _utf8AlignForeignIndex(idx)
 
-    if i.transcodedOffset != 0 {
-      _internalInvariant((1...3) ~= i.transcodedOffset)
-      return i.priorTranscoded
+    let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
+      startingAt: idx.strippingTranscoding)
+    let utf8Len = UTF8.width(scalar)
+
+    if utf8Len == 1 {
+      _internalInvariant(idx.transcodedOffset == 0)
+      return idx.nextEncoded
+    }
+
+    // Check if we're still transcoding sub-scalar
+    if idx.transcodedOffset < utf8Len - 1 {
+      return idx.nextTranscoded
+    }
+
+    // Skip to the next scalar
+    return idx.encoded(offsetBy: scalarLen)
+  }
+
+  @usableFromInline @inline(never)
+  @_effects(releasenone)
+  internal func _foreignIndex(before idx: Index) -> Index {
+    _internalInvariant(_guts.isForeign)
+
+    let idx = _utf8AlignForeignIndex(idx)
+
+    if idx.transcodedOffset != 0 {
+      _internalInvariant((1...3) ~= idx.transcodedOffset)
+      return idx.priorTranscoded
     }
 
     let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
-      endingAt: i)
+      endingAt: idx)
     let utf8Len = UTF8.width(scalar)
-    return i.encoded(offsetBy: -scalarLen).transcoded(withOffset: utf8Len &- 1)
+    return idx.encoded(
+      offsetBy: -scalarLen
+    ).transcoded(withOffset: utf8Len &- 1)
   }
 
   @usableFromInline @inline(never)

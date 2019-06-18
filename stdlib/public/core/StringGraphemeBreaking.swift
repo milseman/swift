@@ -219,10 +219,10 @@ extension _StringGuts {
       return len
     }
 
-    print("Calculating foreign grapheme stride")
+    // print("Calculating foreign grapheme stride")
 
     if let utf16Ptr = _stdlib_binary_CFStringGetCharactersPtr(cocoa) {
-      print("has pointer")
+      // print("has pointer")
       let utf16 = UnsafeBufferPointer(start: utf16Ptr, count: count)
       return _measureCharacterStrideICU(of: utf16, startingAt: i)
     }
