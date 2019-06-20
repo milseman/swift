@@ -448,7 +448,7 @@ extension String.UTF8View {
     }
 
     let (scalar, scalarLen) = _guts.foreignErrorCorrectedScalar(
-      endingAt: idx)
+      endingAt: idx.strippingTranscoding)
     let utf8Len = UTF8.width(scalar)
     return idx.encoded(
       offsetBy: -scalarLen
@@ -457,19 +457,18 @@ extension String.UTF8View {
 
   @usableFromInline @inline(never)
   @_effects(releasenone)
-  internal func _foreignSubscript(position i: Index) -> UTF8.CodeUnit {
+  internal func _foreignSubscript(position idx: Index) -> UTF8.CodeUnit {
     _internalInvariant(_guts.isForeign)
 
-    // FIXME: We should need some kind of alignment if given an index into a
-    // surrogate pair
+    let idx = _utf8AlignForeignIndex(idx)
 
     let scalar = _guts.foreignErrorCorrectedScalar(
-      startingAt: _guts.scalarAlign(i)).0
+      startingAt: idx.strippingTranscoding).0
     let encoded = Unicode.UTF8.encode(scalar)._unsafelyUnwrappedUnchecked
-    _internalInvariant(i.transcodedOffset < 1+encoded.count)
+    _internalInvariant(idx.transcodedOffset < 1+encoded.count)
 
     return encoded[
-      encoded.index(encoded.startIndex, offsetBy: i.transcodedOffset)]
+      encoded.index(encoded.startIndex, offsetBy: idx.transcodedOffset)]
   }
 
   @usableFromInline @inline(never)
@@ -492,16 +491,20 @@ extension String.UTF8View {
   @_effects(releasenone)
   internal func _foreignDistance(from i: Index, to j: Index) -> Int {
     _internalInvariant(_guts.isForeign)
-    
+
+    let i = _utf8AlignForeignIndex(i)
+    let j = _utf8AlignForeignIndex(j)
+
+
     #if _runtime(_ObjC)
-    // Currently, foreign  means NSString
+    // Currently, foreign means NSString
     if let count = _cocoaStringUTF8Count(
       _guts._object.cocoaObject,
       range: i._encodedOffset ..< j._encodedOffset
     ) {
-      //_cocoaStringUTF8Count gave us the scalar aligned count, but we still
-      //need to compensate for sub-scalar indexing, e.g. if `i` is in the middle
-      //of a two-byte UTF8 scalar.
+      // _cocoaStringUTF8Count gave us the scalar aligned count, but we still
+      // need to compensate for sub-scalar indexing, e.g. if `i` is in the
+      // middle of a two-byte UTF8 scalar.
       let refinedCount = count - (i.transcodedOffset + j.transcodedOffset)
       _internalInvariant(refinedCount == _distance(from: i, to: j))
       return refinedCount
@@ -509,7 +512,6 @@ extension String.UTF8View {
     #endif
 
     return _distance(from: i, to: j)
-   
   }
 
   @usableFromInline @inline(never)

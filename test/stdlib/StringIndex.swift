@@ -376,11 +376,25 @@ StringIndexTests.test("Index interchange") {
           expect(curSubChar == str[curUTF8Idx])
           expect(!UTF16.isTrailSurrogate(str.utf16[curUTF8Idx]))
           expect(utf8StartIdx == str[curUTF8Idx...].startIndex)
+          expect(str[utf8StartIdx..<curUTF8Idx].isEmpty)
           expect(0 == str.utf16.distance(from: utf8StartIdx, to: curUTF8Idx))
 
           str.utf8.formIndex(after: &curUTF8Idx)
         }
         expect(curUTF8Idx == curScalarIdx)
+
+        var utf8RevIdx = curUTF8Idx
+        while utf8RevIdx > utf8StartIdx {
+          str.utf8.formIndex(before: &utf8RevIdx)
+
+          expect(curScalar == str.unicodeScalars[utf8RevIdx])
+          expect(curSubChar == str[utf8RevIdx])
+          expect(!UTF16.isTrailSurrogate(str.utf16[utf8RevIdx]))
+          expect(utf8StartIdx == str[utf8RevIdx...].startIndex)
+          expect(str[utf8StartIdx..<utf8RevIdx].isEmpty)
+          expect(0 == str.utf16.distance(from: utf8StartIdx, to: utf8RevIdx))
+        }
+        expect(utf8RevIdx == utf8StartIdx)
 
         let utf16StartIdx = curUTF16Idx
         defer {
@@ -398,11 +412,26 @@ StringIndexTests.test("Index interchange") {
           expect(curSubChar == str[curUTF16Idx])
           expect(!UTF8.isContinuation(str.utf8[curUTF16Idx]))
           expect(utf16StartIdx == str[curUTF16Idx...].startIndex)
-          // expect(0 == str.utf8.distance(from: utf16StartIdx, to: curUTF16Idx))
+          expect(str[utf16StartIdx..<curUTF16Idx].isEmpty)
+          expect(0 == str.utf8.distance(from: utf16StartIdx, to: curUTF16Idx))
 
           str.utf16.formIndex(after: &curUTF16Idx)
         }
         expect(curUTF16Idx == curScalarIdx)
+
+        var utf16RevIdx = curUTF16Idx
+        while utf16RevIdx > utf16StartIdx {
+          str.utf16.formIndex(before: &utf16RevIdx)
+
+          expect(curScalar == str.unicodeScalars[utf16RevIdx])
+          expect(curSubChar == str[utf16RevIdx])
+          expect(!UTF8.isContinuation(str.utf8[utf16RevIdx]))
+          expect(utf16StartIdx == str[utf16RevIdx...].startIndex)
+          expect(str[utf16StartIdx..<utf16RevIdx].isEmpty)
+          expect(0 == str.utf8.distance(from: utf16StartIdx, to: utf16RevIdx))
+        }
+        expect(utf16RevIdx == utf16StartIdx)
+
       }
     }
   }
