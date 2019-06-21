@@ -201,7 +201,6 @@ extension String.Index {
   @inline(__always)
   internal var aligned: String.Index {
     var idx = self
-    _internalInvariant(idx.transcodedOffset == 0, "can't be aligned")
     idx._rawBits |= 0x2000
     idx._invariantCheck()
     return idx
