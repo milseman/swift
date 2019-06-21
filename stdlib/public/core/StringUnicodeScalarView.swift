@@ -118,6 +118,7 @@ extension String.UnicodeScalarView: BidirectionalCollection {
     return _foreignIndex(after: i)
   }
 
+  @_alwaysEmitIntoClient // Swift 5.1 bug fix
   public func distance(from start: Index, to end: Index) -> Int {
     return _distance(from: _guts.scalarAlign(start), to: _guts.scalarAlign(end))
   }
