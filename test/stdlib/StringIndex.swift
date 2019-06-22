@@ -99,12 +99,7 @@ StringIndexTests.test("interchange") {
   // Basic index alignment
 
   func validateIndices(_ s: String) {
-    let utf8Indices = s.utf8.indices
-    let utf16Indices = s.utf16.indices
-    let unicodeScalarIndices = s.unicodeScalars.indices
-    let characterIndices = s.indices
-
-    for idx in utf8Indices {
+    for idx in s.utf8.indices {
       let char = s.utf8[idx]
 
       // ASCII or leading code unit in the scalar
@@ -193,7 +188,7 @@ StringIndexTests.test("Scalar Align UTF-8 indices") {
   expectEqual(1, roundedIdx.utf16Offset(in: str))
 
   let roundedIdx2 = str.utf8[...subScalarIdx].lastIndex { $0 & 0xC0 != 0x80 }
-  expectEqual(roundedIdx, roundedIdx)
+  expectEqual(roundedIdx, roundedIdx2)
 
   var roundedIdx3 = subScalarIdx
   while roundedIdx3.samePosition(in: str.unicodeScalars) == nil {
@@ -232,18 +227,16 @@ StringIndexTests.test("String.Index(_:within) / Range<String.Index>(_:in:)") {
       expectEqual(strLB, substrLB)
       expectEqual(strUB, substrUB)
 
-      if #available(macOS 9999, iOS 9999, tvOS 9999, watchOS 9999, *) {
-        let nsRange = NSRange(location: location, length: length)
-        let strRange = Range<String.Index>(nsRange, in: str)
-        let substrRange = Range<String.Index>(nsRange, in: substr)
+      let nsRange = NSRange(location: location, length: length)
+      let strRange = Range<String.Index>(nsRange, in: str)
+      let substrRange = Range<String.Index>(nsRange, in: substr)
 
-        expectEqual(strRange, substrRange)
-        guard strLB != nil && strUB != nil else {
-          expectNil(strRange)
-          continue
-        }
-        expectEqual(strRange, Range(uncheckedBounds: (strLB!, strUB!)))
+      expectEqual(strRange, substrRange)
+      guard strLB != nil && strUB != nil else {
+        expectNil(strRange)
+        continue
       }
+      expectEqual(strRange, Range(uncheckedBounds: (strLB!, strUB!)))
     }
   }
 }
@@ -253,7 +246,6 @@ StringIndexTests.test("Misaligned") {
     let characterIndices = Array(str.indices)
     let scalarIndices = Array(str.unicodeScalars.indices) + [str.endIndex]
     let utf8Indices = Array(str.utf8.indices)
-    let utf16Indices = Array(str.utf16.indices)
 
     var lastScalarI = 0
     for i in 1..<utf8Indices.count {
@@ -305,7 +297,7 @@ StringIndexTests.test("Misaligned") {
   doIt(string)
 }
 
-StringIndexTests.test("Index interchange") {
+StringIndexTests.test("Exhaustive Index Interchange") {
   // Exhaustively test aspects of string index interchange
   func testInterchange(
     _ str: String,
@@ -353,12 +345,22 @@ StringIndexTests.test("Index interchange") {
       }
 
       while curScalarIdx < curCharIdx {
+        let scalarStartIdx = curScalarIdx
         let curScalar = str.unicodeScalars[curScalarIdx]
-
         let curSubChar = str[curScalarIdx]
+
+        // If there is a Character prior to this scalar, remember it and check
+        // that misalignd code unit indices also produce it.
+        let scalarPriorCharacter: Character?
+        if scalarStartIdx == str.startIndex {
+          scalarPriorCharacter = nil
+        } else {
+          scalarPriorCharacter = str[str.index(before: scalarStartIdx)]
+        }
 
         // Advance the scalar index once and have the code unit indices catch up
         str.unicodeScalars.formIndex(after: &curScalarIdx)
+
 
         let utf8StartIdx = curUTF8Idx
         defer {
@@ -378,6 +380,10 @@ StringIndexTests.test("Index interchange") {
           expect(utf8StartIdx == str[curUTF8Idx...].startIndex)
           expect(str[utf8StartIdx..<curUTF8Idx].isEmpty)
           expect(0 == str.utf16.distance(from: utf8StartIdx, to: curUTF8Idx))
+
+          if let scalarPrior = scalarPriorCharacter {
+            expect(scalarPrior == str[str.index(before: curUTF8Idx)])
+          }
 
           str.utf8.formIndex(after: &curUTF8Idx)
         }
@@ -415,6 +421,10 @@ StringIndexTests.test("Index interchange") {
           expect(str[utf16StartIdx..<curUTF16Idx].isEmpty)
           expect(0 == str.utf8.distance(from: utf16StartIdx, to: curUTF16Idx))
 
+          if let scalarPrior = scalarPriorCharacter {
+            expect(scalarPrior == str[str.index(before: curUTF16Idx)])
+          }
+
           str.utf16.formIndex(after: &curUTF16Idx)
         }
         expect(curUTF16Idx == curScalarIdx)
@@ -439,8 +449,8 @@ StringIndexTests.test("Index interchange") {
   testInterchange("abc\r\ndefg")
   testInterchange(("abc\r\ndefg" as NSString) as String)
 
-  testInterchange("ab\r\ncдиde\u{301}日🧟‍♀️x🧟x")
-  testInterchange(("ab\r\ncдиde\u{301}日🧟‍♀️x🧟x" as NSString) as String)
+  testInterchange("ab\r\ncдe\u{301}日🧟‍♀️x🧟x🏳️‍🌈🇺🇸🇨🇦")
+  testInterchange(("ab\r\ncдe\u{301}日🧟‍♀️x🧟x🏳️‍🌈🇺🇸🇨🇦" as NSString) as String)
 }
 
 #endif // _runtime(_ObjC)

@@ -451,8 +451,8 @@ extension String.UTF16View {
   internal func _foreignDistance(from start: Index, to end: Index) -> Int {
     _internalInvariant(_guts.isForeign)
 
-    // FIXME: What if a foreign index from UTF8View?
-
+    // Ignore transcoded offsets, i.e. scalar align if-and-only-if from a
+    // transcoded view
     return end._encodedOffset - start._encodedOffset
   }
 
