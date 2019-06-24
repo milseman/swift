@@ -237,7 +237,16 @@ StringTests.test("ForeignIndexes/Valid") {
     let donor = "abcdef"
     let acceptor = "\u{1f601}\u{1f602}\u{1f603}"
     expectEqual("\u{1f601}", acceptor[donor.startIndex])
-    expectEqual("\u{1f601}", acceptor[donor.index(after: donor.startIndex)])
+
+    // Donor's second index is scalar-aligned in donor, but not acceptor. This
+    // will trigger a stdlib assertion.
+    let donorSecondIndex = donor.index(after: donor.startIndex)
+    if _isStdlibInternalChecksEnabled() {
+      expectCrash { _ = acceptor[donorSecondIndex] }
+    } else {
+      expectEqual(1, acceptor[donorSecondIndex].utf8.count)
+      expectEqual(0x9F, acceptor[donorSecondIndex].utf8.first!)
+    }
   }
 }
 
@@ -247,7 +256,14 @@ StringTests.test("ForeignIndexes/UnexpectedCrash") {
 
   // Adjust donor.startIndex to ensure it caches a stride
   let start = donor.index(before: donor.index(after: donor.startIndex))
-  expectEqual("a", acceptor[start])
+
+  // `start` has a cached stride greater than 1, so subscript will trigger an
+  // assertion when it makes a multi-grapheme-cluster Character.
+  if _isStdlibInternalChecksEnabled() {
+   expectCrash { _ = acceptor[start] }
+  } else {
+    expectEqual("abcd", String(acceptor[start]))
+  }
 }
 
 StringTests.test("ForeignIndexes/subscript(Index)/OutOfBoundsTrap") {
@@ -601,11 +617,11 @@ StringTests.test("appendToSubstringBug")
     if s0.unusedCapacity == 0 { s0 += "y" }
     let cap = s0.unusedCapacity
     expectNotEqual(0, cap)
-    
+
     // This sorta checks for the original bug
     expectEqual(
       cap, String(s0[s0.index(_nth: 1)..<s0.endIndex]).unusedCapacity)
-    
+
     return (s0, cap)
   }
 
@@ -615,7 +631,7 @@ StringTests.test("appendToSubstringBug")
       return (String(s0[s0.index(_nth: 5)..<s0.endIndex]), unused)
     }()
     let originalID = s.bufferID
-    // Appending to a String always results in storage that 
+    // Appending to a String always results in storage that
     // starts at the beginning of its native buffer
     s += "z"
     expectNotEqual(originalID, s.bufferID)
@@ -879,7 +895,7 @@ StringTests.test("stringGutsExtensibility")
   for k in 0..<3 {
     for count in 1..<16 {
       for boundary in 0..<count {
-        
+
         var x = (
             k == 0 ? asciiString("b")
           : k == 1 ? ("b" as NSString as String)

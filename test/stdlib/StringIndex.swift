@@ -297,6 +297,8 @@ StringIndexTests.test("Misaligned") {
   doIt(string)
 }
 
+#endif // _runtime(_ObjC)
+
 StringIndexTests.test("Exhaustive Index Interchange") {
   // Exhaustively test aspects of string index interchange
   func testInterchange(
@@ -447,12 +449,16 @@ StringIndexTests.test("Exhaustive Index Interchange") {
   }
 
   testInterchange("abc\r\ndefg")
+
+#if _runtime(_ObjC)
   testInterchange(("abc\r\ndefg" as NSString) as String)
+#endif // _runtime(_ObjC)
 
   testInterchange("ab\r\ncдe\u{301}日🧟‍♀️x🧟x🏳️‍🌈🇺🇸🇨🇦")
-  testInterchange(("ab\r\ncдe\u{301}日🧟‍♀️x🧟x🏳️‍🌈🇺🇸🇨🇦" as NSString) as String)
-}
 
+#if _runtime(_ObjC)
+  testInterchange(("ab\r\ncдe\u{301}日🧟‍♀️x🧟x🏳️‍🌈🇺🇸🇨🇦" as NSString) as String)
 #endif // _runtime(_ObjC)
+}
 
 runAllTests()
