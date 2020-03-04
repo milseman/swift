@@ -524,9 +524,9 @@ extension __StringStorage {
 
     storage.terminator.pointee = 0 // nul-terminated
 
-  // // NOTE: We can't _invariantCheck() now, because code units have not been
-  // // initialized. But, _StringGuts's initializer will.
-    storage._invariantCheck()
+    // We can check layout invariants, but our code units have not yet been
+    // initialized
+    storage._invariantCheck(initialized: false)
     return storage
   }
 
@@ -670,9 +670,9 @@ extension __StringStorage {
   internal var unusedCapacity: Int { capacity &- count }
 
   #if !INTERNAL_CHECKS_ENABLED
-  @inline(__always) internal func _invariantCheck() {}
+  @inline(__always) internal func _invariantCheck(initialized: Bool = true) {}
   #else
-  internal func _invariantCheck() {
+  internal func _invariantCheck(initialized: Bool = true) {
     let rawSelf = UnsafeRawPointer(Builtin.bridgeToRawPointer(self))
     let rawStart = UnsafeRawPointer(start)
     _internalInvariant(unusedCapacity >= 0)
@@ -686,7 +686,7 @@ extension __StringStorage {
     _internalInvariant(str._guts._object.isPreferredRepresentation)
 
     _countAndFlags._invariantCheck()
-    if isASCII {
+    if isASCII && initialized {
       _internalInvariant(_allASCII(self.codeUnits))
     }
     if hasBreadcrumbs, let crumbs = _breadcrumbsAddress.pointee {
