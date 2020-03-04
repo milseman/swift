@@ -85,7 +85,9 @@ extension _StringGuts {
       let isASCII = self.isASCII
       let storage = self.withFastUTF8 {
         __StringStorage.create(
-          initializingFrom: $0, capacity: growthTarget, isASCII: isASCII)
+          initializingFrom: $0,
+          codeUnitCapacity: growthTarget,
+          isASCII: isASCII)
       }
 
       self = _StringGuts(storage)
