@@ -126,19 +126,22 @@ TODO: _realCapacityAndFlags layout diagram
 
 */
 fileprivate struct _CapacityAndFlags {
-  // Stores the "real capacity" (excess capacity + 1 for null terminator)
+  // Stores the "real capacity" (capacity + 1 for null terminator)
   // in the bottom 48 bits, and flags in the top 16.
-  private var storage: UInt64
+  fileprivate var _storage: UInt64
 
 #if arch(i386) || arch(arm) || arch(wasm32)
   fileprivate init(realCapacity: Int, flags: UInt16) {
     let realCapUInt = UInt64(UInt(bitPattern: realCapacity))
     _internalInvariant(realCapUInt == realCapUInt & _CountAndFlags.countMask)
-    storage = UInt64(flags) &<< 48 | realCapUInt
+    self._storage = (UInt64(flags) &<< 48) | realCapUInt
+
+    _internalInvariant(self.flags == flags)
   }
 
   fileprivate var flags: UInt16 {
-    UInt16(truncatingIfNeeded: storage & _CountAndFlags.flagsMask &>> 48)
+    return UInt16(
+      truncatingIfNeeded: (self._storage & _CountAndFlags.flagsMask) &>> 48)
   }
 #endif
 
@@ -147,7 +150,7 @@ fileprivate struct _CapacityAndFlags {
     _internalInvariant(realCapUInt == realCapUInt & _CountAndFlags.countMask)
 
     let crumbsFlag = crumbs ? _CapacityAndFlags.hasBreadcrumbsMask : 0
-    self.storage = crumbsFlag | realCapUInt
+    self._storage = crumbsFlag | realCapUInt
 
     _internalInvariant(
       crumbs == self.hasBreadcrumbs && realCapacity == self._realCapacity)
@@ -156,7 +159,7 @@ fileprivate struct _CapacityAndFlags {
   // The capacity of our allocation. Note that this includes the nul-terminator,
   // which is not available for overriding.
   internal var _realCapacity: Int {
-    Int(truncatingIfNeeded: storage & _CountAndFlags.countMask)
+    Int(truncatingIfNeeded: self._storage & _CountAndFlags.countMask)
   }
 
   private static var hasBreadcrumbsMask: UInt64 { 0x8000_0000_0000_0000 }
@@ -165,7 +168,7 @@ fileprivate struct _CapacityAndFlags {
   fileprivate var capacity: Int { _realCapacity &- 1 }
 
   fileprivate var hasBreadcrumbs: Bool {
-    (storage & _CapacityAndFlags.hasBreadcrumbsMask) != 0
+    (self._storage & _CapacityAndFlags.hasBreadcrumbsMask) != 0
   }
 }
 
@@ -259,7 +262,9 @@ fileprivate func _allocate<T: AnyObject>(
   let linearBucketThreshold = 128
   if _fastPath(numBytes < linearBucketThreshold) {
     // Allocate up to the nearest bucket of 16
-    let realNumTailBytes = (numTailBytes+15) & ~15
+    let realNumBytes = (numBytes+15) & ~15
+    let realNumTailBytes = realNumBytes - numHeaderBytes
+    _internalInvariant(realNumTailBytes >= numTailBytes)
     let object = tailAllocator(realNumTailBytes)
     return (object, realNumTailBytes)
   }
@@ -275,6 +280,7 @@ fileprivate func _allocate<T: AnyObject>(
   let mallocSize = _swift_stdlib_malloc_size(
     UnsafeRawPointer(Builtin.bridgeToRawPointer(object)))
   let realNumTailBytes = mallocSize - numHeaderBytes
+  _internalInvariant(realNumTailBytes >= numTailBytes)
   return (object, realNumTailBytes)
 }
 
@@ -294,11 +300,29 @@ fileprivate func _allocateStringStorage(
         __StringStorage.self, tailBytes._builtinWordValue, UInt8.self)
   }
 
-  _internalInvariant(numTailBytes >= codeUnitSize)
-
   let capAndFlags = _CapacityAndFlags(
     hasBreadcrumbs: needBreadcrumbs,
     realCapacity: numTailBytes - breadcrumbSize)
+
+#if INTERNAL_CHECKS_ENABLED
+  _internalInvariant(numTailBytes >= codeUnitSize + breadcrumbSize)
+
+  let start = Builtin.projectTailElems(storage, UInt8.self)
+  let roundedBreadcrumbsPtr = Builtin.getTailAddr_Word(
+      start,
+      capAndFlags._realCapacity._builtinWordValue,
+      UInt8.self,
+      Optional<_StringBreadcrumbs>.self)
+  let rawBreadcrumbsPtr = Builtin.gep_Word(
+      start,
+      capAndFlags._realCapacity._builtinWordValue,
+      UInt8.self)
+
+  _internalInvariant(UInt(bitPattern: UnsafeRawPointer(roundedBreadcrumbsPtr)) % 8 == 0)
+  _internalInvariant(UInt(bitPattern: UnsafeRawPointer(rawBreadcrumbsPtr)) % 8 == 0)
+  _internalInvariant(roundedBreadcrumbsPtr == rawBreadcrumbsPtr)
+
+#endif
 
   return (storage, capAndFlags)
 }
@@ -313,7 +337,7 @@ final internal class __StringStorage
   // nul-terminator.
   private var _realCapacity: Int
   private var _count: Int
-  private var _flags: UInt16
+  private var _countFlags: UInt16
   private var _capacityFlags: UInt16
 
   @inline(__always)
@@ -321,7 +345,7 @@ final internal class __StringStorage
 
   @inline(__always)
   internal var _countAndFlags: _StringObject.CountAndFlags {
-    _CountAndFlags(count: _count, flags: _flags)
+    _CountAndFlags(count: _count, flags: _countFlags)
   }
 
   @inline(__always)
@@ -330,7 +354,7 @@ final internal class __StringStorage
     _CapacityAndFlags(realCapacity: _realCapacity, flags: _capacityFlags)
   }
 #else
-  private var _capacityAndFlags: _CapacityAndFlags
+  fileprivate var _capacityAndFlags: _CapacityAndFlags
   internal var _countAndFlags: _StringObject.CountAndFlags
 
   @inline(__always)
@@ -360,61 +384,61 @@ final internal class __StringStorage
 
 
 
-// Determine the actual number of code unit capacity to request from malloc. We
-// round up the nearest multiple of 8 that isn't a mulitple of 16, to fully
-// utilize malloc's small buckets while accounting for the trailing
-// _StringBreadCrumbs.
-//
-// NOTE: We may still under-utilize the spare bytes from the actual allocation
-// for Strings ~1KB or larger, though at this point we're well into our growth
-// curve.
-//
-// TODO: Further comment, or refactor logic, incorporating breadcrumbs decision
-private func determineCodeUnitCapacity(
-  _ desiredCapacity: Int
-) -> (realCodeUnitCapacity: Int, includeBreadcrumbs: Bool) {
-#if arch(i386) || arch(arm) || arch(wasm32)
-  // FIXME: Adapt to actual 32-bit allocator. For now, let's arrange things so
-  // that the instance size will be a multiple of 4.
-  let bias = Int(bitPattern: _StringObject.nativeBias)
-  let size = (desiredCapacity + 4) & ~3
-  _internalInvariant(size % 4 == 0)
-  let capacity = size - bias
-  _internalInvariant(capacity > desiredCapacity)
-  return (capacity, true) // TODO: adjust 32-bit
-#else
-  _internalInvariant((0..<0x1_0000_0000_0000).contains(desiredCapacity),
-    "max 48-bit length")
+// // Determine the actual number of code unit capacity to request from malloc. We
+// // round up the nearest multiple of 8 that isn't a mulitple of 16, to fully
+// // utilize malloc's small buckets while accounting for the trailing
+// // _StringBreadCrumbs.
+// //
+// // NOTE: We may still under-utilize the spare bytes from the actual allocation
+// // for Strings ~1KB or larger, though at this point we're well into our growth
+// // curve.
+// //
+// // TODO: Further comment, or refactor logic, incorporating breadcrumbs decision
+// private func determineCodeUnitCapacity(
+//   _ desiredCapacity: Int
+// ) -> (realCodeUnitCapacity: Int, includeBreadcrumbs: Bool) {
+// #if arch(i386) || arch(arm) || arch(wasm32)
+//   // FIXME: Adapt to actual 32-bit allocator. For now, let's arrange things so
+//   // that the instance size will be a multiple of 4.
+//   let bias = Int(bitPattern: _StringObject.nativeBias)
+//   let size = (desiredCapacity + 4) & ~3
+//   _internalInvariant(size % 4 == 0)
+//   let capacity = size - bias
+//   _internalInvariant(capacity > desiredCapacity)
+//   return (capacity, true) // TODO: adjust 32-bit
+// #else
+//   _internalInvariant((0..<0x1_0000_0000_0000).contains(desiredCapacity),
+//     "max 48-bit length")
 
-  // If the resultant code unit capacity is less than the breadcrumbs stride,
-  // don't allocate a breadcrumb pointer. We determine this by checking if we
-  // are within a bucket (estimated to be 16 bytes) of that stride by
-  // overestimating the result.
-  let (capacity, includeBreadcrumbs): (Int, Bool)
+//   // If the resultant code unit capacity is less than the breadcrumbs stride,
+//   // don't allocate a breadcrumb pointer. We determine this by checking if we
+//   // are within a bucket (estimated to be 16 bytes) of that stride by
+//   // overestimating the result.
+//   let (capacity, includeBreadcrumbs): (Int, Bool)
 
-  // Round up to the nearest multiple of 16 (bucket estimate) greater than,
-  // but not equal to (for null terminator) the requested capacity
-  let crumblessCapacity = (desiredCapacity + 16) & ~15
+//   // Round up to the nearest multiple of 16 (bucket estimate) greater than,
+//   // but not equal to (for null terminator) the requested capacity
+//   let crumblessCapacity = (desiredCapacity + 16) & ~15
 
-  // We over-allocate by 1 for the nul-terminator, which should not participate
-  // in the breadcrumb stride
-  if crumblessCapacity - 1 < _StringBreadcrumbs.breadcrumbStride {
-    (capacity, includeBreadcrumbs) = (crumblessCapacity, false)
-  } else {
-    // Round up to the nearest multiple of 8, which isn't also a multiple of 16,
-    // greater than, but not equal to (for null terminator) the requested
-    // capacity
-    capacity = ((desiredCapacity + 8) & ~15) + 8
-    _internalInvariant(
-      capacity > desiredCapacity && capacity % 8 == 0 && capacity % 16 != 0)
-    includeBreadcrumbs = true
-  }
+//   // We over-allocate by 1 for the nul-terminator, which should not participate
+//   // in the breadcrumb stride
+//   if crumblessCapacity - 1 < _StringBreadcrumbs.breadcrumbStride {
+//     (capacity, includeBreadcrumbs) = (crumblessCapacity, false)
+//   } else {
+//     // Round up to the nearest multiple of 8, which isn't also a multiple of 16,
+//     // greater than, but not equal to (for null terminator) the requested
+//     // capacity
+//     capacity = ((desiredCapacity + 8) & ~15) + 8
+//     _internalInvariant(
+//       capacity > desiredCapacity && capacity % 8 == 0 && capacity % 16 != 0)
+//     includeBreadcrumbs = true
+//   }
 
-  _internalInvariant(capacity <= desiredCapacity + 16,
-    "We exceeded the nearest bucket")
-  return (capacity, includeBreadcrumbs)
-#endif
-}
+//   _internalInvariant(capacity <= desiredCapacity + 16,
+//     "We exceeded the nearest bucket")
+//   return (capacity, includeBreadcrumbs)
+// #endif
+// }
 
 // Creation
 extension __StringStorage {
@@ -467,22 +491,30 @@ extension __StringStorage {
     codeUnitCapacity capacity: Int, countAndFlags: _CountAndFlags
   ) -> __StringStorage {
     _internalInvariant(capacity >= countAndFlags.count)
+    _internalInvariant(
+      countAndFlags.isNativelyStored && countAndFlags.isTailAllocated)
 
     let (storage, capAndFlags) = _allocateStringStorage(
       codeUnitCapacity: capacity)
 
-    let needBreadcrumbs = capacity >= _StringBreadcrumbs.breadcrumbStride
     _internalInvariant(capAndFlags.capacity >= capacity)
 
 #if arch(i386) || arch(arm) || arch(wasm32)
     storage._realCapacity = capAndFlags._realCapacity
     storage._count = countAndFlags.count
-    storage._flags = countAndFlags.flags
+    storage._countFlags = countAndFlags.flags
     storage._capacityFlags = capAndFlags.flags
 #else
     storage._capacityAndFlags = capAndFlags
     storage._countAndFlags = countAndFlags
 #endif
+
+    _internalInvariant(
+      storage._countAndFlags._storage == countAndFlags._storage)
+    _internalInvariant(
+      storage._capacityAndFlags._storage == capAndFlags._storage)
+    _internalInvariant(
+      storage.unusedCapacity == capAndFlags.capacity - countAndFlags.count)
 
     // FIXME TODO: Add a bit on the storage class that tracks breadcrumb-ness
     // and guard all access on that bit, likely through a hard precondition
@@ -492,8 +524,9 @@ extension __StringStorage {
 
     storage.terminator.pointee = 0 // nul-terminated
 
-    // NOTE: We can't _invariantCheck() now, because code units have not been
-    // initialized. But, _StringGuts's initializer will.
+  // // NOTE: We can't _invariantCheck() now, because code units have not been
+  // // initialized. But, _StringGuts's initializer will.
+    storage._invariantCheck()
     return storage
   }
 
@@ -503,7 +536,9 @@ extension __StringStorage {
   ) -> __StringStorage {
     __StringStorage.create(
       codeUnitCapacity: capacity,
-      countAndFlags: _CountAndFlags(count: count, flags: 0))
+      countAndFlags: _CountAndFlags(mortalCount: count, isASCII: false))
+    // NOTE: content is garbage and not necessarily validy endcoded. Please
+    // delete this entry point...
   }
 
   // The caller is expected to check UTF8 validity and ASCII-ness and update
@@ -525,7 +560,7 @@ extension __StringStorage {
     let countAndFlags = _CountAndFlags(mortalCount: count, isASCII: false)
     #if arch(i386) || arch(arm) || arch(wasm32)
     storage._count = countAndFlags.count
-    storage._flags = countAndFlags.flags
+    storage._countFlags = countAndFlags.flags
     #else
     storage._countAndFlags = countAndFlags
     #endif
@@ -676,7 +711,7 @@ extension __StringStorage {
       mortalCount: newCount, isASCII: newIsASCII)
 #if arch(i386) || arch(arm) || arch(wasm32)
     self._count = countAndFlags.count
-    self._flags = countAndFlags.flags
+    self._countFlags = countAndFlags.flags
 #else
     self._countAndFlags = countAndFlags
 #endif
@@ -822,11 +857,11 @@ final internal class __SharedStringStorage
 
 #if arch(i386) || arch(arm) || arch(wasm32)
   internal var _count: Int
-  internal var _flags: UInt16
+  internal var _countFlags: UInt16
 
   @inline(__always)
   internal var _countAndFlags: _StringObject.CountAndFlags {
-    _CountAndFlags(count: _count, flags: _flags)
+    _CountAndFlags(count: _count, flags: _countFlags)
   }
 #else
   internal var _countAndFlags: _StringObject.CountAndFlags
@@ -844,7 +879,7 @@ final internal class __SharedStringStorage
     self.start = ptr
 #if arch(i386) || arch(arm) || arch(wasm32)
     self._count = countAndFlags.count
-    self._flags = countAndFlags.flags
+    self._countFlags = countAndFlags.flags
 #else
     self._countAndFlags = countAndFlags
 #endif
