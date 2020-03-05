@@ -287,10 +287,11 @@ fileprivate func _allocate<T: AnyObject>(
 fileprivate func _allocateStringStorage(
   codeUnitCapacity capacity: Int
 ) -> (__StringStorage, _CapacityAndFlags) {
+  let pointerSize = MemoryLayout<Int>.stride
   let headerSize = Int(_StringObject.nativeBias)
   let codeUnitSize = capacity + 1 /* code units and null */
   let needBreadcrumbs = capacity >= _StringBreadcrumbs.breadcrumbStride
-  let breadcrumbSize = needBreadcrumbs ? 8 : 0
+  let breadcrumbSize = needBreadcrumbs ? pointerSize : 0
 
   let (storage, numTailBytes) = _allocate(
     numHeaderBytes: headerSize,
@@ -304,26 +305,7 @@ fileprivate func _allocateStringStorage(
     hasBreadcrumbs: needBreadcrumbs,
     realCapacity: numTailBytes - breadcrumbSize)
 
-#if INTERNAL_CHECKS_ENABLED
   _internalInvariant(numTailBytes >= codeUnitSize + breadcrumbSize)
-
-  let start = Builtin.projectTailElems(storage, UInt8.self)
-  let roundedBreadcrumbsPtr = Builtin.getTailAddr_Word(
-      start,
-      capAndFlags._realCapacity._builtinWordValue,
-      UInt8.self,
-      Optional<_StringBreadcrumbs>.self)
-  let rawBreadcrumbsPtr = Builtin.gep_Word(
-      start,
-      capAndFlags._realCapacity._builtinWordValue,
-      UInt8.self)
-
-  _internalInvariant(UInt(bitPattern: UnsafeRawPointer(roundedBreadcrumbsPtr)) % 8 == 0)
-  _internalInvariant(UInt(bitPattern: UnsafeRawPointer(rawBreadcrumbsPtr)) % 8 == 0)
-  _internalInvariant(roundedBreadcrumbsPtr == rawBreadcrumbsPtr)
-
-#endif
-
   return (storage, capAndFlags)
 }
 
@@ -695,7 +677,8 @@ extension __StringStorage {
     _internalInvariant(_countAndFlags.isNativelyStored)
     _internalInvariant(_countAndFlags.isTailAllocated)
 
-    // Capacity end
+    // Check that capacity end matches our notion of unused storage, and also
+    // checks that breadcrumbs were dutifully aligned.
     _internalInvariant(UnsafeMutablePointer<UInt8>(_realCapacityEnd)
       == unusedStorage.baseAddress! + (unusedStorage.count + 1))
   }
