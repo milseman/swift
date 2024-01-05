@@ -198,6 +198,7 @@ split_embedded_sources(
     NORMAL UnicodeScalarProperties.swift
     NORMAL CharacterProperties.swift # ORDER DEPENDENCY: UnicodeScalarProperties.swift
     NORMAL UnicodeSPI.swift
+    NORMAL UnicodeProcessingAPIs.swift
   EMBEDDED Unmanaged.swift
     NORMAL UnmanagedOpaqueString.swift
     NORMAL UnmanagedString.swift
