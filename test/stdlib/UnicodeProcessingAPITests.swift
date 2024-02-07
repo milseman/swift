@@ -27,6 +27,7 @@ UnicodeProcessing.test("false") {
 
 UnicodeProcessing.test("validate") {
   var asciiStr = "abcdefg ./?\n\r\n123$"
+  fatalError()
 
   var invalidUTF8 =
     Array(asciiStr.utf8) + [0xC0, 0x0A] + Array(asciiStr.utf8)
@@ -40,7 +41,26 @@ UnicodeProcessing.test("validate") {
     try UTF8.validate($0)
   }
   expectNil(shouldBeNil)
+
+
+  // Next, try to find the desired invalid ranges
+  do {
+    try invalidUTF8.withUnsafeBufferView {
+      try UTF8.validate($0)
+    }
+  } catch let error as UTF8.CollectionDecodingError<Int> {
+    let lower = asciiStr.utf8.count
+    expectEqual(lower, error.range.lowerBound)
+    expectEqual(lower+1, error.range.upperBound)
+  } catch {
+    fatalError()
+  }
 }
+
+UnicodeProcessing.test("UVUBP: Raw bytes") {
+  
+}
+
 
 
 
