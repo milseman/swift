@@ -573,8 +573,31 @@ extension Unicode._CharacterRecognizer: CustomStringConvertible {
   }
 }
 
+internal func _nextCharacterBoundary(
+  startingAt index: Int,
+  nextScalar: (Int) -> (scalar: Unicode.Scalar, end: Int)?
+) -> Int {
+  // Note: If `index` in't already on a boundary, then starting with an empty
+  // state here sometimes leads to this method returning results that diverge
+  // from the true breaks in the string.
+  var state = _GraphemeBreakingState()
+  var (scalar, index) = nextScalar(index)!
+
+  while true {
+    guard let (scalar2, nextIndex) = nextScalar(index) else { break }
+    if state.shouldBreak(between: scalar, and: scalar2) {
+      break
+    }
+    index = nextIndex
+    scalar = scalar2
+  }
+
+  return index
+}
 
 extension _StringGuts {
+
+
   // Returns the stride of the grapheme cluster starting at offset `index`,
   // assuming it is on a grapheme cluster boundary.
   //
@@ -588,23 +611,8 @@ extension _StringGuts {
     nextScalar: (Int) -> (scalar: Unicode.Scalar, end: Int)?
   ) -> Int {
     _internalInvariant(index < endIndex._encodedOffset)
-
-    // Note: If `index` in't already on a boundary, then starting with an empty
-    // state here sometimes leads to this method returning results that diverge
-    // from the true breaks in the string.
-    var state = _GraphemeBreakingState()
-    var (scalar, index) = nextScalar(index)!
-
-    while true {
-      guard let (scalar2, nextIndex) = nextScalar(index) else { break }
-      if state.shouldBreak(between: scalar, and: scalar2) {
-        break
-      }
-      index = nextIndex
-      scalar = scalar2
-    }
-
-    return index
+    return _nextCharacterBoundary(
+      startingAt: index, nextScalar: nextScalar)
   }
 
   // Returns the stride of the grapheme cluster ending at offset `index`.

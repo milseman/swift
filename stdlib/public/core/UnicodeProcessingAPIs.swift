@@ -33,6 +33,23 @@ extension String {
 
 /*
 
+  NOTE: We will want a assuming-valid init somehow, perhaps
+ with a debug-mode branch to validate. We will _need_ it if
+ we don't have a String.withUnsafeVUTF8BP, for example.
+
+ NOTE: We will want to explore different bounds checking:
+
+ 1. Make sure Index's byte offset is in-bounds of the collection
+ 2. Make sure Index's byte offset is scalar-aligned
+ 3. (Optional) some API to Character-align Index's byte offset
+
+
+
+
+ */
+
+/*
+
   _countAndFlags uses a 56-bit length and 8 bits for flags
 
 
@@ -291,6 +308,9 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
   public struct Index: Comparable, Hashable, Sendable {
     @usableFromInline internal var _byteOffset: Int
 
+    // TODO: consider two offsets, which span the range of
+    // the character. What about USV?
+
     @inlinable
     public var byteOffset: Int { _byteOffset }
 
@@ -328,7 +348,16 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
     public typealias Element = Character
 
     public mutating func next() -> Character? {
-      fatalError()
+      guard position.byteOffset < buffer.byteCount else {
+        return nil
+      }
+
+      let end = buffer._characterEnd(
+        startingAtByteOffet: _position.byteOffset)
+      let c = buffer._uncheckedCharacter(
+        startingAt: position._byteOffset, endingAt: end)
+      _position = .init(_uncheckedByteOffset: end)
+      return c
     }
 
     @inlinable
@@ -345,16 +374,17 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
     .init(_buffer: self.buffer, _position: startIndex)
   }
 
-  @inlinable
   public subscript(position: Index) -> Element {
     _read {
+      let end = index(after: position)
+      _ = end
       fatalError()
     }
   }
 
-  @inlinable
   public func index(after i: Index) -> Index {
-    fatalError()
+    .init(_uncheckedByteOffset: buffer._characterEnd(
+      startingAtByteOffet: i.byteOffset))
   }
 
   @inlinable
@@ -364,12 +394,12 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
 
   @inlinable
   public var startIndex: Index {
-    fatalError()
+    .init(_uncheckedByteOffset: 0)
   }
 
   @inlinable
   public var endIndex: Index {
-    fatalError()
+    .init(_uncheckedByteOffset: buffer.byteCount)
   }
 }
 
@@ -712,3 +742,43 @@ internal func _decodeScalar(
   default: fatalError() // Builtin.unreachable()
   }
 }
+
+extension UnsafeValidUTF8BufferPointer {
+  internal func _characterEnd(startingAtByteOffet i: Int) -> Int {
+    let end = byteCount
+    let ptr = _baseAddress
+    return _nextCharacterBoundary(startingAt: i) { j in
+      _internalInvariant(j >= 0)
+      guard j < end else { return nil }
+      let (scalar, len) = _decodeScalar(
+        _unsafeUnchecked: ptr, offset: j)
+      return (scalar, j &+ len)
+    }
+  }
+
+  // TODO: eliminate making UBPs, also take isASCII etc
+  internal func _withUBP<T>(
+    _ f: (UnsafeBufferPointer<UInt8>) throws -> T
+  ) rethrows -> T {
+    try _baseAddress.withMemoryRebound(
+      to: UInt8.self, capacity: byteCount
+    ) {
+      try f(.init(start: $0, count: byteCount))
+    }
+  }
+
+  internal func _uncheckedCharacter(
+    startingAt start: Int,
+    endingAt end: Int
+  ) -> Character {
+    assert(start >= 0)
+    assert(start <= end)
+    assert(end <= byteCount)
+    return _withUBP {
+      let bufPtr = UnsafeBufferPointer(
+        rebasing: $0[start..<end])
+      return Character(unchecked: ._uncheckedFromUTF8(bufPtr))
+    }
+  }
+}
+
