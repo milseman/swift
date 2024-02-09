@@ -260,7 +260,11 @@ extension UnsafeValidUTF8BufferPointer.UnicodeScalarView: BidirectionalCollectio
 
   @inlinable
   public func index(before i: Index) -> Index {
-    fatalError()
+    let off = i.byteOffset
+    let len = _scalarLength(
+      _unsafeUnchecked: buffer._baseAddress,
+      endingAtOffset: off)
+    return .init(_uncheckedByteOffset: off &- len)
   }
 
   @inlinable
@@ -377,8 +381,9 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
   public subscript(position: Index) -> Element {
     _read {
       let end = index(after: position)
-      _ = end
-      fatalError()
+      yield buffer._uncheckedCharacter(
+        startingAt: position._byteOffset,
+        endingAt: end.byteOffset)
     }
   }
 
@@ -387,9 +392,9 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
       startingAtByteOffet: i.byteOffset))
   }
 
-  @inlinable
   public func index(before i: Index) -> Index {
-    fatalError()
+    .init(_uncheckedByteOffset: buffer._characterStart(
+      endingAtByteOffet: i.byteOffset))
   }
 
   @inlinable
@@ -716,6 +721,35 @@ internal func _scalarLength(
 }
 
 @inlinable
+internal func _scalarLength(
+  _unsafeUnchecked ptr: UnsafeRawPointer,
+  endingAtOffset end: Int
+) -> Int {
+  var len = 1
+  while UTF8.isContinuation(_getByte(ptr, offset: end &- len)) {
+    len &+= 1
+  }
+  _internalInvariant(
+    len == _scalarLength(
+      _unsafeUnchecked: ptr, offset: end &- len))
+  return len
+}
+
+@inlinable
+internal func _decodeScalar(
+  _unsafeUnchecked ptr: UnsafeRawPointer,
+  endingAtOffset end: Int
+) -> (Unicode.Scalar, scalarLength: Int) {
+  let len = _scalarLength(
+    _unsafeUnchecked: ptr, endingAtOffset: end)
+  let (scalar, scalarLen) = _decodeScalar(
+    _unsafeUnchecked: ptr, offset: end &- len)
+  _internalInvariant(len == scalarLen)
+  return (scalar, len)
+
+}
+
+@inlinable
 internal func _decodeScalar(
   _unsafeUnchecked ptr: UnsafeRawPointer,
   offset: Int
@@ -744,7 +778,23 @@ internal func _decodeScalar(
 }
 
 extension UnsafeValidUTF8BufferPointer {
-  internal func _characterEnd(startingAtByteOffet i: Int) -> Int {
+  internal func _characterStart(
+    endingAtByteOffet i: Int
+  ) -> Int {
+    let end = byteCount
+    let ptr = _baseAddress
+    return _previousCharacterBoundary(endingAt: i) { j in
+      _internalInvariant(j <= end)
+      guard j > 0 else { return nil }
+      let (scalar, len) = _decodeScalar(
+        _unsafeUnchecked: ptr, endingAtOffset: j)
+      return (scalar, j &- len)
+    }
+  }
+
+  internal func _characterEnd(
+    startingAtByteOffet i: Int
+  ) -> Int {
     let end = byteCount
     let ptr = _baseAddress
     return _nextCharacterBoundary(startingAt: i) { j in
