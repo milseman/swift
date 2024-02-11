@@ -31,6 +31,14 @@ extension String {
   }
 }
 
+extension UnsafeValidUTF8BufferPointer {
+  @frozen
+  public struct DecodingError: Error, Sendable, Hashable, Codable {
+    public var kind: UTF8.EncodingErrorKind
+    public var offsets: Range<Int>
+  }
+}
+
 /*
 
   NOTE: We will want a assuming-valid init somehow, perhaps
@@ -53,14 +61,20 @@ extension String {
   _countAndFlags uses a 56-bit length and 8 bits for flags
 
 
-┌──────┬──────────┬───────┐
-│ b63  │ b62:56   │ b56:0 │
-├──────┼──────────┼───────┤
-│ ASCII│ reserved │ count │
-└──────┴──────────┴───────┘
+┌───────┬──────────┬───────┐
+│ b63   │ b62:56   │ b56:0 │
+├───────┼──────────┼───────┤
+│ ASCII │ reserved │ count │
+└───────┴──────────┴───────┘
 
 
  TODO: single-byte-Characters bit? Should we reserve it and add the branch?
+
+ ┌─────────────┬───────────────────┐
+ │  b63:b01    │        b0         │
+ ├─────────────┼───────────────────┤
+ │ byte offset │ second code unit  │
+ └─────────────┴───────────────────┘
 
 
 
@@ -70,18 +84,19 @@ extension String {
 // TODO: consider AEIC for some of these...
 
 extension UnsafeValidUTF8BufferPointer {
+  // TODO: 32-bit support
+
   /// Returns whether the validated contents were all-ASCII. This is checked at
   /// initialization time and remembered.
   @inlinable
   public var isASCII: Bool {
-    fatalError()
+    0 != _countAndFlags & 0x8000_0000_0000_0000
   }
 
   /// The number of bytes in the buffer
   @inlinable
   public var byteCount: Int {
-    // TODO: 32-bit?
-    .init(truncatingIfNeeded: _countAndFlags & 0x00_FF_FF_FF_FF_FF_FF_FF)
+    .init(truncatingIfNeeded: _countAndFlags & 0x00FF_FFFF_FFFF_FFFF)
   }
 
   /// Future work: `isKnownNFC` and `isKnownSingleScalarCharacter`
@@ -115,7 +130,25 @@ extension UnsafeValidUTF8BufferPointer {
   internal static func _validate(
     baseAddress: UnsafeRawPointer, length: Int
   ) -> Result<UnsafeValidUTF8BufferPointer, DecodingError> {
-    fatalError()
+    _internalInvariant(length <= 0x00FF_FFFF_FFFF_FFFF)
+    return baseAddress.withMemoryRebound(
+      to: UInt8.self, capacity: length
+    ) {
+      switch validateUTF8(.init(start: $0, count: length)) {
+      case .success(let isASCII):
+        let countAndFlags = UInt64(truncatingIfNeeded: length)
+          & (isASCII.isASCII ? 0x8000_0000_0000_0000 : 0)
+
+        return .success(UnsafeValidUTF8BufferPointer(
+          _baseAddress: baseAddress,
+          _countAndFlags: countAndFlags))
+      case .error(let toBeReplaced):
+        // FIXME: decypher reason
+        return .failure(.init(
+          kind: .expectedContinuationByte,
+          offsets: toBeReplaced))
+      }
+    }
   }
 
   @_alwaysEmitIntoClient
@@ -409,7 +442,7 @@ extension UnsafeValidUTF8BufferPointer.CharacterView: BidirectionalCollection {
 }
 
 extension UnsafeValidUTF8BufferPointer.UTF16View: BidirectionalCollection {
-  public typealias Element = Unicode.Scalar
+  public typealias Element = UInt16
 
   @frozen
   public struct Index: Comparable, Hashable, Sendable {
@@ -420,13 +453,14 @@ extension UnsafeValidUTF8BufferPointer.UTF16View: BidirectionalCollection {
     /// Offset of the first byte of the currently-indexed scalar
     @inlinable
     public var byteOffset: Int {
-      fatalError()
+      Int(truncatingIfNeeded: 
+            _byteOffsetAndTranscodedOffset &>> 1)
     }
 
-    /// Offset of the transcoded code unit within the currently-indexed scalar
+    /// Whether the index refers to the second code unit of a 2-code-unit scalar
     @inlinable
-    public var transcodedOffset: Int {
-      fatalError()
+    public var  secondCodeUnit: Bool {
+      (_byteOffsetAndTranscodedOffset & 0x01) == 1
     }
 
     @inlinable
@@ -437,37 +471,70 @@ extension UnsafeValidUTF8BufferPointer.UTF16View: BidirectionalCollection {
     /// TODO: Note about unsafety if `offset` it's not actually scalar-aligned
     @inlinable
     internal init(
-      _uncheckedByteOffset offset: Int, transcodedOffset: Int
+      _uncheckedByteOffset offset: Int, secondCodeUnit: Bool
     ) {
-      fatalError()
+      _internalInvariant(
+        offset >= 0 && offset < 0x7FFF_FFFF_FFFF_FFFF)
+      let byteOffset = UInt64(truncatingIfNeeded: offset) &<< 63
+      self._byteOffsetAndTranscodedOffset =
+        byteOffset & (secondCodeUnit ? 1 : 0)
     }
   }
 
   @inlinable
   public subscript(position: Index) -> Element {
     _read {
-      fatalError()
+      let scalar = _decodeScalar(
+        _unsafeUnchecked: buffer._baseAddress,
+        offset: position.byteOffset).0
+      yield scalar.utf16[position.secondCodeUnit ? 1 : 0]
     }
   }
 
   @inlinable
   public func index(after i: Index) -> Index {
-    fatalError()
+    // TODO: ASCII fast path
+
+    let len = _scalarLength(
+      _unsafeUnchecked: buffer._baseAddress, 
+      offset: i.byteOffset)
+    if len == 4 && !i.secondCodeUnit {
+      return .init(
+        _uncheckedByteOffset: i.byteOffset,
+        secondCodeUnit: true)
+    }
+    return .init(
+      _uncheckedByteOffset: i.byteOffset &+ len,
+      secondCodeUnit: false)
   }
 
   @inlinable
   public func index(before i: Index) -> Index {
-    fatalError()
+    if i.secondCodeUnit {
+      return .init(
+        _uncheckedByteOffset: i.byteOffset, 
+        secondCodeUnit: false)
+    }
+
+    // TODO: ASCII fast path
+    let len = _scalarLength(
+      _unsafeUnchecked: buffer._baseAddress,
+      endingAtOffset: i.byteOffset)
+    return .init(
+      _uncheckedByteOffset: i.byteOffset &- len,
+      secondCodeUnit: len == 4)
   }
 
   @inlinable
   public var startIndex: Index {
-    fatalError()
+    .init(_uncheckedByteOffset: 0, secondCodeUnit: false)
   }
 
   @inlinable
   public var endIndex: Index {
-    fatalError()
+    .init(
+      _uncheckedByteOffset: buffer.byteCount,
+      secondCodeUnit: false)
   }
 }
 
@@ -477,8 +544,23 @@ extension UnsafeValidUTF8BufferPointer {
   public func isCanonicallyEquivalent(
     to other: UnsafeValidUTF8BufferPointer
   ) -> Bool {
-    // TODO: consider early-exit when one normalization segment is longer than the other
-    fatalError()
+    // FIXME: isNFC
+    let bothAreNFC = false
+
+    // TODO: refactor to raw pointers
+
+    // TODO: consider early-exit when one normalization segment 
+    // is longer than the other
+
+    return self._withUBP { selfUBP in
+      other._withUBP { otherUBP in
+        return _stringCompareFastUTF8(
+          selfUBP,
+          otherUBP,
+          expecting: .equal,
+          bothNFC: bothAreNFC)
+      }
+    }
   }
 
   /// Whether `self` orders less than `other` (under Unicode Canonical Equivalance
@@ -486,35 +568,27 @@ extension UnsafeValidUTF8BufferPointer {
   public func isCanonicallyLessThan(
     _ other: UnsafeValidUTF8BufferPointer
   ) -> Bool {
-    fatalError()
+    // FIXME: isNFC
+    let bothAreNFC = false
+
+    // TODO: refactor to raw pointers
+
+    // TODO: consider early-exit when one normalization segment
+    // is longer than the other
+
+    return self._withUBP { selfUBP in
+      other._withUBP { otherUBP in
+        return _stringCompareFastUTF8(
+          selfUBP,
+          otherUBP,
+          expecting: .less,
+          bothNFC: bothAreNFC)
+      }
+    }
   }
 
   /// Future: spaceship operator
 }
-
-/// Future work: with non-escaping parameters, we could add a `withEphemeralString`
-/// which will create and instance of `String` that shared storage with
-/// `UnsafeValidUTF8BufferPointer` rather than making its own copy. The `String`'s
-/// lifetime would only be valid for the lifetime of the `UnsafeValidUTF8BufferPointer`.
-///
-/// Even further in the future, with depend lifetime annotations we could add an
-/// emphemeralString property which is more convenient to a closure API
-extension UnsafeValidUTF8BufferPointer {
-/*
-  func withEphemeralString<T>(
-    _ f: (@nonescaping String) throws -> T
-  ) rethrows -> T {
-    fatalError()
-  }
-
-  var ephemeralString: @dependendLifetime(self) String {
-    fatalError()
-  }
-*/
-}
-
-/// Potential or future work: ValidUTF8 buffer with shared ownership
-
 
 
 /// MARK: - rest...
@@ -831,4 +905,3 @@ extension UnsafeValidUTF8BufferPointer {
     }
   }
 }
-
